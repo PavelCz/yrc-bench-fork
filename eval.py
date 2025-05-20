@@ -1,10 +1,14 @@
+import json
+from pathlib import Path
+import os
 import flags
-import YRC.core.algorithm as algo_factory
 import YRC.core.configs.utils as config_utils
 import YRC.core.environment as env_factory
 import YRC.core.policy as policy_factory
 from YRC.core import Evaluator
-from YRC.policies import *
+from YRC.core.configs.global_configs import get_global_variable
+
+from YRC.policies import *  # noqa: F403
 
 if __name__ == "__main__":
     args = flags.make()
@@ -17,4 +21,14 @@ if __name__ == "__main__":
         policy.load_model(os.path.join(config.experiment_dir, config.file_name))
     evaluator = Evaluator(config.evaluation)
 
-    evaluator.eval(policy, envs, ["test"])
+    split = "test"
+
+    summary = evaluator.eval(policy, envs, [split])
+
+    log_file_path = get_global_variable("log_file")
+    log_file_path = Path(log_file_path)
+    results_file_path = log_file_path.with_name(
+        log_file_path.name.replace(".log", f"_{split}.json")
+    )
+    with results_file_path.open("w") as f:
+        json.dump(summary, f, indent=2)
