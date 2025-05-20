@@ -60,3 +60,5 @@ class OODAlgorithm(Algorithm):
                     evaluator.write_summary(f"best_{split}", best_summary[split])
 
             policy.update_params(best_params[eval_splits[0]])  # Update with best params from first eval split
+        else:
+            logging.info("Skipping threshold search.")
