@@ -9,6 +9,7 @@ from YRC.core import Evaluator
 from YRC.core.configs.global_configs import get_global_variable
 
 from YRC.policies import *  # noqa: F403
+import numpy as np
 
 if __name__ == "__main__":
     args = flags.make()
@@ -23,12 +24,32 @@ if __name__ == "__main__":
 
     split = "test"
 
-    summary = evaluator.eval(policy, envs, [split])
+    thresholds_min, thresholds_max = (
+        policy.clf.decision_scores_.min(),
+        policy.clf.decision_scores_.max(),
+    )
+    if thresholds_min == thresholds_max:
+        thresholds = [thresholds_min]
+    else:
+        thresholds = np.linspace(thresholds_min, thresholds_max, args.num_thresholds)
 
+    results = {"thresholds": [], "results": []}
+    for threshold in thresholds:
+        params = {"threshold": threshold}
+        policy.update_params(params)
+        summary = evaluator.eval(policy, envs, [split])
+        results["thresholds"].append(threshold)
+        results["results"].append(summary)
+
+    # Save result summary to file.
     log_file_path = get_global_variable("log_file")
+    if log_file_path is None:
+        raise ValueError(
+            "Log file path is not set. Could not find path to save results."
+        )
     log_file_path = Path(log_file_path)
     results_file_path = log_file_path.with_name(
         log_file_path.name.replace(".log", f"_{split}.json")
     )
     with results_file_path.open("w") as f:
-        json.dump(summary, f, indent=2)
+        json.dump(results, f, indent=2)
