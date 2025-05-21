@@ -77,12 +77,16 @@ def load(yaml_file_or_str, flags=None):
     config.start_time = time.time()
 
     if config.eval_mode:
-        if config.file_name is None:
+        if config.file_name is None or "trained" in config.file_name:
             log_file = os.path.join(config.experiment_dir, f"eval_seed_{seed}.log")
         elif config.file_name.__contains__("sim"):
             log_file = os.path.join(config.experiment_dir, f"eval_sim_seed_{seed}.log")
         elif config.file_name.__contains__("true"):
             log_file = os.path.join(config.experiment_dir, f"eval_true_seed_{seed}.log")
+        else:
+            raise ValueError(
+                f"Unrecognized eval setting with file name: {config.file_name}"
+            )
     else:
         log_file = os.path.join(config.experiment_dir, "run.log")
     set_global_variable("log_file", log_file)
