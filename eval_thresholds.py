@@ -24,10 +24,11 @@ if __name__ == "__main__":
 
     split = "test"
 
-    thresholds_min, thresholds_max = (
-        policy.clf.decision_scores_.min(),
-        policy.clf.decision_scores_.max(),
-    )
+    # thresholds_min, thresholds_max = (
+    #     policy.clf.decision_scores_.min(),
+    #     policy.clf.decision_scores_.max(),
+    # )
+    thresholds_min, thresholds_max = 0, 1
     if thresholds_min == thresholds_max:
         thresholds = [thresholds_min]
     else:
