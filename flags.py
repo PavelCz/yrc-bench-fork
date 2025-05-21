@@ -1,5 +1,4 @@
 import jsonargparse
-from wandb.vendor.pygments.lexer import default
 
 
 def make():
@@ -80,6 +79,15 @@ def make():
 
     parser.add_argument("-seed", "--general.seed", type=int,
                         help="random seed")
+    
+    # Additional flags for evaluation.
+    parser.add_argument(
+        "-num_thresholds", 
+        "--eval.num_thresholds", 
+        type=int,
+        help="number of thresholds to evaluate", 
+        default=10
+    )
     args = parser.parse_args()
 
     return args

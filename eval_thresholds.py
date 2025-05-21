@@ -31,7 +31,9 @@ if __name__ == "__main__":
     if thresholds_min == thresholds_max:
         thresholds = [thresholds_min]
     else:
-        thresholds = np.linspace(thresholds_min, thresholds_max, args.num_thresholds)
+        thresholds = np.linspace(
+            thresholds_min, thresholds_max, args.eval.num_thresholds
+        )
 
     results = {"thresholds": [], "results": []}
     for threshold in thresholds:
