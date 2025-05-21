@@ -10,11 +10,14 @@ if __name__ == "__main__":
     args = flags.make()
     args.eval_mode = True
     config = config_utils.load(args.config, flags=args)
+    env_name = args.environment.common.env_name
 
     envs = env_factory.make(config)
     policy = policy_factory.make(config, envs["train"])
     if config.general.algorithm != "always" and not config.coord_policy.baseline:
         policy.load_model(os.path.join(config.experiment_dir, config.file_name))
-    evaluator = Evaluator(config.evaluation)
+    evaluator = Evaluator(
+        config.evaluation, env_name, args.general.seed, args.eval.observation_dir
+    )
 
     evaluator.eval(policy, envs, ["test"])
