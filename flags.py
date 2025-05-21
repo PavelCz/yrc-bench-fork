@@ -88,13 +88,6 @@ def make():
         help="number of thresholds to evaluate", 
         default=10
     )
-    parser.add_argument(
-        "-obs_dir",
-        "--eval.observation_dir",
-        type=str,
-        help="If provided, save observations to this path.",
-        default=None
-    )
     args = parser.parse_args()
 
     return args

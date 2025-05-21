@@ -1,29 +1,28 @@
 import logging
-from matplotlib.path import Path
 import numpy as np
 import os
 from PIL import Image
+import time
 
 
 class Evaluator:
     LOGGED_ACTION = 1
 
-    def __init__(self, config, env_name="", seed=None, observation_dir=None):
+    def __init__(self, config, env_name="", seed=None):
         self.args = config
         self.env_name = env_name
         self.iter = 0
         self.run_id= seed
-        self.observation_dir = observation_dir
 
     def eval(self, policy, envs, eval_splits, num_episodes=None):
         args = self.args
         policy.eval()
 
         # Create directories for saving obvservations
-        if self.env_name != "" and self.observation_dir is not None:
-            output_dir = Path(self.observation_dir)
-            img_dir = output_dir / self.env_name
-            img_dir.mkdir(parents=True, exist_ok=True)
+        if self.env_name != "":
+            output_dir = f"/nas/ucb/czempin/goal-misgen/yield_request_control/data"
+            img_dir = os.path.join(output_dir, self.env_name)
+            os.makedirs(img_dir, exist_ok=True)
         else:
             img_dir = None
         
@@ -60,7 +59,7 @@ class Evaluator:
                 log[k].extend(v)
             else:
                 log[k] += v
-    def _eval_one_iteration(self, policy, env, img_dir: Path | None):
+    def _eval_one_iteration(self, policy, env, img_dir):
         args = self.args
         log = {
             "reward": [0] * env.num_envs,
