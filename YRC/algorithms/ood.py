@@ -62,3 +62,5 @@ class OODAlgorithm(Algorithm):
             policy.update_params(best_params[eval_splits[0]])  # Update with best params from first eval split
         else:
             logging.info("Skipping threshold search.")
+            logging.info("Saving trained model.")
+            policy.save_model("trained", self.save_dir)
