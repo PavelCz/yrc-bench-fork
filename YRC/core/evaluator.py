@@ -1,17 +1,31 @@
 import logging
 import numpy as np
+import os
+from PIL import Image
+import time
 
 
 class Evaluator:
     LOGGED_ACTION = 1
 
-    def __init__(self, config):
+    def __init__(self, config, env_name="", seed=None):
         self.args = config
+        self.env_name = env_name
+        self.iter = 0
+        self.run_id= seed
 
     def eval(self, policy, envs, eval_splits, num_episodes=None):
         args = self.args
         policy.eval()
 
+        # Create directories for saving obvservations
+        if self.env_name != "":
+            output_dir = f"/nas/ucb/czempin/goal-misgen/yield_request_control/data"
+            img_dir = os.path.join(output_dir, self.env_name)
+            os.makedirs(img_dir, exist_ok=True)
+        else:
+            img_dir = None
+        
         summary = {}
         for split in eval_splits:
             if num_episodes is None:
@@ -27,7 +41,7 @@ class Evaluator:
             num_iterations = num_episodes // envs[split].num_envs
             log = {}
             for _ in range(num_iterations):
-                this_log = self._eval_one_iteration(policy, envs[split])
+                this_log = self._eval_one_iteration(policy, envs[split], img_dir)
                 self._update_log(log, this_log)
 
             summary[split] = self.summarize(log)
@@ -45,8 +59,7 @@ class Evaluator:
                 log[k].extend(v)
             else:
                 log[k] += v
-
-    def _eval_one_iteration(self, policy, env):
+    def _eval_one_iteration(self, policy, env, img_dir):
         args = self.args
         log = {
             "reward": [0] * env.num_envs,
@@ -58,19 +71,32 @@ class Evaluator:
         obs = env.reset()
         has_done = np.array([False] * env.num_envs)
         step = 0
+
+        all_obs = [[] for _ in range(env.num_envs)]
+        step_counts = [0 for _ in range(env.num_envs)]
+
         while not has_done.all():
+            # Save images, if it's a test run. The hacky way I'm doing that is if env_name is nonempty
+            if self.env_name != "":
+                for env_idx in range(env.num_envs):
+                    if not has_done[env_idx]:
+                        # Get observation for this environment
+                        obs_array = obs['env_obs'][env_idx] if isinstance(obs, dict) else obs[env_idx]
+
+                        # Transpose from (C, H, W) to (H, W, C)
+                        obs_array = np.transpose(obs_array, (1, 2, 0))
+
+                        # Convert to uint8 for PIL
+                        obs_array = (obs_array * 255).astype(np.uint8)
+
+                        img = Image.fromarray(obs_array)
+                        img.save(os.path.join(img_dir, f'iter{self.iter}_env{env_idx}_step{step_counts[env_idx]}_run-id{self.run_id}.png'))
+                        step_counts[env_idx] += 1
+
             action = policy.act(obs, greedy=args.act_greedy)
-
-            obs, reward, done, info = env.step(action)
-
-            """
-            if action.ndim == 0:
-                action = action.reshape(1)
-                reward = reward.reshape(1)
-            """
+            obs, reward, done, info= env.step(action)
 
             for i in range(env.num_envs):
-
                 if "env_reward" in info[i]:
                     log["env_reward"][i] += info[i]["env_reward"] * (1 - has_done[i])
 
@@ -82,6 +108,7 @@ class Evaluator:
             has_done |= done
             step += 1
 
+        self.iter += 1
         return log
 
     def summarize(self, log):
