@@ -1,2 +1,5 @@
 ruff==0.11.10
 pytype==2024.9.13
+# This newer version of ipykernel as opposed to what is in the other requirements files
+# allows debugging.
+ipykernel==6.29.5

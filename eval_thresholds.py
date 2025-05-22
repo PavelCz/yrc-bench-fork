@@ -23,14 +23,26 @@ if __name__ == "__main__":
     evaluator = Evaluator(config.evaluation)
 
     # Collect all thresholds on the training set
-    score = policy.clf.decision_scores_
+    scores = policy.clf.decision_scores_
+
+    percentile_steps = np.linspace(0, 100, args.eval.num_thresholds)
 
     # Determine threshold percentiles
-    thresholds = np.percentile(score, np.linspace(0, 100, args.eval.num_thresholds))
+    thresholds = np.percentile(scores, percentile_steps)
+
+    calc_percentiles = []
+    for threshold in thresholds:
+        calc_percentiles.append(np.sum(scores <= threshold) / len(scores))
 
     split = "test"
 
-    results = {"thresholds": [], "results": []}
+    results = {
+        "thresholds": thresholds,
+        "results": [],
+        "percentile_steps": percentile_steps,
+        "calc_percentiles": calc_percentiles,
+        "training_scores": list(scores),
+    }
     for threshold in thresholds:
         params = {"threshold": threshold}
         policy.update_params(params)
