@@ -1,3 +1,4 @@
+from pathlib import Path
 import numpy as np
 import logging
 from YRC.core import Algorithm
@@ -12,13 +13,14 @@ class OODAlgorithm(Algorithm):
         self.save_dir = get_global_variable("experiment_dir")
 
     def train(
-            self,
-            policy,
-            envs,
-            evaluator=None,
-            train_split=None,
-            eval_splits=None,
-            do_threshold_search=True,
+        self,
+        policy,
+        envs,
+        evaluator=None,
+        train_split=None,
+        eval_splits=None,
+        do_threshold_search=True,
+        num_percentiles=10,
     ):
         args = self.args
         best_summary = {split: {"reward_mean": -1e9} for split in eval_splits}
@@ -36,11 +38,16 @@ class OODAlgorithm(Algorithm):
 
         if do_threshold_search:
             # Threshold search
-            thresholds_min, thresholds_max = policy.clf.decision_scores_.min(), policy.clf.decision_scores_.max()
+            thresholds_min, thresholds_max = (
+                policy.clf.decision_scores_.min(),
+                policy.clf.decision_scores_.max(),
+            )
             if thresholds_min == thresholds_max:
                 cand_thresholds = [thresholds_min]
             else:
-                cand_thresholds = np.linspace(thresholds_min, thresholds_max, args.num_thresholds)
+                cand_thresholds = np.linspace(
+                    thresholds_min, thresholds_max, args.num_thresholds
+                )
             for threshold in cand_thresholds:
                 params = {"threshold": threshold}
                 logging.info(f"Evaluating threshold: {threshold}")
@@ -49,7 +56,10 @@ class OODAlgorithm(Algorithm):
                 split_summary = evaluator.eval(policy, envs, eval_splits)
 
                 for split in eval_splits:
-                    if split_summary[split]["reward_mean"] > best_summary[split]["reward_mean"]:
+                    if (
+                        split_summary[split]["reward_mean"]
+                        > best_summary[split]["reward_mean"]
+                    ):
                         best_params[split] = params
                         best_summary[split] = split_summary[split]
                         policy.save_model(f"best_{split}", self.save_dir)
@@ -59,8 +69,20 @@ class OODAlgorithm(Algorithm):
                     logging.info(f"Parameters: {best_params[split]}")
                     evaluator.write_summary(f"best_{split}", best_summary[split])
 
-            policy.update_params(best_params[eval_splits[0]])  # Update with best params from first eval split
+            policy.update_params(
+                best_params[eval_splits[0]]
+            )  # Update with best params from first eval split
         else:
             logging.info("Skipping threshold search.")
+
+            # Collect all thresholds on the training set
+            score = policy.clf.decision_scores_
+
+            # Determine threshold percentiles
+            thresholds = np.percentile(score, np.linspace(0, 100, num_percentiles))
+
+            # Save thresholds
+            np.save(Path(str(self.save_dir)) / "threshold_percentiles.npy", thresholds)
+
             logging.info("Saving trained model.")
             policy.save_model("trained", self.save_dir)
