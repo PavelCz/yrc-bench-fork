@@ -22,19 +22,13 @@ if __name__ == "__main__":
         policy.load_model(os.path.join(config.experiment_dir, config.file_name))
     evaluator = Evaluator(config.evaluation)
 
-    split = "test"
+    # Collect all thresholds on the training set
+    score = policy.clf.decision_scores_
 
-    # thresholds_min, thresholds_max = (
-    #     policy.clf.decision_scores_.min(),
-    #     policy.clf.decision_scores_.max(),
-    # )
-    thresholds_min, thresholds_max = 0, 1
-    if thresholds_min == thresholds_max:
-        thresholds = [thresholds_min]
-    else:
-        thresholds = np.linspace(
-            thresholds_min, thresholds_max, args.eval.num_thresholds
-        )
+    # Determine threshold percentiles
+    thresholds = np.percentile(score, np.linspace(0, 100, args.eval.num_thresholds))
+
+    split = "test"
 
     results = {"thresholds": [], "results": []}
     for threshold in thresholds:

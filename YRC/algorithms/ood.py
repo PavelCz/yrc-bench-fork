@@ -1,4 +1,3 @@
-from pathlib import Path
 import numpy as np
 import logging
 from YRC.core import Algorithm
@@ -74,15 +73,6 @@ class OODAlgorithm(Algorithm):
             )  # Update with best params from first eval split
         else:
             logging.info("Skipping threshold search.")
-
-            # Collect all thresholds on the training set
-            score = policy.clf.decision_scores_
-
-            # Determine threshold percentiles
-            thresholds = np.percentile(score, np.linspace(0, 100, num_percentiles))
-
-            # Save thresholds
-            np.save(Path(str(self.save_dir)) / "threshold_percentiles.npy", thresholds)
 
             logging.info("Saving trained model.")
             policy.save_model("trained", self.save_dir)
