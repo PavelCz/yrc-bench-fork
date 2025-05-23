@@ -1,3 +1,4 @@
+from calendar import c
 import json
 from pathlib import Path
 import os
@@ -36,19 +37,13 @@ if __name__ == "__main__":
 
     split = "test"
 
-    results = {
-        "thresholds": list(thresholds),
-        "results": [],
-        "percentile_steps": list(percentile_steps),
-        "calc_percentiles": list(calc_percentiles),
-        "training_scores": list(scores),
-    }
+    summaries = []
     for threshold in thresholds:
         params = {"threshold": threshold}
         policy.update_params(params)
         summary = evaluator.eval(policy, envs, [split])
-        results["results"].append(summary)
-
+        summaries.append(summary)
+    
     # Save result summary to file.
     log_file_path = get_global_variable("log_file")
     if log_file_path is None:
@@ -57,7 +52,13 @@ if __name__ == "__main__":
         )
     log_file_path = Path(log_file_path)
     results_file_path = log_file_path.with_name(
-        log_file_path.name.replace(".log", f"_{split}.json")
+        log_file_path.name.replace(".log", f"_{split}.npz")
     )
-    with results_file_path.open("w") as f:
-        json.dump(results, f, indent=2)
+    np.savez(
+        results_file_path, 
+        thresholds=thresholds,
+        results=np.array(summaries),
+        percentile_steps=percentile_steps,
+        calc_percentiles=np.array(calc_percentiles),
+        training_scores=scores,
+    )
