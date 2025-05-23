@@ -33,7 +33,10 @@ if __name__ == "__main__":
 
     calc_percentiles = []
     for threshold in thresholds:
-        calc_percentiles.append(np.sum(scores <= threshold) / len(scores))
+        # Get the percentage of scores *over* the threshold.
+        # Over the threshold means that the score is considered anomalous and
+        # we ask for help, so the percentiles should correspond closely to the AFHP.
+        calc_percentiles.append(np.sum(scores > threshold) / len(scores))
 
     split = "test"
 
