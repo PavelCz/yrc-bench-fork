@@ -119,6 +119,17 @@ class OODPolicy(Policy):
     def update_params(self, params):
         self.params = dc(params)
 
+    def fit(self, x, x_threshold, y=None):
+        if self.clf_name == "DeepSVDD":
+            self.clf.fit(X=x, X_threshold=x_threshold, y=y)
+        elif self.clf_name == "AutoEncoder":
+            x = x.cpu()
+            # Flatten the observations.
+            x = x.reshape(x.shape[0], -1)
+            self.clf.fit(x, y)
+        else:
+            raise ValueError(f"Unknown OOD detector type: {self.clf_name}")
+
     def act(self, obs, greedy=False):
         keys = {
             "obs": ["env_obs"],
