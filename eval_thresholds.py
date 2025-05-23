@@ -37,17 +37,16 @@ if __name__ == "__main__":
     split = "test"
 
     results = {
-        "thresholds": thresholds,
+        "thresholds": list(thresholds),
         "results": [],
-        "percentile_steps": percentile_steps,
-        "calc_percentiles": calc_percentiles,
+        "percentile_steps": list(percentile_steps),
+        "calc_percentiles": list(calc_percentiles),
         "training_scores": list(scores),
     }
     for threshold in thresholds:
         params = {"threshold": threshold}
         policy.update_params(params)
         summary = evaluator.eval(policy, envs, [split])
-        results["thresholds"].append(threshold)
         results["results"].append(summary)
 
     # Save result summary to file.
