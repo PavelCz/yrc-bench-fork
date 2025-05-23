@@ -56,7 +56,7 @@ def make():
 
     # ood policy
     parser.add_argument("-cp_method", "--coord_policy.method", type=str,
-                        choices=["DeepSVDD"],
+                        choices=["DeepSVDD", "AutoEncoder"],
                         help="method for detecting OOD samples")
 
     # random baseline policy

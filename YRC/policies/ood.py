@@ -6,7 +6,7 @@ import torch
 import logging
 from torch.distributions.categorical import Categorical
 from YRC.core import Policy
-from lib.pyod.pyod.models import deep_svdd
+from lib.pyod.pyod.models import deep_svdd, auto_encoder
 from joblib import dump, load
 from YRC.core.configs.global_configs import get_global_variable
 
@@ -145,37 +145,37 @@ class OODPolicy(Policy):
         return action
 
     def initialize_ood_detector(self, args, env):
+        dummy_obs = env.reset()
+        feature_type_to_shapes = {
+            "obs": lambda dummy_obs: (
+                dummy_obs['env_obs']['image'] if get_global_variable("benchmark") in ["cliport", "minigrid"] else
+                dummy_obs['env_obs']
+            ).shape,
+            "hidden": lambda dummy_obs: dummy_obs['weak_features'].shape,
+            "hidden_obs": lambda dummy_obs: (
+                    (
+                        dummy_obs['env_obs']['image'] if get_global_variable("benchmark") in ["cliport", "minigrid"] else dummy_obs['env_obs']
+                    ).shape + dummy_obs['weak_features'].shape[1:]
+            ),
+            "dist": lambda dummy_obs: dummy_obs['weak_logit'].shape,
+            "hidden_dist": lambda dummy_obs: (
+                    dummy_obs['weak_features'].shape + dummy_obs['weak_logit'].shape[1:]
+            ),
+            "obs_dist": lambda dummy_obs: (
+                    (
+                        dummy_obs['env_obs']['image'] if get_global_variable("benchmark") in ["cliport", "minigrid"] else dummy_obs['env_obs']
+                    ).shape + dummy_obs['weak_logit'].shape[1:]
+            ),
+            "obs_hidden_dist": lambda dummy_obs: (
+                    (
+                        dummy_obs['env_obs']['image'] if get_global_variable("benchmark") in ["cliport", "minigrid"] else dummy_obs['env_obs']
+                    ).shape + dummy_obs['weak_features'].shape[1:] + dummy_obs['weak_logit'].shape[1:]
+            ),
+        }
+
+        dummy_obs_shape = feature_type_to_shapes[self.feature_type](dummy_obs)
+
         if self.args.method == "DeepSVDD":
-            dummy_obs = env.reset()
-            feature_type_to_shapes = {
-                "obs": lambda dummy_obs: (
-                    dummy_obs['env_obs']['image'] if get_global_variable("benchmark") in ["cliport", "minigrid"] else
-                    dummy_obs['env_obs']
-                ).shape,
-                "hidden": lambda dummy_obs: dummy_obs['weak_features'].shape,
-                "hidden_obs": lambda dummy_obs: (
-                        (
-                            dummy_obs['env_obs']['image'] if get_global_variable("benchmark") in ["cliport", "minigrid"] else dummy_obs['env_obs']
-                        ).shape + dummy_obs['weak_features'].shape[1:]
-                ),
-                "dist": lambda dummy_obs: dummy_obs['weak_logit'].shape,
-                "hidden_dist": lambda dummy_obs: (
-                        dummy_obs['weak_features'].shape + dummy_obs['weak_logit'].shape[1:]
-                ),
-                "obs_dist": lambda dummy_obs: (
-                        (
-                            dummy_obs['env_obs']['image'] if get_global_variable("benchmark") in ["cliport", "minigrid"] else dummy_obs['env_obs']
-                        ).shape + dummy_obs['weak_logit'].shape[1:]
-                ),
-                "obs_hidden_dist": lambda dummy_obs: (
-                        (
-                            dummy_obs['env_obs']['image'] if get_global_variable("benchmark") in ["cliport", "minigrid"] else dummy_obs['env_obs']
-                        ).shape + dummy_obs['weak_features'].shape[1:] + dummy_obs['weak_logit'].shape[1:]
-                ),
-            }
-
-            dummy_obs_shape = feature_type_to_shapes[self.feature_type](dummy_obs)
-
             self.clf_name = 'DeepSVDD'
             self.clf = deep_svdd.DeepSVDD(
                 n_features=args.feature_size,
@@ -188,6 +188,13 @@ class OODPolicy(Policy):
                 benchmark=get_global_variable("benchmark"),
             )
             self.clf.model_.to(self.device)
+        elif self.args.method == "AutoEncoder":
+            self.clf_name = 'AutoEncoder'
+            self.clf = auto_encoder.AutoEncoder(
+                contamination=args.contamination,
+                epochs=args.epoch,
+                batch_size=args.batch_size,
+            )
         else:
             raise ValueError(f"Unknown OOD detector type: {args.ood_detector}")
 
