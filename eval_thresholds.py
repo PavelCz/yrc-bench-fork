@@ -41,6 +41,7 @@ if __name__ == "__main__":
     for threshold in thresholds:
         params = {"threshold": threshold}
         policy.update_params(params)
+        policy.clf.threshold_ = threshold
         summary = evaluator.eval(policy, envs, [split])
         summaries.append(summary)
     
