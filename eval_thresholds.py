@@ -38,6 +38,20 @@ if __name__ == "__main__":
         # we ask for help, so the percentiles should correspond closely to the AFHP.
         calc_percentiles.append(np.sum(scores > threshold) / len(scores))
 
+    # Linearly extend the thresholds below the lowest threshold.
+    delta = thresholds[-1] - thresholds[0]
+    thresholds = np.concatenate([
+        np.linspace(thresholds[0] - delta, thresholds[0], args.eval.num_thresholds),
+        thresholds
+    ])
+    
+    calc_percentiles = []
+    for threshold in thresholds:
+        # Get the percentage of scores *over* the threshold.
+        # Over the threshold means that the score is considered anomalous and
+        # we ask for help, so the percentiles should correspond closely to the AFHP.
+        calc_percentiles.append(np.sum(scores > threshold) / len(scores))
+
     split = "test"
 
     summaries = []
@@ -62,6 +76,7 @@ if __name__ == "__main__":
         results_file_path, 
         thresholds=thresholds,
         results=np.array(summaries),
+        # TODO these are shorter than the thresholds, calc_percentiles, afhp.
         percentile_steps=percentile_steps,
         calc_percentiles=np.array(calc_percentiles),
         training_scores=scores,
