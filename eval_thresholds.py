@@ -47,10 +47,10 @@ if __name__ == "__main__":
 
     # Similarly, extend the thresholds above the highest threshold.
     additional_thresholds = []
-    previous_threshold = thresholds[-1]
-    for i in range(1, args.eval.num_thresholds + 1):
-        additional_thresholds.append(previous_threshold + (delta / 2) * i)
-        previous_threshold = additional_thresholds[-1]
+    highest_threshold = thresholds[-1]
+    for i in range(0, args.eval.num_thresholds):
+        additional_thresholds.append(highest_threshold + delta * (2 ** i))
+        highest_threshold = additional_thresholds[-1]
     thresholds = np.concatenate([
         thresholds,
         np.array(additional_thresholds)
