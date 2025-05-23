@@ -194,6 +194,7 @@ class OODPolicy(Policy):
                 contamination=args.contamination,
                 epoch_num=args.epoch,
                 batch_size=args.batch_size,
+                device=self.device,
             )
         else:
             raise ValueError(f"Unknown OOD detector type: {args.ood_detector}")
