@@ -44,6 +44,12 @@ if __name__ == "__main__":
         np.linspace(thresholds[0] - delta, thresholds[0], args.eval.num_thresholds),
         thresholds
     ])
+
+    # Similarly, extend the thresholds above the highest threshold.
+    thresholds = np.concatenate([
+        thresholds,
+        np.linspace(thresholds[-1], thresholds[-1] + delta, args.eval.num_thresholds)
+    ])
     
     calc_percentiles = []
     for threshold in thresholds:
