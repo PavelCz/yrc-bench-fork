@@ -40,15 +40,20 @@ if __name__ == "__main__":
 
     # Linearly extend the thresholds below the lowest threshold.
     delta = thresholds[-1] - thresholds[0]
-    thresholds = np.concatenate([
-        np.linspace(thresholds[0] - delta, thresholds[0], args.eval.num_thresholds),
-        thresholds
-    ])
+    # thresholds = np.concatenate([
+    #     np.linspace(thresholds[0] - delta, thresholds[0], args.eval.num_thresholds),
+    #     thresholds
+    # ])
 
     # Similarly, extend the thresholds above the highest threshold.
+    additional_thresholds = []
+    previous_threshold = thresholds[-1]
+    for i in range(1, args.eval.num_thresholds + 1):
+        additional_thresholds.append(previous_threshold + (delta / 2) * i)
+        previous_threshold = additional_thresholds[-1]
     thresholds = np.concatenate([
         thresholds,
-        np.linspace(thresholds[-1], thresholds[-1] + delta, args.eval.num_thresholds)
+        np.array(additional_thresholds)
     ])
     
     calc_percentiles = []
