@@ -192,7 +192,7 @@ class OODPolicy(Policy):
             self.clf_name = 'AutoEncoder'
             self.clf = auto_encoder.AutoEncoder(
                 contamination=args.contamination,
-                epochs=args.epoch,
+                epoch_num=args.epoch,
                 batch_size=args.batch_size,
             )
         else:

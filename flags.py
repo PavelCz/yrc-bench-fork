@@ -59,6 +59,17 @@ def make():
                         choices=["DeepSVDD", "AutoEncoder"],
                         help="method for detecting OOD samples")
 
+    parser.add_argument(
+        "-cp_epoch", 
+        "--algorithm.epoch", 
+        type=int,
+        help=(
+            "Number of epochs for training the OOD detector. "
+            "This overrides the epoch in the config file."
+        )
+    )
+    
+    
     # random baseline policy
     parser.add_argument("-cp_base", "--coord_policy.baseline", action="store_true",
                         help="baseline policy with random action 0.5 probability")
