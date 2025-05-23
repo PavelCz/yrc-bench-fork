@@ -148,6 +148,14 @@ class OODPolicy(Policy):
 
         if self.feature_type in ["obs", "hidden", "dist"]:
             observation = observation[0]
+
+        if self.clf_name == "AutoEncoder":
+            # Since the AutoEncoder uses the default pyod implementation, it needs
+            # tensors that can be converted to numpy arrays.
+            observation = observation.cpu()
+            # Additionally, the AutoEncoder expects a 2D array, so we flatten it.
+            observation = observation.reshape(observation.shape[0], -1)
+
         score = self.clf.decision_function(observation)
 
         action = 1 - (score < self.clf.threshold_).astype(int)
@@ -228,6 +236,8 @@ class OODPolicy(Policy):
     def load_model(self, load_dir):
         state_dict = load(f"{load_dir}")
         self.clf = state_dict['clf']
+        self.clf_name = state_dict['clf_name']
+
         return self
 
     def to_tensor(self, data):
