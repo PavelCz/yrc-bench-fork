@@ -50,7 +50,6 @@ if __name__ == "__main__":
     highest_threshold = thresholds[-1]
     for i in range(0, args.eval.num_thresholds):
         additional_thresholds.append(highest_threshold + delta * (2 ** i))
-        highest_threshold = additional_thresholds[-1]
     thresholds = np.concatenate([
         thresholds,
         np.array(additional_thresholds)
