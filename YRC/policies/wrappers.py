@@ -1,9 +1,12 @@
 import torch
 from torch.distributions.uniform import Uniform
 from torch.distributions.categorical import Categorical
+from pyod.models.base_dl import BaseDeepLearningDetector
+from torch.utils.data import DataLoader
 
 from YRC.core import Policy
 from YRC.core.configs.global_configs import get_global_variable
+import logging
 
 
 class ExploreWrapper(Policy):
@@ -57,3 +60,40 @@ class ExploreWrapper(Policy):
             raise NotImplementedError
 
         return action
+class ValidationWrapper:
+    """Adds a validation call in epoch_update to any deep learning OOD detector."""
+    def __init__(
+            self,
+            detector: BaseDeepLearningDetector,
+            score_list: list[float],
+        ):
+        self._detector = detector
+        self._validation_loader = None
+        self.score_list = score_list
+
+    def set_validation_loader(self, validation_loader: DataLoader):
+        self._validation_loader = validation_loader
+
+    def epoch_update(self):
+        # Run the detector's epoch_update, in case it was modified.
+        self._detector.epoch_update()
+        if self._validation_loader is None:
+            logging.warning(
+                "No validation loader set for OOD detector. Skipping validation."
+            )
+            return
+        if self.score_list is None:
+            raise ValueError("Score list is not set for OOD detector.")
+        
+        scores = self._detector.evaluate(self._validation_loader)
+        # Save the scores to the score list, so they can be analyzed later.
+        self.score_list.append(scores)
+        # Since evaluate sets the model to eval mode, we need to set it back to train 
+        # mode.
+        self._detector.model.train()
+
+
+
+
+    def __getattr__(self, name):
+        return getattr(self._detector, name)
