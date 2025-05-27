@@ -9,6 +9,7 @@ from YRC.core import Policy
 from lib.pyod.pyod.models import deep_svdd, auto_encoder
 from joblib import dump, load
 from YRC.core.configs.global_configs import get_global_variable
+from YRC.policies.wrappers import ValidationWrapper
 
 
 class OODPolicy(Policy):
@@ -23,6 +24,9 @@ class OODPolicy(Policy):
         self.clf_name = None
         self.device = get_global_variable("device")
         self.feature_type = config.coord_policy.feature_type
+
+        # This is only used by those OOD detectors that support a validation set.
+        self.val_scores = None
 
     def gather_rollouts(self, env, num_rollouts):
         assert num_rollouts % env.num_envs == 0
@@ -126,6 +130,7 @@ class OODPolicy(Policy):
             x = x.cpu()
             # Flatten the observations.
             x = x.reshape(x.shape[0], -1)
+            self.clf.set_validation_loader(x_threshold)
             self.clf.fit(x, y)
         else:
             raise ValueError(f"Unknown OOD detector type: {self.clf_name}")
@@ -209,12 +214,15 @@ class OODPolicy(Policy):
             self.clf.model_.to(self.device)
         elif self.args.method == "AutoEncoder":
             self.clf_name = 'AutoEncoder'
-            self.clf = auto_encoder.AutoEncoder(
+            self.val_scores = []
+            clf = auto_encoder.AutoEncoder(
                 contamination=args.contamination,
                 epoch_num=args.epoch,
                 batch_size=args.batch_size,
                 device=self.device,
             )
+            clf = ValidationWrapper(clf, self.val_scores)
+            self.clf = clf
         else:
             raise ValueError(f"Unknown OOD detector type: {args.ood_detector}")
 
@@ -251,3 +259,6 @@ class OODPolicy(Policy):
         if not torch.is_tensor(data):
             return torch.from_numpy(data).float().to(self.device)
         return data
+
+    def get_val_scores(self):
+        return self.val_scores
