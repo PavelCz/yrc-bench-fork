@@ -9,7 +9,7 @@ from YRC.core import Policy
 from lib.pyod.pyod.models import deep_svdd, auto_encoder
 from joblib import dump, load
 from YRC.core.configs.global_configs import get_global_variable
-from YRC.policies.wrappers import ValidationWrapper
+from YRC.models.utils import AutoEncoderWithVal
 
 
 class OODPolicy(Policy):
@@ -130,6 +130,10 @@ class OODPolicy(Policy):
             x = x.cpu()
             # Flatten the observations.
             x = x.reshape(x.shape[0], -1)
+
+            x_threshold = x_threshold.cpu()
+            x_threshold = x_threshold.reshape(x_threshold.shape[0], -1)
+
             self.clf.set_validation_loader(x_threshold)
             self.clf.fit(x, y)
         else:
@@ -215,13 +219,13 @@ class OODPolicy(Policy):
         elif self.args.method == "AutoEncoder":
             self.clf_name = 'AutoEncoder'
             self.val_scores = []
-            clf = auto_encoder.AutoEncoder(
+            clf = AutoEncoderWithVal(
                 contamination=args.contamination,
                 epoch_num=args.epoch,
                 batch_size=args.batch_size,
                 device=self.device,
+                score_list=self.val_scores,
             )
-            clf = ValidationWrapper(clf, self.val_scores)
             self.clf = clf
         else:
             raise ValueError(f"Unknown OOD detector type: {args.ood_detector}")

@@ -2,6 +2,9 @@ import math
 import importlib
 import torch
 import torch.nn as nn
+import logging
+from typing import List
+import numpy as np
 
 if importlib.util.find_spec("gymnasium") is None:
     import gym
@@ -9,6 +12,12 @@ else:
     import gymnasium as gym
 import numpy as np
 import re
+
+# Import the AutoEncoder base class
+from lib.pyod.pyod.models.auto_encoder import AutoEncoder
+from torch.utils.data import DataLoader
+from sklearn.utils import check_array
+from lib.pyod.pyod.utils.torch_utility import TorchDataset
 
 
 def orthogonal_init(module, gain=nn.init.calculate_gain("relu")):
@@ -214,3 +223,91 @@ def get_obss_preprocessor(obs_space):
         raise ValueError("Unknown observation space: " + str(obs_space))
 
     return obs_space, preprocess_obss
+
+
+class AutoEncoderWithVal(AutoEncoder):
+    """
+    AutoEncoder with validation functionality built-in.
+    
+    This subclass extends AutoEncoder to include validation during training.
+    It automatically evaluates the model on a validation dataset after each epoch
+    and stores the validation scores for later analysis.
+    
+    Additional Parameters
+    ----------
+    validation_loader : torch.utils.data.DataLoader, optional (default=None)
+        The data loader for validation data. Can be set later using set_validation_loader().
+        
+    score_list : List[np.ndarray], optional (default=None)
+        List to store validation scores from each epoch. If None, a new list will be created.
+    """
+    
+    def __init__(self,
+                 contamination=0.1, preprocessing=True,
+                 lr=1e-3, epoch_num=10, batch_size=32,
+                 optimizer_name='adam',
+                 device=None, random_state=42,
+                 use_compile=False, compile_mode='default',
+                 verbose=1,
+                 optimizer_params: dict = {'weight_decay': 1e-5},
+                 hidden_neuron_list=[64, 32],
+                 hidden_activation_name='relu',
+                 batch_norm=True, dropout_rate=0.2,
+                 validation_loader: DataLoader = None,
+                 score_list: List[np.ndarray] = None):
+        
+        super(AutoEncoderWithVal, self).__init__(
+            contamination=contamination,
+            preprocessing=preprocessing,
+            lr=lr, epoch_num=epoch_num, batch_size=batch_size,
+            optimizer_name=optimizer_name,
+            device=device, random_state=random_state,
+            use_compile=use_compile, compile_mode=compile_mode,
+            verbose=verbose,
+            optimizer_params=optimizer_params,
+            hidden_neuron_list=hidden_neuron_list,
+            hidden_activation_name=hidden_activation_name,
+            batch_norm=batch_norm, dropout_rate=dropout_rate)
+        
+        self._validation_loader = validation_loader
+        self.score_list = score_list if score_list is not None else []
+        
+    def set_validation_loader(self, dataset: np.ndarray):
+        """Set the validation data loader."""
+        dataset = check_array(dataset)
+
+        if self.preprocessing:
+            self.X_mean = np.mean(dataset, axis=0)
+            self.X_std = np.std(dataset, axis=0)
+            val_set = TorchDataset(X=dataset, y=None,
+                                     mean=self.X_mean, std=self.X_std)
+        else:
+            val_set = TorchDataset(X=dataset, y=None)
+
+        val_loader = DataLoader(val_set, batch_size=self.batch_size, shuffle=False)
+        self._validation_loader = val_loader
+        
+    def epoch_update(self):
+        """
+        Called after each training epoch.
+        Runs validation if validation loader is available and stores the scores.
+        """
+        # Call parent's epoch_update in case it has any functionality
+        super().epoch_update()
+        
+        if self._validation_loader is None:
+            logging.warning(
+                "No validation loader set for OOD detector. Skipping validation."
+            )
+            return
+            
+        if self.score_list is None:
+            raise ValueError("Score list is not set for OOD detector.")
+        
+        # Evaluate on validation data
+        scores = self.evaluate(self._validation_loader)
+        # Save the scores to the score list for later analysis
+        self.score_list.append(scores)
+        
+        # Since evaluate() sets the model to eval mode, we need to set it back to train mode
+        self.model.train()
