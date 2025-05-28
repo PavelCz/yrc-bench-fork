@@ -25,9 +25,6 @@ class OODPolicy(Policy):
         self.device = get_global_variable("device")
         self.feature_type = config.coord_policy.feature_type
 
-        # This is only used by those OOD detectors that support a validation set.
-        self.val_scores = None
-
     def gather_rollouts(self, env, num_rollouts):
         assert num_rollouts % env.num_envs == 0
         observations = []
@@ -134,7 +131,7 @@ class OODPolicy(Policy):
             x_threshold = x_threshold.cpu()
             x_threshold = x_threshold.reshape(x_threshold.shape[0], -1)
 
-            self.clf.set_validation_loader(x_threshold)
+            self.clf.set_loaders(x, x_threshold)
             self.clf.fit(x, y)
         else:
             raise ValueError(f"Unknown OOD detector type: {self.clf_name}")
@@ -218,13 +215,11 @@ class OODPolicy(Policy):
             self.clf.model_.to(self.device)
         elif self.args.method == "AutoEncoder":
             self.clf_name = 'AutoEncoder'
-            self.val_scores = []
             clf = AutoEncoderWithVal(
                 contamination=args.contamination,
                 epoch_num=args.epoch,
                 batch_size=args.batch_size,
                 device=self.device,
-                score_list=self.val_scores,
             )
             self.clf = clf
         else:
@@ -263,6 +258,3 @@ class OODPolicy(Policy):
         if not torch.is_tensor(data):
             return torch.from_numpy(data).float().to(self.device)
         return data
-
-    def get_val_scores(self):
-        return self.val_scores

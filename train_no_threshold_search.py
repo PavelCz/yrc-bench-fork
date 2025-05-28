@@ -12,6 +12,7 @@ if __name__ == "__main__":
     args = flags.make()
     config = config_utils.load(args.config, flags=args)
 
+
     envs = env_factory.make(config)
     policy = policy_factory.make(config, envs["train"])
     evaluator = Evaluator(config.evaluation)

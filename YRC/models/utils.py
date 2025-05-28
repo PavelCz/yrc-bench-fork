@@ -242,19 +242,20 @@ class AutoEncoderWithVal(AutoEncoder):
         List to store validation scores from each epoch. If None, a new list will be created.
     """
     
-    def __init__(self,
-                 contamination=0.1, preprocessing=True,
-                 lr=1e-3, epoch_num=10, batch_size=32,
-                 optimizer_name='adam',
-                 device=None, random_state=42,
-                 use_compile=False, compile_mode='default',
-                 verbose=1,
-                 optimizer_params: dict = {'weight_decay': 1e-5},
-                 hidden_neuron_list=[64, 32],
-                 hidden_activation_name='relu',
-                 batch_norm=True, dropout_rate=0.2,
-                 validation_loader: DataLoader = None,
-                 score_list: List[np.ndarray] = None):
+    def __init__(
+            self,
+            contamination=0.1, preprocessing=True,
+            lr=1e-3, epoch_num=10, batch_size=32,
+            optimizer_name='adam',
+            device=None, random_state=42,
+            use_compile=False, compile_mode='default',
+            verbose=1,
+            optimizer_params: dict = {'weight_decay': 1e-5},
+            hidden_neuron_list=[64, 32],
+            hidden_activation_name='relu',
+            batch_norm=True, dropout_rate=0.2,
+            training_loader: DataLoader = None,
+        ):
         
         super(AutoEncoderWithVal, self).__init__(
             contamination=contamination,
@@ -269,23 +270,35 @@ class AutoEncoderWithVal(AutoEncoder):
             hidden_activation_name=hidden_activation_name,
             batch_norm=batch_norm, dropout_rate=dropout_rate)
         
-        self._validation_loader = validation_loader
-        self.score_list = score_list if score_list is not None else []
+        self._validation_loader = None
+        self.val_score_list = []
+        self.training_loader = training_loader
+        self.training_score_list = []
         
-    def set_validation_loader(self, dataset: np.ndarray):
+    def set_loaders(self, train_dataset: np.ndarray, val_dataset: np.ndarray):
         """Set the validation data loader."""
-        dataset = check_array(dataset)
+        train_dataset = check_array(train_dataset)
+        val_dataset = check_array(val_dataset)
 
         if self.preprocessing:
-            self.X_mean = np.mean(dataset, axis=0)
-            self.X_std = np.std(dataset, axis=0)
-            val_set = TorchDataset(X=dataset, y=None,
-                                     mean=self.X_mean, std=self.X_std)
+            X_mean = np.mean(train_dataset, axis=0)
+            X_std = np.std(train_dataset, axis=0)
+            train_set = TorchDataset(X=train_dataset, y=None,
+                                     mean=X_mean, std=X_std)
+            X_mean = np.mean(val_dataset, axis=0)
+            X_std = np.std(val_dataset, axis=0)
+            val_set = TorchDataset(X=val_dataset, y=None,
+                                     mean=X_mean, std=X_std)
         else:
-            val_set = TorchDataset(X=dataset, y=None)
+            train_set = TorchDataset(X=train_dataset, y=None)
+            val_set = TorchDataset(X=val_dataset, y=None)
 
-        val_loader = DataLoader(val_set, batch_size=self.batch_size, shuffle=False)
-        self._validation_loader = val_loader
+        self.training_loader = DataLoader(
+            train_set, batch_size=self.batch_size, shuffle=True
+        )
+        self._validation_loader = DataLoader(
+            val_set, batch_size=self.batch_size, shuffle=False
+        )
         
     def epoch_update(self):
         """
@@ -300,14 +313,13 @@ class AutoEncoderWithVal(AutoEncoder):
                 "No validation loader set for OOD detector. Skipping validation."
             )
             return
-            
-        if self.score_list is None:
-            raise ValueError("Score list is not set for OOD detector.")
-        
         # Evaluate on validation data
-        scores = self.evaluate(self._validation_loader)
+        val_scores = self.evaluate(self._validation_loader)
         # Save the scores to the score list for later analysis
-        self.score_list.append(scores)
+        self.val_score_list.append(val_scores)
+        training_scores = self.evaluate(self.training_loader)
+        self.training_score_list.append(training_scores)
         
-        # Since evaluate() sets the model to eval mode, we need to set it back to train mode
+        # Since evaluate() sets the model to eval mode, we need to set it back to train 
+        # mode.
         self.model.train()
