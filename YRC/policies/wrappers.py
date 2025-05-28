@@ -7,7 +7,8 @@ from torch.utils.data import DataLoader
 from YRC.core import Policy
 from YRC.core.configs.global_configs import get_global_variable
 import logging
-
+from typing import List
+import numpy as np
 
 class ExploreWrapper(Policy):
     def __init__(self, config, env, policy):
@@ -65,7 +66,7 @@ class ValidationWrapper:
     def __init__(
             self,
             detector: BaseDeepLearningDetector,
-            score_list: list[float],
+            score_list: List[np.ndarray],
         ):
         self._detector = detector
         self._validation_loader = None

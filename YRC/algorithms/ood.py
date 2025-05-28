@@ -35,6 +35,10 @@ class OODAlgorithm(Algorithm):
         # Train OOD detector
         policy.fit(x=rollout_obs, x_threshold=rollout_obs_threshold)
 
+        val_scores = policy.get_val_scores()
+        if val_scores is not None:
+            np.save(f"{self.save_dir}/val_scores.npy", np.array(val_scores))
+
         if do_threshold_search:
             # Threshold search
             thresholds_min, thresholds_max = (
