@@ -1,0 +1,27 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Train No Threshold Coinrun OOD",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train_no_threshold_search.py",
+            "args": [
+                "-c", "configs/procgen_ood.yaml",
+                "-n", "debug_ood",
+                "-en", "coinrun",
+                "-sim", "YRC/checkpoints/procgen/coinrun/sim_weak/model_40009728.pth",
+                "-weak", "YRC/checkpoints/procgen/coinrun/weak/model_80019456.pth",
+                "-strong", "YRC/checkpoints/procgen/coinrun/strong/model_200015872.pth",
+                "-cp_feature", "obs",
+                "-cp_method", "AutoEncoder",
+                "-query_cost", "0",
+                "-cp_epoch", "3",
+                "-over"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+} 

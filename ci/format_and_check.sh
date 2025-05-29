@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+# If you change these, also change .circle/config.yml.
+# Separate like this: SRC_FILES=(src/ tests/ setup.py)
+SRC_FILES=("")
+EXCLUDED_FILES=("")
+
+set -x  # echo commands
+set -e  # quit immediately on error
+
+# Run ruff as formatter (black-ish and isort-ish).
+ruff format "${SRC_FILES[@]}" --exclude "${EXCLUDED_FILES[@]}"
+# Run ruff as linter (flake8-ish).
+ruff check "${SRC_FILES[@]}" --exclude "${EXCLUDED_FILES[@]}"
+pytype "${SRC_FILES[@]}" --exclude "${EXCLUDED_FILES[@]}"
