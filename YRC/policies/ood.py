@@ -220,6 +220,7 @@ class OODPolicy(Policy):
                 epoch_num=args.epoch,
                 batch_size=args.batch_size,
                 device=self.device,
+                preprocessing=False,
             )
             self.clf = clf
         else:
