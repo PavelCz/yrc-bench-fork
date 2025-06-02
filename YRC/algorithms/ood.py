@@ -20,7 +20,6 @@ class OODAlgorithm(Algorithm):
         train_split=None,
         eval_splits=None,
         do_threshold_search=True,
-        num_percentiles=10,
     ):
         args = self.args
         best_summary = {split: {"reward_mean": -1e9} for split in eval_splits}
