@@ -12,6 +12,8 @@ coord_policy:
         cls: PPOPolicy
     ood:
         cls: OODPolicy
+    lightning_ae:
+        cls: LightningAEPolicy
 coord_env:
     procgen:
         strong_query_cost_ratio: 0.4
@@ -150,3 +152,8 @@ algorithm:
         epoch: 100
         batch_size: 64
         feature_size: 64
+    lightning_ae:
+        cls: AutoencoderAlgorithm
+        epoch: 100
+        batch_size: 64
+        model_config_path: 'lib/pytorch_vae/configs/base_ae.yaml'

@@ -6,7 +6,7 @@ import YRC.core.policy as policy_factory
 from YRC.core import Evaluator
 
 # Algorithms that support training without threshold search.
-ALGORITHMS = ["ood"]
+ALGORITHMS = ["ood", "lightning_ae"]
 
 if __name__ == "__main__":
     args = flags.make()

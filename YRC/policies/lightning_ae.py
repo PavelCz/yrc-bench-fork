@@ -106,14 +106,14 @@ class LightningAEPolicy(OODPolicy):
 
         self.batch_size = args.batch_size
 
-        epochs = args.epochs
+        epochs = args.epoch
 
         # Adjust model config based on input shape
         # if len(dummy_obs_shape) > 2:  # Image data
         #     self.model_config["in_channels"] = (
         #         dummy_obs_shape[1] if len(dummy_obs_shape) == 4 else dummy_obs_shape[0]
         #     )
-        method_name = args.method
+        method_name = self.args.method
         model_config_path = args.model_config_path
         with open(model_config_path, "r") as file:
             try:
