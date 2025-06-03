@@ -128,12 +128,12 @@ class LightningAEPolicy(OODPolicy):
                 f"Available models: {list(vae_models.keys())}"
             )
 
-        self.clf = vae_models[method_name](**model_config)
-        self.experiment = VAEXperiment(self.clf, self.exp_config)
+        self.clf = vae_models[method_name](**model_config["model_params"])
+        self.experiment = VAEXperiment(self.clf, model_config["exp_params"])
 
-        tb_logger = TensorBoardLogger(
-            save_dir=self.args.save_dir, name=self.args.exp_name
-        )
+        save_dir = get_global_variable("experiment_dir")
+
+        tb_logger = TensorBoardLogger(save_dir=save_dir, name=self.args.exp_name)
 
         self.runner = Trainer(
             logger=tb_logger,
@@ -157,9 +157,9 @@ class LightningAEPolicy(OODPolicy):
         # Set clf_name for compatibility but use self.model instead of self.clf
         self.clf_name = "LightningAE"
 
-        logging.info(f"Initialized Lightning AE model: {self.model_config['name']}")
+        logging.info(f"Initialized Lightning AE model: {method_name}")
         logging.info(f"Input shape: {dummy_obs_shape}")
-        logging.info(f"Latent dim: {self.model_config['latent_dim']}")
+        logging.info(f"Latent dim: {model_config['model_params']['latent_dim']}")
 
     def decision_function(self, x: Union[torch.Tensor, np.ndarray]) -> np.ndarray:
         """Compute anomaly scores for input samples using the Lightning model."""
@@ -222,6 +222,9 @@ class LightningAEPolicy(OODPolicy):
         train_loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
 
         self.runner.fit(self.experiment, train_loader)
+
+        # Run test run to generate samples.
+        self.runner.test(self.experiment, train_loader)
 
         # Compute decision scores for threshold setting
         # self.decision_scores_ = self._compute_decision_scores(x)
