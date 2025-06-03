@@ -157,3 +157,4 @@ algorithm:
         epoch: 100
         batch_size: 64
         model_config_path: 'lib/pytorch_vae/configs/base_ae.yaml'
+        num_rollouts: 64
