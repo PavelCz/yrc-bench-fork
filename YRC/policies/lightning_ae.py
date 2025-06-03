@@ -10,14 +10,14 @@ import sys
 
 from YRC.policies.ood import OODPolicy
 from YRC.core.configs.global_configs import get_global_variable
+from YRC.core.dataset import ObservationDataset, ObservationDataModule
 
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.plugins import DDPPlugin
 from pytorch_lightning.loggers import TensorBoardLogger
-from torch.utils.data import TensorDataset
-from torch.utils.data import DataLoader
 import yaml
+
 
 # Add pytorch_vae to Python path.
 # This is somewhat awkward, but necessary since we're inlcuding pytorch_vae as a git
@@ -121,6 +121,12 @@ class LightningAEPolicy(OODPolicy):
             except yaml.YAMLError as exc:
                 print(exc)
 
+        # For later dataset initialization.
+        self.data_config = model_config["data_params"].copy()
+        # Remove params we don't need. I'd rather be explicit about this than drop
+        # things silently.
+        self.data_config.pop("data_path")
+
         # Initialize model
         if method_name not in vae_models:
             raise ValueError(
@@ -218,13 +224,21 @@ class LightningAEPolicy(OODPolicy):
         )
 
         # Turn sequence of observations x into a dataset
-        dataset = TensorDataset(x)
-        train_loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+        train_dataset = ObservationDataset(x)
+        test_dataset = ObservationDataset(x_threshold)
 
-        self.runner.fit(self.experiment, train_loader)
+        datamodule = ObservationDataModule(
+            **self.data_config,
+            train_dataset_torch=train_dataset,
+            test_dataset_torch=test_dataset,
+            test_batch_size=self.batch_size,
+        )
 
-        # Run test run to generate samples.
-        self.runner.test(self.experiment, train_loader)
+        self.runner.fit(self.experiment, datamodule=datamodule)
+
+        # Run test run to generate samples. Uses test dataset from datamodule as
+        # specified above.
+        self.runner.test(self.experiment)
 
         # Compute decision scores for threshold setting
         # self.decision_scores_ = self._compute_decision_scores(x)
