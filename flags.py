@@ -58,6 +58,13 @@ def make():
     parser.add_argument("-cp_method", "--coord_policy.method", type=str,
                         choices=["DeepSVDD", "AutoEncoder"],
                         help="method for detecting OOD samples")
+    
+    parser.add_argument(
+        "-cp_model_config_path", 
+        "--coord_policy.model_config_path", 
+        type=str,
+        help="path to the model config file"
+    )
 
     parser.add_argument(
         "-cp_epoch", 
