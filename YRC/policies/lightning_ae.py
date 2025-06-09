@@ -57,6 +57,9 @@ class LightningAEPolicy(OODPolicy):
         self.threshold_: float = 0.0
         self.decision_scores_: Optional[np.ndarray] = None
 
+        self.runner: Optional[Trainer] = None
+        self.data_config: Optional[Dict[str, Any]] = None
+
     def initialize_ood_detector(self, args: Any, env: Any) -> None:
         """Initialize the Lightning autoencoder model."""
         dummy_obs: Dict[str, Any] = env.reset()
@@ -136,7 +139,7 @@ class LightningAEPolicy(OODPolicy):
 
         self.clf = vae_models[method_name](**model_config["model_params"])
 
-        save_dir = Path(get_global_variable("experiment_dir"))
+        save_dir = Path(str(get_global_variable("experiment_dir")))
 
         # First, define some default params. This is for exp_params.
         exp_params = {

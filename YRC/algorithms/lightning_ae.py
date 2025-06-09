@@ -32,7 +32,7 @@ class AutoencoderAlgorithm(Algorithm):
         train_split: Optional[str] = None,
         eval_splits: Optional[List[str]] = None,
         do_threshold_search: bool = True,
-    ) -> Dict[str, Any]:  # pytype: disable=signature-mismatch
+    ):
         """
         Train an autoencoder model using PyTorch Lightning and LightningAEPolicy.
         Now follows the same pattern as OODAlgorithm.
