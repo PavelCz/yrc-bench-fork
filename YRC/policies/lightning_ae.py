@@ -242,11 +242,15 @@ class LightningAEPolicy(OODPolicy):
         train_dataset = ObservationDataset(x)
         test_dataset = ObservationDataset(x_threshold)
 
+        # Remove args that we override.
+        self.data_config.pop("num_workers")
+
         datamodule = ObservationDataModule(
             **self.data_config,
+            # Reset num workers since this was causing issues.
+            num_workers=0,
             train_dataset_torch=train_dataset,
             test_dataset_torch=test_dataset,
-            test_batch_size=self.batch_size,
         )
 
         self.runner.fit(self.experiment, datamodule=datamodule)
