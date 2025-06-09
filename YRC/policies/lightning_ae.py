@@ -137,9 +137,18 @@ class LightningAEPolicy(OODPolicy):
         self.clf = vae_models[method_name](**model_config["model_params"])
         self.experiment = VAEXperiment(self.clf, model_config["exp_params"])
 
+        self.experiment.to(self.device)
+
         save_dir = get_global_variable("experiment_dir")
 
         tb_logger = TensorBoardLogger(save_dir=save_dir, name=self.args.exp_name)
+        
+        if self.device.type == "cuda":
+            accelerator = "auto"
+        elif self.device.type == "cpu":
+            accelerator = "cpu"
+        else:
+            raise ValueError(f"Invalid device type: {self.device.type}")
 
         self.runner = Trainer(
             logger=tb_logger,
@@ -155,6 +164,8 @@ class LightningAEPolicy(OODPolicy):
             ],
             strategy=DDPPlugin(find_unused_parameters=False),
             max_epochs=epochs,
+            accelerator=accelerator,
+            # devices=self.device.index,
         )
 
         # Move to device
@@ -222,6 +233,10 @@ class LightningAEPolicy(OODPolicy):
         logging.info(
             "Lightning AE Policy: Computing decision scores for threshold setting"
         )
+
+
+        x = x.to(self.device)
+        x_threshold = x_threshold.to(self.device)
 
         # Turn sequence of observations x into a dataset
         train_dataset = ObservationDataset(x)
