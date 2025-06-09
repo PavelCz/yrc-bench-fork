@@ -68,7 +68,10 @@ def load(yaml_file_or_str, flags=None):
     np.random.seed(seed)
     # config.random = random.Random(seed)
 
-    config.general.device = torch.device("cuda", config.general.device)
+    if config.general.device == -1:
+        config.general.device = torch.device("cpu")
+    else:
+        config.general.device = torch.device("cuda", config.general.device)
     set_global_variable("device", config.general.device)
     set_global_variable("benchmark", config.general.benchmark)
     set_global_variable("experiment_dir", config.experiment_dir)
