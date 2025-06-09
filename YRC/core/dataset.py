@@ -109,8 +109,8 @@ class ObservationDataModule(LightningDataModule):
         self.sampled_img_names.extend(img_names)
         self.sampled_img_losses.extend(losses)
 
-    # def on_epoch_end(self):
-    #     if self.difficulty_sampler is not None:
-    #         self.difficulty_sampler.update_img_difficulties(self.sampled_img_names, self.sampled_img_losses)
-    #     self.sampled_img_names = []
-    #     self.sampled_img_losses = []
+    def on_epoch_end(self):
+        if self.difficulty_sampler is not None:
+            self.difficulty_sampler.update_img_difficulties(self.sampled_img_names, self.sampled_img_losses)
+        self.sampled_img_names = []
+        self.sampled_img_losses = []
