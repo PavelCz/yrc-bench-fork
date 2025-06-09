@@ -135,14 +135,27 @@ class LightningAEPolicy(OODPolicy):
             )
 
         self.clf = vae_models[method_name](**model_config["model_params"])
-        self.experiment = VAEXperiment(self.clf, model_config["exp_params"])
+
+        save_dir = Path(get_global_variable("experiment_dir"))
+
+        # First, define some default params. This is for exp_params.
+        exp_params = {
+            "dont_annotate_loss": False,
+            "extra_image_outputs": False,
+            "test_output_dir": str(save_dir / "full_test_output"),
+            "histogram_only": False,
+        }
+        new_exp_params = model_config["exp_params"]
+        exp_params.update(new_exp_params)
+
+        self.experiment = VAEXperiment(self.clf, exp_params)
 
         self.experiment.to(self.device)
 
         save_dir = get_global_variable("experiment_dir")
 
         tb_logger = TensorBoardLogger(save_dir=save_dir, name=self.args.exp_name)
-        
+
         if self.device.type == "cuda":
             accelerator = "auto"
         elif self.device.type == "cpu":
@@ -233,7 +246,6 @@ class LightningAEPolicy(OODPolicy):
         logging.info(
             "Lightning AE Policy: Computing decision scores for threshold setting"
         )
-
 
         x = x.to(self.device)
         x_threshold = x_threshold.to(self.device)

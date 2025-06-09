@@ -18,7 +18,7 @@ class ObservationDataset(Dataset):
         return self.observations.size(0)
 
     def __getitem__(self, idx):
-        return self.observations[idx], 0.0, f"observation_{idx}"
+        return self.observations[idx], 0.0, f"observation_{idx}.png"
 
 
 class ObservationDataModule(LightningDataModule):
@@ -111,6 +111,8 @@ class ObservationDataModule(LightningDataModule):
 
     def on_epoch_end(self):
         if self.difficulty_sampler is not None:
-            self.difficulty_sampler.update_img_difficulties(self.sampled_img_names, self.sampled_img_losses)
+            self.difficulty_sampler.update_img_difficulties(
+                self.sampled_img_names, self.sampled_img_losses
+            )
         self.sampled_img_names = []
         self.sampled_img_losses = []
