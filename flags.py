@@ -97,6 +97,20 @@ def make():
 
     parser.add_argument("-seed", "--general.seed", type=int,
                         help="random seed")
+
+    parser.add_argument(
+        "-num_rollouts", 
+        "--algorithm.num_rollouts", 
+        type=int,
+        help="number of rollouts to collect for training"
+    )
+    
+    parser.add_argument(
+        "-num_envs", 
+        "--environment.common.num_envs", 
+        type=int,
+        help="number of environments to run in parallel"
+    )
     
     # Additional flags for evaluation.
     parser.add_argument(
