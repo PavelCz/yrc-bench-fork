@@ -257,7 +257,7 @@ class LightningAEPolicy(OODPolicy):
 
         # Run test run to generate samples. Uses test dataset from datamodule as
         # specified above.
-        self.runner.test(self.experiment)
+        self.runner.test(self.experiment, datamodule=datamodule)
 
         # Compute decision scores for threshold setting
         # self.decision_scores_ = self._compute_decision_scores(x)
