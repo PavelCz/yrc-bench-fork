@@ -294,16 +294,34 @@ class LightningAEPolicy(OODPolicy):
         Act chooses to either ask for help or not, which is equivalent to asking whther
         the input observation is normal or OOD.
         """
+        keys = {
+            "obs": ["env_obs"],
+            "hidden": ["weak_features"],
+            "dist": ["weak_logit"],
+            "hidden_obs": ["env_obs", "weak_features"],
+            "hidden_dist": ["weak_features", "weak_logit"],
+            "obs_dist": ["env_obs", "weak_logit"],
+            "obs_hidden_dist": ["env_obs", "weak_features", "weak_logit"],
+        }[self.feature_type]
 
-        obs = torch.from_numpy(obs).to(self.device)
-        obs = obs.unsqueeze(0)
+        if get_global_variable("benchmark") in ["cliport", "minigrid"]:
+            observation = [
+                self.to_tensor(
+                    obs[key]["image"] if key == "env_obs" else self.to_tensor(obs[key])
+                )
+                for key in keys
+            ]
+        else:
+            observation = [self.to_tensor(obs[key]) for key in keys]
+
+        if self.feature_type in ["obs", "hidden", "dist"]:
+            observation = observation[0]
 
         # Get decision score for the observation.
-        scores: np.ndarray = self._compute_decision_scores(obs)
-        score = scores[0]
+        scores: np.ndarray = self._compute_decision_scores(observation)
 
         # Use our own threshold instead of self.clf.threshold_
-        action: np.ndarray = (score > self.threshold_).astype(int)
+        action: np.ndarray = (scores > self.threshold_).astype(int)
 
         if not np.any(action == 0) and not np.any(action == 1):
             logging.warning("No action selected as normal or OOD")

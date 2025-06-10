@@ -28,6 +28,29 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Eval Thresholds Coinrun OOD AE",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/eval_thresholds.py",
+            "args": [
+                "-c", "configs/procgen_ae.yaml",
+                "-n", "debug_ood",
+                "-en", "coinrun",
+                "-sim", "YRC/checkpoints/procgen/coinrun/sim_weak/model_40009728.pth",
+                "-weak", "YRC/checkpoints/procgen/coinrun/weak/model_80019456.pth",
+                "-strong", "YRC/checkpoints/procgen/coinrun/strong/model_200015872.pth",
+                "-cp_method", "Autoencoder",
+                "-cp_feature", "obs",
+                "-f_n", "trained.pt",
+                "-query_cost", "0",
+                "-over",
+                "-seed", "1"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}"
         }
     ]
 } 
