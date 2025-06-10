@@ -54,8 +54,8 @@ class LightningAEPolicy(OODPolicy):
         self.batch_size = None
 
         # OOD detection attributes
-        self.threshold_: float = 0.0
-        self.decision_scores_: Optional[np.ndarray] = None
+        # self.threshold_: float = 0.0
+        self._train_decision_scores: Optional[np.ndarray] = None
 
         self.runner: Optional[Trainer] = None
         self.data_config: Optional[Dict[str, Any]] = None
@@ -398,80 +398,44 @@ class LightningAEPolicy(OODPolicy):
 
     def save_model(self, name: str, save_dir: str) -> None:
         """
-        Override parent save_model to save Lightning model instead of self.clf.
+        Override parent save_model to save Lightning model and decision scores.
         """
         save_path: Path = Path(save_dir) / f"{name}.pt"
         save_path.parent.mkdir(parents=True, exist_ok=True)
 
-        torch.save(self.clf, save_path)
+        # Save model and decision scores together
+        save_dict = {
+            "model": self.clf,
+            "_train_decision_scores": self._train_decision_scores,
+            "clf_name": self.clf_name,
+        }
 
-        # Save Lightning checkpoint separately
-        # ckpt_path: str = Path(save_dir) / f"{name}_lightning.ckpt"
-        # if self.experiment is not None and hasattr(self.experiment, "trainer"):
-        #     self.experiment.trainer.save_checkpoint(ckpt_path)
-
-        # Save policy state (compatible with parent class structure)
-        # state_dict: Dict[str, Any] = {
-        #     "clf": self.clf,
-        #     "class_name": self.__class__.__name__,
-        #     "clf_name": self.clf_name,
-        #     # "model_config": self.model_config,
-        #     # "exp_config": self.exp_config,
-        #     # "params": self.params,
-        #     # "threshold_": self.threshold_,
-        #     # "decision_scores_": self.decision_scores_,
-        #     # "contamination": self.contamination,
-        #     # "feature_type": self.feature_type,
-        #     # "lightning_ckpt_path": ckpt_path,
-        # }
-
-        # from joblib import dump
-
-        # dump(state_dict, save_path)
-        # logging.info(f"Saved Lightning AE policy to {save_path}")
+        torch.save(save_dict, save_path)
+        logging.info(f"Saved Lightning AE policy with decision scores to {save_path}")
 
     def load_model(self, load_dir: str) -> "LightningAEPolicy":
         """
-        Override parent load_model to load Lightning model instead of self.clf.
+        Override parent load_model to load Lightning model and decision scores.
         """
         load_path: Path = Path(load_dir)
-        self.clf = torch.load(load_path)
+
+        # Load the saved dictionary
+        save_dict = torch.load(load_path, map_location=self.device)
+
+        # Restore model
+        self.clf = save_dict["model"]
         self.clf.to(self.device)
-        self.clf_name = "LightningAE"
-        logging.info(f"Loaded Lightning AE model from {load_path}")
+
+        # Restore decision scores and other attributes
+        self._train_decision_scores = save_dict.get("_train_decision_scores", None)
+        self.clf_name = save_dict.get("clf_name", "LightningAE")
+
+        logging.info(f"Loaded Lightning AE model with decision scores from {load_path}")
+        logging.info(
+            f"Restored decision scores: train_scores={'present' if self._train_decision_scores is not None else 'None'}"
+        )
+
         return self
-
-        # load_dir = Path(load_dir)
-
-        # if load_dir.endswith(".joblib"):
-        #     state_dict: Dict[str, Any] = load(load_dir)
-        # else:
-        #     state_dict = load(load_dir / "model.joblib")
-
-        # self.model_config = state_dict["model_config"]
-        # self.exp_config = state_dict["exp_config"]
-        # self.params = state_dict["params"]
-        # self.threshold_ = state_dict.get("threshold_", 0.0)
-        # self.decision_scores_ = state_dict.get("decision_scores_")
-        # self.contamination = state_dict.get("contamination", 0.1)
-        # self.feature_type = state_dict["feature_type"]
-        # self.clf_name = state_dict.get("clf_name", "LightningAE")
-
-        # # Reinitialize Lightning model
-        # self.clf = vae_models[self.model_config["name"]](**self.model_config)
-        # self.experiment = VAEXperiment(self.clf, self.exp_config)
-
-        # # Load Lightning checkpoint if available
-        # ckpt_path: Optional[str] = state_dict.get("lightning_ckpt_path")
-        # if ckpt_path and os.path.exists(ckpt_path):
-        #     self.experiment = VAEXperiment.load_from_checkpoint(
-        #         ckpt_path, vae_model=self.clf, params=self.exp_config
-        #     )
-        #     self.clf = self.experiment.model
-
-        # self.clf.to(self.device)
-
-        # return self
 
     def to_tensor(
         self, data: Union[np.ndarray, torch.Tensor, Dict[str, Any], tuple]
