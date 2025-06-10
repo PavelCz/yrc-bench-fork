@@ -60,8 +60,8 @@ def make():
                         help="method for detecting OOD samples")
     
     parser.add_argument(
-        "-cp_model_config_path", 
-        "--coord_policy.model_config_path", 
+        "-model_config_path", 
+        "--algorithm.model_config_path", 
         type=str,
         help="path to the model config file"
     )

@@ -17,6 +17,7 @@
                 "-cp_feature", "obs",
                 // "-cp_method", "AutoEncoder",
                 "-cp_method", "Autoencoder",
+                "-model_config_path", "lib/pytorch_vae/configs/mssim_ae.yaml",
                 "-query_cost", "0",
                 "-cp_epoch", "3",
                 "-over",
