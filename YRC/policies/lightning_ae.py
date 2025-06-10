@@ -275,54 +275,65 @@ class LightningAEPolicy(OODPolicy):
         self.runner.test(self.experiment, datamodule=datamodule)
 
         # Compute decision scores for threshold setting
-        # self.decision_scores_ = self._compute_decision_scores(x)
+        self._train_decision_scores = self._compute_decision_scores(x)
 
     def _compute_decision_scores(self, x: torch.Tensor) -> np.ndarray:
         """Compute reconstruction error scores on the training data."""
         if self.clf is None:
             raise ValueError("Model not initialized")
 
-        raise NotImplementedError("Decision function not implemented for Lightning AE")
-
         self.clf.eval()
+
+        self.clf.to(self.device)
+
         scores: List[float] = []
 
         with torch.no_grad():
-            batch_size: int = 32  # Process in batches to avoid memory issues
-            for i in range(0, len(x), batch_size):
-                batch: torch.Tensor = x[i : i + batch_size].to(self.device)
+            # Go through each observation in the dataset.
+            for i in range(0, len(x)):
+                img: torch.Tensor = x[i].to(self.device)
+                # Add a batch dimension.
+                batch = img.unsqueeze(0)
 
                 # Handle different input types
-                if len(batch.shape) == 2:  # Flattened data
-                    # Reshape to appropriate image format if needed
-                    if self.feature_type == "obs":
-                        # Assume square images, infer dimensions
-                        size: int = int(
-                            np.sqrt(batch.shape[1] // self.model_config["in_channels"])
-                        )
-                        batch = batch.view(
-                            -1, self.model_config["in_channels"], size, size
-                        )
+                # if len(batch.shape) == 2:  # Flattened data
+                #     # Reshape to appropriate image format if needed
+                #     if self.feature_type == "obs":
+                #         # Assume square images, infer dimensions
+                #         size: int = int(
+                #             np.sqrt(batch.shape[1] // self.model_config["in_channels"])
+                #         )
+                #         batch = batch.view(
+                #             -1, self.model_config["in_channels"], size, size
+                #         )
 
                 # Get reconstruction
                 if hasattr(self.clf, "forward"):
-                    reconstruction: torch.Tensor = self.clf(batch)[
-                        0
-                    ]  # First output is reconstruction
+                    # In case, e.g., there are skip connections, we want to use the full
+                    # forward pass.
+                    reconstruction: torch.Tensor
+                    reconstruction, _input, recons_features, input_features = self.clf(
+                        batch
+                    )
                 else:
                     reconstruction = self.clf.decode(self.clf.encode(batch)[0])
+                    recons_features = None
+                    input_features = None
 
-                # Compute reconstruction error (MSE)
-                mse: torch.Tensor = F.mse_loss(reconstruction, batch, reduction="none")
-                # Average over all dimensions except batch
-                mse = mse.view(mse.shape[0], -1).mean(dim=1)
-                scores.extend(mse.cpu().numpy())
+                # Use the models loss function to compute the reconstruction error.
+                # recons_features and input_features are only used by VGG loss
+                loss_dict = self.clf.loss_function(
+                    reconstruction, batch, recons_features, input_features
+                )
+                loss = loss_dict["loss"]
+                # Loss is a single scalar value.
+                scores.append(loss.cpu().numpy())
 
         decision_scores = np.array(scores)
-        logging.info(
-            f"Computed decision scores: min={decision_scores.min():.4f}, "
-            f"max={decision_scores.max():.4f}, mean={decision_scores.mean():.4f}"
-        )
+        # logging.info(
+        #     f"Computed decision scores: min={decision_scores.min():.4f}, "
+        #     f"max={decision_scores.max():.4f}, mean={decision_scores.mean():.4f}"
+        # )
         return decision_scores
 
     def act(self, obs, greedy: bool = False) -> np.ndarray:
@@ -475,3 +486,7 @@ class LightningAEPolicy(OODPolicy):
         if not torch.is_tensor(data):
             return torch.from_numpy(data).float().to(self.device)
         return data
+
+    def compute_train_percentiles(self, num_thresholds: int) -> np.ndarray:
+        raise NotImplementedError("TBD")
+        pass
