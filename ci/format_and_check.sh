@@ -2,7 +2,12 @@
 
 # If you change these, also change .circle/config.yml.
 # Separate like this: SRC_FILES=(src/ tests/ setup.py)
-SRC_FILES=("YRC/algorithms/lightning_ae.py" "YRC/policies/lightning_ae.py" "YRC/core/dataset.py")
+SRC_FILES=(
+    "YRC/algorithms/lightning_ae.py" 
+    "YRC/policies/lightning_ae.py" 
+    "YRC/core/dataset.py"
+    "eval_thresholds.py"
+)
 EXCLUDED_FILES=("")
 
 # set -x  # echo commands

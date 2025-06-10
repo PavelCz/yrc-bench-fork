@@ -1,5 +1,3 @@
-from calendar import c
-import json
 from pathlib import Path
 import os
 import flags
@@ -31,23 +29,19 @@ if __name__ == "__main__":
     # Similarly, extend the thresholds above the highest threshold.
     additional_thresholds = []
     highest_threshold = thresholds[-1]
-    for i in range(0, args.eval.num_thresholds*2):
-        additional_thresholds.append(highest_threshold + delta * (2 ** i))
-    thresholds = np.concatenate([
-        thresholds,
-        np.array(additional_thresholds)
-    ])
-    
+    for i in range(0, args.eval.num_thresholds * 2):
+        additional_thresholds.append(highest_threshold + delta * (2**i))
+    thresholds = np.concatenate([thresholds, np.array(additional_thresholds)])
+
     split = "test"
 
     summaries = []
     for threshold in thresholds:
         params = {"threshold": threshold}
         policy.update_params(params)
-        policy.clf.threshold_ = threshold
         summary = evaluator.eval(policy, envs, [split])
         summaries.append(summary)
-    
+
     # Save result summary to file.
     log_file_path = get_global_variable("log_file")
     if log_file_path is None:
@@ -59,11 +53,8 @@ if __name__ == "__main__":
         log_file_path.name.replace(".log", f"_{split}.npz")
     )
     np.savez(
-        results_file_path, 
+        results_file_path,
         thresholds=thresholds,
         results=np.array(summaries),
-        # TODO these are shorter than the thresholds, calc_percentiles, afhp.
-        percentile_steps=percentile_steps,
-        calc_percentiles=np.array(calc_percentiles),
-        training_scores=scores,
+        training_scores=policy._train_decision_scores,
     )

@@ -2,8 +2,7 @@ import os
 import logging
 import numpy as np
 import torch
-import torch.nn.functional as F
-from typing import Dict, List, Optional, Union, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
 import sys
 
@@ -54,7 +53,7 @@ class LightningAEPolicy(OODPolicy):
         self.batch_size = None
 
         # OOD detection attributes
-        # self.threshold_: float = 0.0
+        self.threshold_: float = 0.0
         self._train_decision_scores: Optional[np.ndarray] = None
 
         self.runner: Optional[Trainer] = None
@@ -194,52 +193,6 @@ class LightningAEPolicy(OODPolicy):
         logging.info(f"Input shape: {dummy_obs_shape}")
         logging.info(f"Latent dim: {model_config['model_params']['latent_dim']}")
 
-    def decision_function(self, x: Union[torch.Tensor, np.ndarray]) -> np.ndarray:
-        """Compute anomaly scores for input samples using the Lightning model."""
-        if self.clf is None:
-            raise ValueError(
-                "Model not initialized. Call initialize_ood_detector first."
-            )
-
-        raise NotImplementedError("Decision function not implemented for Lightning AE")
-
-        self.clf.eval()
-        scores: List[float] = []
-
-        # Ensure input is on the correct device and format
-        if not torch.is_tensor(x):
-            x = torch.from_numpy(x).float()
-        x = x.to(self.device)
-
-        with torch.no_grad():
-            batch_size: int = 32
-            for i in range(0, len(x), batch_size):
-                batch: torch.Tensor = x[i : i + batch_size]
-
-                # Handle different input types
-                if len(batch.shape) == 2:  # Flattened data
-                    if self.feature_type == "obs":
-                        # Reshape to image format
-                        size: int = int(
-                            np.sqrt(batch.shape[1] // self.model_config["in_channels"])
-                        )
-                        batch = batch.view(
-                            -1, self.model_config["in_channels"], size, size
-                        )
-
-                # Get reconstruction
-                if hasattr(self.clf, "forward"):
-                    reconstruction: torch.Tensor = self.clf(batch)[0]
-                else:
-                    reconstruction = self.clf.decode(self.clf.encode(batch)[0])
-
-                # Compute reconstruction error
-                mse: torch.Tensor = F.mse_loss(reconstruction, batch, reduction="none")
-                mse = mse.view(mse.shape[0], -1).mean(dim=1)
-                scores.extend(mse.cpu().numpy())
-
-        return np.array(scores)
-
     def fit(
         self, x: torch.Tensor, x_threshold: torch.Tensor, y: Optional[Any] = None
     ) -> None:
@@ -336,47 +289,18 @@ class LightningAEPolicy(OODPolicy):
         # )
         return decision_scores
 
-    def act(self, obs, greedy: bool = False) -> np.ndarray:
+    def act(self, obs: np.ndarray, greedy: bool = False) -> np.ndarray:
         """
-        Override parent act method to use our decision_function instead of
-        self.clf.decision_function.
+        Act chooses to either ask for help or not, which is equivalent to asking whther
+        the input observation is normal or OOD.
         """
-        raise NotImplementedError("Act method not implemented for Lightning AE")
 
-        keys: List[str] = {
-            "obs": ["env_obs"],
-            "hidden": ["weak_features"],
-            "dist": ["weak_logit"],
-            "hidden_obs": ["env_obs", "weak_features"],
-            "hidden_dist": ["weak_features", "weak_logit"],
-            "obs_dist": ["env_obs", "weak_logit"],
-            "obs_hidden_dist": ["env_obs", "weak_features", "weak_logit"],
-        }[self.feature_type]
+        obs = torch.from_numpy(obs).to(self.device)
+        obs = obs.unsqueeze(0)
 
-        if get_global_variable("benchmark") in ["cliport", "minigrid"]:
-            observation = [
-                self.to_tensor(obs[key]["image"] if key == "env_obs" else obs[key])
-                for key in keys
-            ]
-        else:
-            observation = [self.to_tensor(obs[key]) for key in keys]
-
-        if self.feature_type in ["obs", "hidden", "dist"]:
-            observation = observation[0]
-
-        # For autoencoder, we might need to flatten or concatenate features
-        if isinstance(observation, list):
-            # Concatenate features along the last dimension
-            observation = torch.cat(
-                [o.flatten(start_dim=1) for o in observation], dim=-1
-            )
-
-        # Flatten for autoencoder input if needed
-        if len(observation.shape) > 2:
-            observation = observation.flatten(start_dim=1)
-
-        # Use our own decision_function instead of self.clf.decision_function
-        score: np.ndarray = self.decision_function(observation)
+        # Get decision score for the observation.
+        scores: np.ndarray = self._compute_decision_scores(obs)
+        score = scores[0]
 
         # Use our own threshold instead of self.clf.threshold_
         action: np.ndarray = (score > self.threshold_).astype(int)
@@ -388,9 +312,6 @@ class LightningAEPolicy(OODPolicy):
 
     def update_params(self, params: Dict[str, Any]) -> None:
         """Override to update our threshold instead of params dict."""
-        raise NotImplementedError(
-            "Update params method not implemented for Lightning AE"
-        )
 
         super().update_params(params)
         if "threshold" in params:
@@ -407,6 +328,7 @@ class LightningAEPolicy(OODPolicy):
         save_dict = {
             "model": self.clf,
             "_train_decision_scores": self._train_decision_scores,
+            "threshold_": self.threshold_,
             "clf_name": self.clf_name,
         }
 
@@ -429,6 +351,7 @@ class LightningAEPolicy(OODPolicy):
         # Restore decision scores and other attributes
         self._train_decision_scores = save_dict.get("_train_decision_scores", None)
         self.clf_name = save_dict.get("clf_name", "LightningAE")
+        self.threshold_ = save_dict.get("threshold_", 0.0)
 
         logging.info(f"Loaded Lightning AE model with decision scores from {load_path}")
         logging.info(
@@ -436,20 +359,6 @@ class LightningAEPolicy(OODPolicy):
         )
 
         return self
-
-    def to_tensor(
-        self, data: Union[np.ndarray, torch.Tensor, Dict[str, Any], tuple]
-    ) -> Union[torch.Tensor, Dict[str, torch.Tensor], tuple]:
-        """Converts input to a torch tensor if it's not already."""
-        if isinstance(data, dict):
-            for key in data:
-                data[key] = self.to_tensor(data[key])
-            return data
-        if isinstance(data, tuple):
-            return data
-        if not torch.is_tensor(data):
-            return torch.from_numpy(data).float().to(self.device)
-        return data
 
     def compute_train_percentiles(self, num_thresholds: int) -> np.ndarray:
         percentile_steps = np.linspace(0, 100, num_thresholds)
