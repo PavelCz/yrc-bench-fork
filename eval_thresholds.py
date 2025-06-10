@@ -23,28 +23,11 @@ if __name__ == "__main__":
         policy.load_model(os.path.join(config.experiment_dir, config.file_name))
     evaluator = Evaluator(config.evaluation)
 
-    # Collect all thresholds on the training set
-    scores = policy.clf.decision_scores_
-
-    percentile_steps = np.linspace(0, 100, args.eval.num_thresholds)
-
     # Determine threshold percentiles
-    thresholds = np.percentile(scores, percentile_steps)
-
-    calc_percentiles = []
-    for threshold in thresholds:
-        # Get the percentage of scores *over* the threshold.
-        # Over the threshold means that the score is considered anomalous and
-        # we ask for help, so the percentiles should correspond closely to the AFHP.
-        calc_percentiles.append(np.sum(scores > threshold) / len(scores))
+    thresholds = policy.compute_train_percentiles(args.eval.num_thresholds)
 
     # Linearly extend the thresholds below the lowest threshold.
     delta = thresholds[-1] - thresholds[0]
-    # thresholds = np.concatenate([
-    #     np.linspace(thresholds[0] - delta, thresholds[0], args.eval.num_thresholds),
-    #     thresholds
-    # ])
-
     # Similarly, extend the thresholds above the highest threshold.
     additional_thresholds = []
     highest_threshold = thresholds[-1]
@@ -55,13 +38,6 @@ if __name__ == "__main__":
         np.array(additional_thresholds)
     ])
     
-    calc_percentiles = []
-    for threshold in thresholds:
-        # Get the percentage of scores *over* the threshold.
-        # Over the threshold means that the score is considered anomalous and
-        # we ask for help, so the percentiles should correspond closely to the AFHP.
-        calc_percentiles.append(np.sum(scores > threshold) / len(scores))
-
     split = "test"
 
     summaries = []

@@ -452,5 +452,7 @@ class LightningAEPolicy(OODPolicy):
         return data
 
     def compute_train_percentiles(self, num_thresholds: int) -> np.ndarray:
-        raise NotImplementedError("TBD")
-        pass
+        percentile_steps = np.linspace(0, 100, num_thresholds)
+        thresholds = np.percentile(self._train_decision_scores, percentile_steps)
+
+        return thresholds
