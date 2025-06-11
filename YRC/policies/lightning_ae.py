@@ -14,7 +14,7 @@ from YRC.core.dataset import ObservationDataset, ObservationDataModule
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.plugins import DDPPlugin
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers import WandbLogger
 import yaml
 
 
@@ -156,7 +156,9 @@ class LightningAEPolicy(OODPolicy):
 
         save_dir = get_global_variable("experiment_dir")
 
-        tb_logger = TensorBoardLogger(save_dir=save_dir, name=self.args.exp_name)
+        tb_logger = WandbLogger(
+            save_dir=save_dir, name=self.args.exp_name, project="yrc-01"
+        )
 
         if self.device.type == "cuda":
             accelerator = "auto"
@@ -171,7 +173,7 @@ class LightningAEPolicy(OODPolicy):
                 LearningRateMonitor(),
                 ModelCheckpoint(
                     save_top_k=1,
-                    dirpath=Path(tb_logger.log_dir) / "checkpoints",
+                    dirpath=Path(save_dir) / "checkpoints",
                     filename="best",
                     monitor="val_loss",
                     save_last=True,
