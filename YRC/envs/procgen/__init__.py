@@ -41,9 +41,10 @@ def create_env(name, config):
 
 def load_policy(path, env):
     model = ProcgenModel(env)
-    model.to(get_global_variable("device"))
+    device = get_global_variable("device")
+    model.to(device)
     model.eval()
-    checkpoint = torch.load(path)
+    checkpoint = torch.load(path, map_location=device)
     model.load_state_dict(checkpoint["model_state_dict"])
     logging.info(f"Loaded model from {path}")
 
