@@ -111,6 +111,13 @@ def make():
         type=int,
         help="number of rollouts to collect for training"
     )
+
+    parser.add_argument(
+        "-batch_size", 
+        "--algorithm.batch_size", 
+        type=int,
+        help="batch size for training the OOD detector"
+    )
     
     parser.add_argument(
         "-num_envs", 

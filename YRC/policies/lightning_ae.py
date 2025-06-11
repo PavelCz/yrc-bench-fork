@@ -131,6 +131,11 @@ class LightningAEPolicy(OODPolicy):
         # things silently.
         self.data_config.pop("data_path")
 
+        # Optionally override parameters.
+        if args.batch_size is not None:
+            self.data_config["train_batch_size"] = args.batch_size
+            self.data_config["val_batch_size"] = args.batch_size
+
         # Initialize model
         if method_name not in vae_models:
             raise ValueError(
