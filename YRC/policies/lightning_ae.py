@@ -211,8 +211,8 @@ class LightningAEPolicy(OODPolicy):
             "Lightning AE Policy: Computing decision scores for threshold setting"
         )
 
-        x = x.to(self.device)
-        x_threshold = x_threshold.to(self.device)
+        # x = x.to(self.device)
+        # x_threshold = x_threshold.to(self.device)
 
         # Turn sequence of observations x into a dataset
         train_dataset = ObservationDataset(x)
