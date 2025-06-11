@@ -106,6 +106,8 @@ class LightningAEPolicy(OODPolicy):
             dummy_obs
         )
 
+        # FYI the passed args are the algorithm args, self.args are the policy args.
+
         self.batch_size = args.batch_size
 
         epochs = args.epoch
@@ -136,7 +138,13 @@ class LightningAEPolicy(OODPolicy):
                 f"Available models: {list(vae_models.keys())}"
             )
 
-        self.clf = vae_models[method_name](**model_config["model_params"])
+        model_params = model_config["model_params"]
+
+        # Do optional overrides.
+        if self.args.latent_dim is not None:
+            model_params["latent_dim"] = self.args.latent_dim
+
+        self.clf = vae_models[method_name](**model_params)
 
         save_dir = Path(str(get_global_variable("experiment_dir")))
 

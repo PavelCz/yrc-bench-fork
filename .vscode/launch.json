@@ -23,7 +23,8 @@
                 "-over",
                 "-num_rollouts", "4",
                 "-num_envs", "4",
-                // "-d", "-1"
+                "-cp_latent_dim", "512",
+                "-d", "-1"
             ],
             "console": "integratedTerminal",
             "justMyCode": true,
