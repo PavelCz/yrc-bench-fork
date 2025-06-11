@@ -59,8 +59,16 @@ class AutoencoderAlgorithm(Algorithm):
         rollout_obs = policy.gather_rollouts(
             envs["train"], args.num_rollouts, gather_all=True
         )
+
+        num_rollouts_test = max(args.num_rollouts // 10, 1)
+        # Ensure that num_rollouts_test is divisible by envs["train"].num_envs.
+        if num_rollouts_test % envs["train"].num_envs != 0:
+            num_rollouts_test += (
+                envs["train"].num_envs - num_rollouts_test % envs["train"].num_envs
+            )
+
         rollout_obs_threshold = policy.gather_rollouts(
-            envs["train"], args.num_rollouts, gather_all=True
+            envs["train"], num_rollouts_test, gather_all=True
         )
 
         logging.info(f"Collected training dataset of shape {rollout_obs.shape}")
