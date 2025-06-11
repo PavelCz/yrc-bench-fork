@@ -12,4 +12,4 @@
 	url = https://github.com/JacobPfau/procgenAISC.git
 [submodule "lib/pytorch_vae"]
 	path = lib/pytorch_vae
-	url = https://github.com/bplaut/PyTorch-VAE
+	url = https://github.com/PavelCz/PyTorch-VAE
