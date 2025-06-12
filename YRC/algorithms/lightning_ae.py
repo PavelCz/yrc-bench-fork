@@ -66,7 +66,7 @@ class AutoencoderAlgorithm(Algorithm):
 
         # Generate rollouts for training OOD detector
         rollout_obs = policy.gather_rollouts(
-            envs["train"], args.num_rollouts, gather_all=True
+            envs["train"], args.num_rollouts, gather_all=True, return_list=True
         )
 
         num_rollouts_test = max(args.num_rollouts // 10, 1)
@@ -77,10 +77,10 @@ class AutoencoderAlgorithm(Algorithm):
             )
 
         rollout_obs_threshold = policy.gather_rollouts(
-            envs["train"], num_rollouts_test, gather_all=True
+            envs["train"], num_rollouts_test, gather_all=True, return_list=True
         )
 
-        logging.info(f"Collected training dataset of shape {rollout_obs.shape}")
+        logging.info(f"Collected training dataset of shape {len(rollout_obs)}")
 
         logging.info("Starting training OOD detector.")
 
