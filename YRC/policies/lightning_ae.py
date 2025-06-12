@@ -173,8 +173,10 @@ class LightningAEPolicy(OODPolicy):
 
         if self.device.type == "cuda":
             accelerator = "auto"
+            num_gpus = 1
         elif self.device.type == "cpu":
             accelerator = "cpu"
+            num_gpus = 0
         else:
             raise ValueError(f"Invalid device type: {self.device.type}")
 
@@ -194,6 +196,7 @@ class LightningAEPolicy(OODPolicy):
             max_epochs=epochs,
             accelerator=accelerator,
             # devices=self.device.index,
+            gpus=num_gpus,
         )
 
         # Move to device
