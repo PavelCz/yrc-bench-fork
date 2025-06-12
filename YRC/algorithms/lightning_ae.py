@@ -3,6 +3,7 @@ from typing import Dict, List, Optional, Any
 
 from YRC.core import Algorithm
 from YRC.core.configs.global_configs import get_global_variable
+from YRC.core.configs.utils import config_logging
 from YRC.policies.lightning_ae import LightningAEPolicy
 
 
@@ -47,6 +48,10 @@ class AutoencoderAlgorithm(Algorithm):
         """
         args = self.args
 
+        log_file = get_global_variable("log_file")
+
+        config_logging(log_file)
+
         if do_threshold_search:
             raise NotImplementedError(
                 "Threshold search not implemented for Lightning AE"
@@ -54,6 +59,10 @@ class AutoencoderAlgorithm(Algorithm):
 
         # Initialize Lightning AE detector (similar to OOD algorithm)
         policy.initialize_ood_detector(args, envs["train"])
+
+        logging.info(
+            f"Gathering {args.num_rollouts} rollouts for training OOD detector."
+        )
 
         # Generate rollouts for training OOD detector
         rollout_obs = policy.gather_rollouts(
@@ -72,6 +81,8 @@ class AutoencoderAlgorithm(Algorithm):
         )
 
         logging.info(f"Collected training dataset of shape {rollout_obs.shape}")
+
+        logging.info("Starting training OOD detector.")
 
         # Train OOD detector
         policy.fit(x=rollout_obs, x_threshold=rollout_obs_threshold)
