@@ -25,13 +25,13 @@ if __name__ == "__main__":
     thresholds = policy.compute_train_percentiles(args.eval.num_thresholds)
 
     # Linearly extend the thresholds below the lowest threshold.
-    delta = thresholds[-1] - thresholds[0]
+    # delta = thresholds[-1] - thresholds[0]
     # Similarly, extend the thresholds above the highest threshold.
-    additional_thresholds = []
-    highest_threshold = thresholds[-1]
-    for i in range(0, args.eval.num_thresholds * 2):
-        additional_thresholds.append(highest_threshold + delta * (2**i))
-    thresholds = np.concatenate([thresholds, np.array(additional_thresholds)])
+    # additional_thresholds = []
+    # highest_threshold = thresholds[-1]
+    # for i in range(0, args.eval.num_thresholds * 2):
+    #     additional_thresholds.append(highest_threshold + delta * (2**i))
+    # thresholds = np.concatenate([thresholds, np.array(additional_thresholds)])
 
     split = "test"
 
