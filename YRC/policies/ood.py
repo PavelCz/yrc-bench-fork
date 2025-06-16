@@ -1,7 +1,7 @@
 import os
 import numpy as np
 from copy import deepcopy as dc
-
+from typing import Union, List
 import torch
 import logging
 from torch.distributions.categorical import Categorical
@@ -10,6 +10,7 @@ from lib.pyod.pyod.models import deep_svdd, auto_encoder
 from joblib import dump, load
 from YRC.core.configs.global_configs import get_global_variable
 from YRC.models.utils import AutoEncoderWithVal
+
 
 
 class OODPolicy(Policy):
@@ -25,7 +26,13 @@ class OODPolicy(Policy):
         self.device = get_global_variable("device")
         self.feature_type = config.coord_policy.feature_type
 
-    def gather_rollouts(self, env, num_rollouts, gather_all=False):
+    def gather_rollouts(
+        self,
+        env,
+        num_rollouts,
+        gather_all=False,
+        return_list=False,
+    ) -> Union[torch.Tensor, List[torch.Tensor]]:
         """
         Gathers rollouts from the environment.
 
@@ -34,6 +41,9 @@ class OODPolicy(Policy):
             num_rollouts: Number of rollouts to gather
             gather_all: Whether to gather all rollouts. If set to false, only a random
                 subset of 0.5% of the rollouts are gathered.
+            return_list: If set to False, the list of observations is concatenated into
+                a single contiguous tensor. If set to True, instead, the observations
+                are returned as a list of tensors.
         """
         assert num_rollouts % env.num_envs == 0
         observations = []
@@ -66,9 +76,12 @@ class OODPolicy(Policy):
                         observations.append(torch.cat(tensors, dim=0))
         else:
             if get_global_variable("benchmark") == "minigrid" and self.feature_type not in ["hidden", "dist", "hidden_dist"]:
-                observations = torch.cat(observations[1::3], dim=0)
+                observations = observations[1::3]
+                if not return_list:
+                    observations = torch.cat(observations[1::3], dim=0)
             else:
-                observations = torch.stack(observations)
+                if not return_list:
+                    observations = torch.stack(observations)
         return observations
 
     def maybe_convert_to_tensor(self, features):
@@ -266,5 +279,8 @@ class OODPolicy(Policy):
         if isinstance(data, tuple):
             return data
         if not torch.is_tensor(data):
-            return torch.from_numpy(data).float().to(self.device)
+            # (pavel 2025-06-11) I removed the to device call since we don't want our
+            # training dataset to be fully moved to the GPU by default. If this breaks
+            # something somewhere else, I might have to reconsider this.
+            return torch.from_numpy(data).float()  # .to(self.device)
         return data

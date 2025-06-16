@@ -106,6 +106,8 @@ class LightningAEPolicy(OODPolicy):
             dummy_obs
         )
 
+        # FYI the passed args are the algorithm args, self.args are the policy args.
+
         self.batch_size = args.batch_size
 
         epochs = args.epoch
@@ -129,6 +131,11 @@ class LightningAEPolicy(OODPolicy):
         # things silently.
         self.data_config.pop("data_path")
 
+        # Optionally override parameters.
+        if args.batch_size is not None:
+            self.data_config["train_batch_size"] = args.batch_size
+            self.data_config["val_batch_size"] = args.batch_size
+
         # Initialize model
         if method_name not in vae_models:
             raise ValueError(
@@ -136,7 +143,13 @@ class LightningAEPolicy(OODPolicy):
                 f"Available models: {list(vae_models.keys())}"
             )
 
-        self.clf = vae_models[method_name](**model_config["model_params"])
+        model_params = model_config["model_params"]
+
+        # Do optional overrides.
+        if self.args.latent_dim is not None:
+            model_params["latent_dim"] = self.args.latent_dim
+
+        self.clf = vae_models[method_name](**model_params)
 
         save_dir = Path(str(get_global_variable("experiment_dir")))
 
@@ -162,8 +175,10 @@ class LightningAEPolicy(OODPolicy):
 
         if self.device.type == "cuda":
             accelerator = "auto"
+            num_gpus = 1
         elif self.device.type == "cpu":
             accelerator = "cpu"
+            num_gpus = 0
         else:
             raise ValueError(f"Invalid device type: {self.device.type}")
 
@@ -183,6 +198,7 @@ class LightningAEPolicy(OODPolicy):
             max_epochs=epochs,
             accelerator=accelerator,
             # devices=self.device.index,
+            gpus=num_gpus,
         )
 
         # Move to device
@@ -205,8 +221,8 @@ class LightningAEPolicy(OODPolicy):
             "Lightning AE Policy: Computing decision scores for threshold setting"
         )
 
-        x = x.to(self.device)
-        x_threshold = x_threshold.to(self.device)
+        # x = x.to(self.device)
+        # x_threshold = x_threshold.to(self.device)
 
         # Turn sequence of observations x into a dataset
         train_dataset = ObservationDataset(x)

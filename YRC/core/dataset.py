@@ -7,7 +7,7 @@ from torch.utils.data import random_split
 
 
 class ObservationDataset(Dataset):
-    def __init__(self, observations: torch.Tensor):
+    def __init__(self, observations: List[torch.Tensor]):
         assert all(
             observations[0].size(0) == observation.size(0)
             for observation in observations
@@ -15,7 +15,7 @@ class ObservationDataset(Dataset):
         self.observations = observations
 
     def __len__(self):
-        return self.observations.size(0)
+        return len(self.observations)
 
     def __getitem__(self, idx):
         return self.observations[idx], 0.0, f"observation_{idx}.png"

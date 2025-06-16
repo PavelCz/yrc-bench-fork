@@ -3,6 +3,7 @@ from typing import Dict, List, Optional, Any
 
 from YRC.core import Algorithm
 from YRC.core.configs.global_configs import get_global_variable
+from YRC.core.configs.utils import config_logging
 from YRC.policies.lightning_ae import LightningAEPolicy
 
 
@@ -47,6 +48,10 @@ class AutoencoderAlgorithm(Algorithm):
         """
         args = self.args
 
+        log_file = get_global_variable("log_file")
+
+        config_logging(log_file)
+
         if do_threshold_search:
             raise NotImplementedError(
                 "Threshold search not implemented for Lightning AE"
@@ -55,15 +60,29 @@ class AutoencoderAlgorithm(Algorithm):
         # Initialize Lightning AE detector (similar to OOD algorithm)
         policy.initialize_ood_detector(args, envs["train"])
 
-        # Generate rollouts for training OOD detector
-        rollout_obs = policy.gather_rollouts(
-            envs["train"], args.num_rollouts, gather_all=True
-        )
-        rollout_obs_threshold = policy.gather_rollouts(
-            envs["train"], args.num_rollouts, gather_all=True
+        logging.info(
+            f"Gathering {args.num_rollouts} rollouts for training OOD detector."
         )
 
-        logging.info(f"Collected training dataset of shape {rollout_obs.shape}")
+        # Generate rollouts for training OOD detector
+        rollout_obs = policy.gather_rollouts(
+            envs["train"], args.num_rollouts, gather_all=True, return_list=True
+        )
+
+        num_rollouts_test = max(args.num_rollouts // 10, 1)
+        # Ensure that num_rollouts_test is divisible by envs["train"].num_envs.
+        if num_rollouts_test % envs["train"].num_envs != 0:
+            num_rollouts_test += (
+                envs["train"].num_envs - num_rollouts_test % envs["train"].num_envs
+            )
+
+        rollout_obs_threshold = policy.gather_rollouts(
+            envs["train"], num_rollouts_test, gather_all=True, return_list=True
+        )
+
+        logging.info(f"Collected training dataset of shape {len(rollout_obs)}")
+
+        logging.info("Starting training OOD detector.")
 
         # Train OOD detector
         policy.fit(x=rollout_obs, x_threshold=rollout_obs_threshold)

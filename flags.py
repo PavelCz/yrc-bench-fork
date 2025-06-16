@@ -58,7 +58,14 @@ def make():
     parser.add_argument("-cp_method", "--coord_policy.method", type=str,
                         choices=["DeepSVDD", "AutoEncoder", "Autoencoder"],
                         help="method for detecting OOD samples")
-    
+
+    parser.add_argument(
+        "-cp_latent_dim", 
+        "--coord_policy.latent_dim", 
+        type=int,
+        help="latent dimension for the autoencoder"
+    )
+
     parser.add_argument(
         "-model_config_path", 
         "--algorithm.model_config_path", 
@@ -103,6 +110,13 @@ def make():
         "--algorithm.num_rollouts", 
         type=int,
         help="number of rollouts to collect for training"
+    )
+
+    parser.add_argument(
+        "-batch_size", 
+        "--algorithm.batch_size", 
+        type=int,
+        help="batch size for training the OOD detector"
     )
     
     parser.add_argument(
