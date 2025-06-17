@@ -25,14 +25,20 @@ if __name__ == "__main__":
 
         save_dir = Path(str(get_global_variable("experiment_dir")))
 
-        exp = wandb.init(
-            name=config.exp_name,
-            project="yrc-01",
-            group=config.exp_name,
-            mode="online",
-            job_type="train",
-            config=config,
-        )
+        # Prepare wandb init parameters
+        wandb_kwargs = {
+            "name": config.exp_name,
+            "project": config.wandb.project,
+            "group": config.wandb.group,
+            "mode": config.wandb.mode,
+            "job_type": "train",
+            "config": config,
+        }
+
+        if config.wandb.entity is not None:
+            wandb_kwargs["entity"] = config.wandb.entity
+
+        exp = wandb.init(**wandb_kwargs)
 
         wandb_logger = WandbLogger(
             save_dir=save_dir, experiment=exp,
