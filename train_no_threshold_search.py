@@ -4,6 +4,10 @@ import YRC.core.configs.utils as config_utils
 import YRC.core.environment as env_factory
 import YRC.core.policy as policy_factory
 from YRC.core import Evaluator
+import wandb
+from pytorch_lightning.loggers import WandbLogger
+from YRC.core.configs.global_configs import get_global_variable
+from pathlib import Path
 
 # Algorithms that support training without threshold search.
 ALGORITHMS = ["ood", "lightning_ae"]
@@ -16,6 +20,24 @@ if __name__ == "__main__":
     envs = env_factory.make(config)
     policy = policy_factory.make(config, envs["train"])
     evaluator = Evaluator(config.evaluation)
+
+    if hasattr(policy, "logger"):
+
+        save_dir = Path(str(get_global_variable("experiment_dir")))
+
+        exp = wandb.init(
+            name=config.exp_name,
+            project="yrc-01",
+            group=config.exp_name,
+            mode="online",
+            job_type="train",
+            config=config,
+        )
+
+        wandb_logger = WandbLogger(
+            save_dir=save_dir, experiment=exp,
+        )
+        policy.logger = wandb_logger
 
     if config.general.algorithm not in ALGORITHMS:
         raise NotImplementedError(
