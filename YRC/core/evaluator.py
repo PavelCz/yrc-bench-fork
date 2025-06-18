@@ -1,16 +1,31 @@
 import logging
 import numpy as np
-
+from typing import Optional
+from pytorch_lightning.loggers import WandbLogger
+import wandb
 
 class Evaluator:
     LOGGED_ACTION = 1
 
     def __init__(self, config):
         self.args = config
+        self.collected_observations = []
+        self.collected_actions_done = False
 
-    def eval(self, policy, envs, eval_splits, num_episodes=None):
+    def eval(
+        self, 
+        policy, 
+        envs, 
+        eval_splits, 
+        num_episodes=None, 
+        logger: Optional[WandbLogger] = None, 
+        threshold: Optional[float] = None,
+    ):
         args = self.args
         policy.eval()
+
+        self.collected_actions_done = False
+        self.collected_observations = []
 
         summary = {}
         for split in eval_splits:
@@ -34,6 +49,18 @@ class Evaluator:
             self.write_summary(split, summary[split])
 
             envs[split].close()
+
+        if logger is not None:
+            logger.experiment.log(
+                {
+                    f"eval_episode_{threshold}": wandb.Video(
+                        # (batch dim, time dim, c, h, w)
+                        np.concatenate(self.collected_observations, axis=1),
+                        fps=10,
+                        format="gif",
+                    ),
+                }
+            )
 
         return summary
 
@@ -59,6 +86,9 @@ class Evaluator:
         has_done = np.array([False] * env.num_envs)
         step = 0
         while not has_done.all():
+            if not self.collected_actions_done:
+                self.collected_observations.append(obs["env_obs"])
+
             action = policy.act(obs, greedy=args.act_greedy)
 
             obs, reward, done, info = env.step(action)
@@ -81,6 +111,9 @@ class Evaluator:
 
             has_done |= done
             step += 1
+
+        # When the first iteration of eval is done we stop collecting observations
+        self.collected_observations_done = True
 
         return log
 

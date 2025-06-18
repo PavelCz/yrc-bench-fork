@@ -9,6 +9,8 @@ from YRC.core.configs.global_configs import get_global_variable
 
 from YRC.policies import *  # noqa: F403
 import numpy as np
+from pytorch_lightning.loggers import WandbLogger
+import wandb
 
 if __name__ == "__main__":
     args = flags.make()
@@ -33,13 +35,38 @@ if __name__ == "__main__":
     #     additional_thresholds.append(highest_threshold + delta * (2**i))
     # thresholds = np.concatenate([thresholds, np.array(additional_thresholds)])
 
+    # Initialize wandb logger
+    save_dir = Path(str(get_global_variable("experiment_dir")))
+
+    # Prepare wandb init parameters
+    wandb_kwargs = {
+        "name": config.exp_name,
+        "project": config.wandb.project,
+        "group": config.wandb.group,
+        "mode": config.wandb.mode,
+        "job_type": "train",
+        "config": config,
+    }
+
+    if config.wandb.entity is not None:
+        wandb_kwargs["entity"] = config.wandb.entity
+
+    exp = wandb.init(**wandb_kwargs)
+
+    wandb_logger = WandbLogger(
+        save_dir=save_dir,
+        experiment=exp,
+    )
+
     split = "test"
 
     summaries = []
     for threshold in thresholds:
         params = {"threshold": threshold}
         policy.update_params(params)
-        summary = evaluator.eval(policy, envs, [split])
+        summary = evaluator.eval(
+            policy, envs, [split], logger=wandb_logger, threshold=threshold
+        )
         summaries.append(summary)
 
     # Save result summary to file.
