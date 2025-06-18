@@ -12,4 +12,4 @@ coord_policy:
 agents:
     sim_weak: 'YRC/checkpoints/procgen/coinrun/weak/model_80019456.pth'
     weak: 'YRC/checkpoints/procgen/coinrun/strong/model_200015872.pth'
-    strong: '/nas/ucb/czempin/data/goal-misgen/policy/coinrun-extrahard/model_120061952.pth'
+    strong: 'YRC/checkpoints/procgen/coinrun/strong/model_200015872.pth'
