@@ -145,6 +145,15 @@ def make():
         help="number of thresholds to evaluate", 
         default=10
     )
+
+    parser.add_argument(
+        "-test_episodes",
+        "--evaluation.test_episodes",
+        type=int,
+        help="number of test episodes for procgen",
+        default=256
+    )
+
     args = parser.parse_args()
 
     return args
