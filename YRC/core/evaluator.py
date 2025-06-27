@@ -51,7 +51,7 @@ class Evaluator:
             envs[split].close()
 
         if logger is not None:
-            vid = np.stack(self.collected_observations, axis=1)[0]
+            vid = np.stack(self.collected_observations, axis=1)
             vid = vid * 255
             vid = vid.astype(np.int8)
             logger.experiment.log(
