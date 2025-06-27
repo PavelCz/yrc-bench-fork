@@ -51,12 +51,15 @@ class Evaluator:
             envs[split].close()
 
         if logger is not None:
+            vid = np.stack(self.collected_observations, axis=1)[0]
+            vid = vid * 255
+            vid = vid.astype(np.int8)
             logger.experiment.log(
                 {
                     f"eval_episode_{threshold}": wandb.Video(
                         # (batch dim, time dim, c, h, w)
-                        np.concatenate(self.collected_observations, axis=1),
-                        fps=10,
+                        vid,
+                        fps=15,
                         format="gif",
                     ),
                 }
