@@ -24,7 +24,9 @@ if __name__ == "__main__":
     evaluator = Evaluator(config.evaluation)
 
     # Determine threshold percentiles
-    thresholds = policy.compute_train_percentiles(args.eval.num_thresholds)
+    thresholds, percentile_steps = policy.compute_train_percentiles(
+        args.eval.num_thresholds
+    )
 
     # Linearly extend the thresholds below the lowest threshold.
     # delta = thresholds[-1] - thresholds[0]
@@ -61,11 +63,16 @@ if __name__ == "__main__":
     split = "test"
 
     summaries = []
-    for threshold in thresholds:
+    for threshold, percentile_step in zip(thresholds, percentile_steps):
         params = {"threshold": threshold}
         policy.update_params(params)
         summary = evaluator.eval(
-            policy, envs, [split], logger=wandb_logger, threshold=threshold
+            policy,
+            envs,
+            [split],
+            logger=wandb_logger,
+            threshold=threshold,
+            percentile_step=percentile_step,
         )
         summaries.append(summary)
 
