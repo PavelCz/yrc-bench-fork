@@ -95,7 +95,7 @@ def main():
         results_file_path,
         thresholds=thresholds,
         results=np.array(summaries),
-        training_scores=policy._train_decision_scores,
+        training_scores=policy.get_train_decision_scores(),
     )
 
 

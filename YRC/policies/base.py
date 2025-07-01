@@ -12,7 +12,7 @@ from YRC.core.policy import Policy
 import YRC.models as models
 from YRC.core.configs.global_configs import get_global_variable
 from YRC.core.configs.utils import config_logging
-from typing import Tuple
+from typing import Tuple, Optional
 
 
 class BasePolicy(Policy):
@@ -128,3 +128,6 @@ class RandomPolicy(Policy):
         thresholds = percentile_steps
 
         return thresholds, percentile_steps
+    
+    def get_train_decision_scores(self) -> Optional[np.ndarray]:
+        return None

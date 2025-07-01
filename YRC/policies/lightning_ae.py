@@ -407,3 +407,6 @@ class LightningAEPolicy(OODPolicy):
         thresholds = np.percentile(self._train_decision_scores, percentile_steps)
 
         return thresholds, percentile_steps
+
+    def get_train_decision_scores(self) -> Optional[np.ndarray]:
+        return self._train_decision_scores
