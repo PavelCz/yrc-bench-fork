@@ -35,7 +35,9 @@
             "program": "${workspaceFolder}/eval_thresholds.py",
             "args": [
                 "-wandb_project", "yrc-debug",
-                "-c", "configs/procgen_ae.yaml",
+                // "-wandb_mode", "offline",
+                // "-c", "configs/procgen_ae.yaml",
+                "-c", "configs/procgen_random_hard.yaml",
                 "-n", "debug_ood",
                 "-en", "coinrun",
                 "-sim", "YRC/checkpoints/procgen/coinrun/sim_weak/model_40009728.pth",
@@ -47,7 +49,7 @@
                 "-query_cost", "0",
                 "-over",
                 "-seed", "1",
-                "-test_episodes", "10"
+                "-test_episodes", "8"
             ],
             "console": "integratedTerminal",
             "justMyCode": true,
