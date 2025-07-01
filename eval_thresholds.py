@@ -8,6 +8,7 @@ from YRC.core import Evaluator
 from YRC.core.configs.global_configs import get_global_variable
 
 from YRC.policies.lightning_ae import LightningAEPolicy
+from YRC.policies.ood import OODPolicy
 from YRC.policies.base import RandomPolicy
 
 import numpy as np
@@ -100,9 +101,7 @@ def main():
 
 
 def update_policy_params(policy, threshold):
-    # if isinstance(policy, OODPolicy):
-    #     policy.update_params(params)
-    if isinstance(policy, LightningAEPolicy):
+    if isinstance(policy, LightningAEPolicy) or isinstance(policy, OODPolicy):
         policy.update_params({"threshold": threshold})
     elif isinstance(policy, RandomPolicy):
         policy.update_params(threshold)

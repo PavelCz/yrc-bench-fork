@@ -35,13 +35,13 @@ class OODAlgorithm(Algorithm):
         # Train OOD detector
         policy.fit(x=rollout_obs, x_threshold=rollout_obs_threshold)
 
-        clf: AutoEncoderWithVal = policy.clf
-        val_scores = clf.val_score_list
-        training_scores = clf.training_score_list
-        if val_scores is not None:
-            np.save(f"{self.save_dir}/val_scores.npy", np.array(val_scores))
-        if training_scores is not None:
-            np.save(f"{self.save_dir}/training_scores.npy", np.array(training_scores))
+        # clf: AutoEncoderWithVal = policy.clf
+        # val_scores = clf.val_score_list
+        # training_scores = clf.training_score_list
+        # if val_scores is not None:
+        #     np.save(f"{self.save_dir}/val_scores.npy", np.array(val_scores))
+        # if training_scores is not None:
+        #     np.save(f"{self.save_dir}/training_scores.npy", np.array(training_scores))
 
         if do_threshold_search:
             # Threshold search

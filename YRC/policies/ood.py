@@ -1,7 +1,7 @@
 import os
 import numpy as np
 from copy import deepcopy as dc
-from typing import Union, List
+from typing import Union, List, Optional, Tuple
 import torch
 import logging
 from torch.distributions.categorical import Categorical
@@ -144,6 +144,8 @@ class OODPolicy(Policy):
 
     def fit(self, x, x_threshold, y=None):
         if self.clf_name == "DeepSVDD":
+            x = x.to(self.device)
+            x_threshold = x_threshold.to(self.device)
             self.clf.fit(X=x, X_threshold=x_threshold, y=y)
         elif self.clf_name == "AutoEncoder":
             x = x.cpu()
@@ -183,6 +185,8 @@ class OODPolicy(Policy):
             observation = observation.cpu()
             # Additionally, the AutoEncoder expects a 2D array, so we flatten it.
             observation = observation.reshape(observation.shape[0], -1)
+        elif self.clf_name == "DeepSVDD":
+            observation = observation.to(self.device)
 
         score = self.clf.decision_function(observation)
 
@@ -284,3 +288,14 @@ class OODPolicy(Policy):
             # something somewhere else, I might have to reconsider this.
             return torch.from_numpy(data).float()  # .to(self.device)
         return data
+
+    def get_train_decision_scores(self) -> Optional[np.ndarray]:
+        return self.clf.decision_scores_
+    
+    def compute_train_percentiles(
+        self, num_thresholds: int
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        percentile_steps = np.linspace(0, 100, num_thresholds)
+        thresholds = np.percentile(self.clf.decision_scores_, percentile_steps)
+
+        return thresholds, percentile_steps
