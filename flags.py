@@ -10,6 +10,17 @@ def make():
                         help="device id")
     parser.add_argument("-wandb", "--use_wandb", action="store_true", default=False,
                         help="log to wandb?")
+    
+    # wandb settings
+    parser.add_argument("-wandb_project", "--wandb.project", type=str, default="yrc-01",
+                        help="wandb project name")
+    parser.add_argument("-wandb_group", "--wandb.group", type=str,
+                        help="wandb group name (defaults to exp_name if not specified)")
+    parser.add_argument("-wandb_mode", "--wandb.mode", type=str, choices=["online", "offline", "disabled"], default="online",
+                        help="wandb mode: online, offline, or disabled")
+    parser.add_argument("-wandb_entity", "--wandb.entity", type=str,
+                        help="wandb entity/username")
+    
     parser.add_argument("-no_eval", "--algorithm.no_eval", action="store_true", default=False,
                         help="no evaluation")
     parser.add_argument("-log_freq", "--algorithm.log_freq", type=int,
@@ -134,6 +145,15 @@ def make():
         help="number of thresholds to evaluate", 
         default=10
     )
+
+    parser.add_argument(
+        "-test_episodes",
+        "--evaluation.test_episodes",
+        type=int,
+        help="number of test episodes for procgen",
+        default=256
+    )
+
     args = parser.parse_args()
 
     return args

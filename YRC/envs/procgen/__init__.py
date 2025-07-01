@@ -11,6 +11,9 @@ from YRC.core.configs.global_configs import get_global_variable
 
 def create_env(name, config):
     common_config = config.common
+
+    # These are the config settigns that might depend on the specific mode, i.e. train, 
+    # val, test
     specific_config = getattr(config, name)
 
     env = ProcgenEnv(
@@ -21,9 +24,10 @@ def create_env(name, config):
         start_level=specific_config.start_level,
         distribution_mode=specific_config.distribution_mode,
         rand_seed=specific_config.seed,
-        use_backgrounds=specific_config.use_backgrounds,
-        use_monochrome_assets=specific_config.use_monochrome_assets,
-        restrict_themes=specific_config.restrict_themes,
+        # AFAICT these should be set in the common config
+        use_backgrounds=common_config.use_backgrounds,
+        use_monochrome_assets=common_config.use_monochrome_assets,
+        restrict_themes=common_config.restrict_themes,
     )
 
     env = wrappers.VecExtractDictObs(env, "rgb")

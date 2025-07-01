@@ -14,9 +14,8 @@ from YRC.core.dataset import ObservationDataset, ObservationDataModule
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.plugins import DDPPlugin
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers import WandbLogger, TensorBoardLogger
 import yaml
-
 
 # Add pytorch_vae to Python path.
 # This is somewhat awkward, but necessary since we're inlcuding pytorch_vae as a git
@@ -42,7 +41,9 @@ class LightningAEPolicy(OODPolicy):
     autoencoder implementation.
     """
 
-    def __init__(self, config: Any, env: Any) -> None:
+    def __init__(
+        self, config: Any, env: Any, logger: Optional[WandbLogger] = None
+    ) -> None:
         # Initialize parent class
         super().__init__(config, env)
 
@@ -58,6 +59,8 @@ class LightningAEPolicy(OODPolicy):
 
         self.runner: Optional[Trainer] = None
         self.data_config: Optional[Dict[str, Any]] = None
+
+        self.logger = None
 
     def initialize_ood_detector(self, args: Any, env: Any) -> None:
         """Initialize the Lightning autoencoder model."""
@@ -153,6 +156,9 @@ class LightningAEPolicy(OODPolicy):
 
         save_dir = Path(str(get_global_variable("experiment_dir")))
 
+        if self.logger is None:
+            self.logger = TensorBoardLogger(save_dir=save_dir, name=self.args.exp_name)
+
         # First, define some default params. This is for exp_params.
         exp_params = {
             "dont_annotate_loss": False,
@@ -168,8 +174,8 @@ class LightningAEPolicy(OODPolicy):
         self.experiment.to(self.device)
 
         save_dir = get_global_variable("experiment_dir")
-
-        tb_logger = TensorBoardLogger(save_dir=save_dir, name=self.args.exp_name)
+        if save_dir is None:
+            raise ValueError("Experiment directory is not set")
 
         if self.device.type == "cuda":
             accelerator = "auto"
@@ -181,12 +187,12 @@ class LightningAEPolicy(OODPolicy):
             raise ValueError(f"Invalid device type: {self.device.type}")
 
         self.runner = Trainer(
-            logger=tb_logger,
+            logger=self.logger,
             callbacks=[
                 LearningRateMonitor(),
                 ModelCheckpoint(
                     save_top_k=1,
-                    dirpath=Path(tb_logger.log_dir) / "checkpoints",
+                    dirpath=str(Path(save_dir) / "checkpoints"),
                     filename="best",
                     monitor="val_loss",
                     save_last=True,
@@ -394,8 +400,13 @@ class LightningAEPolicy(OODPolicy):
 
         return self
 
-    def compute_train_percentiles(self, num_thresholds: int) -> np.ndarray:
+    def compute_train_percentiles(
+        self, num_thresholds: int
+    ) -> Tuple[np.ndarray, np.ndarray]:
         percentile_steps = np.linspace(0, 100, num_thresholds)
         thresholds = np.percentile(self._train_decision_scores, percentile_steps)
 
-        return thresholds
+        return thresholds, percentile_steps
+
+    def get_train_decision_scores(self) -> Optional[np.ndarray]:
+        return self._train_decision_scores

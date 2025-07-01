@@ -8,13 +8,9 @@
             "program": "${workspaceFolder}/train_no_threshold_search.py",
             "args": [
                 // "-c", "configs/procgen_ood.yaml",
-                "-c", "configs/procgen_ae.yaml",
+                "-c", "configs/procgen_ae_hard.yaml",
                 "-n", "debug_ood",
                 "-en", "coinrun",
-                "-sim", "YRC/checkpoints/procgen/coinrun/sim_weak/model_40009728.pth",
-                "-weak", "YRC/checkpoints/procgen/coinrun/weak/model_80019456.pth",
-                "-strong", "YRC/checkpoints/procgen/coinrun/strong/model_200015872.pth",
-                "-cp_feature", "obs",
                 // "-cp_method", "AutoEncoder",
                 "-cp_method", "Autoencoder",
                 "-model_config_path", "lib/pytorch_vae/configs/mssim_ae.yaml",
@@ -24,6 +20,8 @@
                 "-num_rollouts", "2",
                 "-num_envs", "2",
                 "-cp_latent_dim", "128",
+                "-use_bg", "False",
+                "-wandb_project", "yrc-debug",
                 // "-d", "-1"
             ],
             "console": "integratedTerminal",
@@ -36,7 +34,10 @@
             "request": "launch",
             "program": "${workspaceFolder}/eval_thresholds.py",
             "args": [
-                "-c", "configs/procgen_ae.yaml",
+                "-wandb_project", "yrc-debug",
+                // "-wandb_mode", "offline",
+                // "-c", "configs/procgen_ae.yaml",
+                "-c", "configs/procgen_random_hard.yaml",
                 "-n", "debug_ood",
                 "-en", "coinrun",
                 "-sim", "YRC/checkpoints/procgen/coinrun/sim_weak/model_40009728.pth",
@@ -47,7 +48,8 @@
                 "-f_n", "trained.pt",
                 "-query_cost", "0",
                 "-over",
-                "-seed", "1"
+                "-seed", "1",
+                "-test_episodes", "8"
             ],
             "console": "integratedTerminal",
             "justMyCode": true,

@@ -7,10 +7,15 @@ import YRC.core.policy as policy_factory
 from YRC.core import Evaluator
 from YRC.core.configs.global_configs import get_global_variable
 
-from YRC.policies import *  # noqa: F403
-import numpy as np
+from YRC.policies.lightning_ae import LightningAEPolicy
+from YRC.policies.base import RandomPolicy
 
-if __name__ == "__main__":
+import numpy as np
+from pytorch_lightning.loggers import WandbLogger
+import wandb
+
+
+def main():
     args = flags.make()
     args.eval_mode = True
     config = config_utils.load(args.config, flags=args)
@@ -18,11 +23,16 @@ if __name__ == "__main__":
     envs = env_factory.make(config)
     policy = policy_factory.make(config, envs["train"])
     if config.general.algorithm != "always" and not config.coord_policy.baseline:
-        policy.load_model(os.path.join(config.experiment_dir, config.file_name))
+        # If we are doing threshold search, the random alg does not need to train
+        # anything. Thus, we do not need to load here.
+        if config.general.algorithm != "random":
+            policy.load_model(os.path.join(config.experiment_dir, config.file_name))
     evaluator = Evaluator(config.evaluation)
 
     # Determine threshold percentiles
-    thresholds = policy.compute_train_percentiles(args.eval.num_thresholds)
+    thresholds, percentile_steps = policy.compute_train_percentiles(
+        args.eval.num_thresholds
+    )
 
     # Linearly extend the thresholds below the lowest threshold.
     # delta = thresholds[-1] - thresholds[0]
@@ -33,13 +43,42 @@ if __name__ == "__main__":
     #     additional_thresholds.append(highest_threshold + delta * (2**i))
     # thresholds = np.concatenate([thresholds, np.array(additional_thresholds)])
 
+    # Initialize wandb logger
+    save_dir = Path(str(get_global_variable("experiment_dir")))
+
+    # Prepare wandb init parameters
+    wandb_kwargs = {
+        "name": config.exp_name,
+        "project": config.wandb.project,
+        "group": config.wandb.group,
+        "mode": config.wandb.mode,
+        "job_type": "train",
+        "config": config,
+    }
+
+    if config.wandb.entity is not None:
+        wandb_kwargs["entity"] = config.wandb.entity
+
+    exp = wandb.init(**wandb_kwargs)
+
+    wandb_logger = WandbLogger(
+        save_dir=save_dir,
+        experiment=exp,
+    )
+
     split = "test"
 
     summaries = []
-    for threshold in thresholds:
-        params = {"threshold": threshold}
-        policy.update_params(params)
-        summary = evaluator.eval(policy, envs, [split])
+    for threshold, percentile_step in zip(thresholds, percentile_steps):
+        update_policy_params(policy, threshold)
+        summary = evaluator.eval(
+            policy,
+            envs,
+            [split],
+            logger=wandb_logger,
+            threshold=threshold,
+            percentile_step=percentile_step,
+        )
         summaries.append(summary)
 
     # Save result summary to file.
@@ -56,5 +95,22 @@ if __name__ == "__main__":
         results_file_path,
         thresholds=thresholds,
         results=np.array(summaries),
-        training_scores=policy._train_decision_scores,
+        training_scores=policy.get_train_decision_scores(),
     )
+
+
+def update_policy_params(policy, threshold):
+    # if isinstance(policy, OODPolicy):
+    #     policy.update_params(params)
+    if isinstance(policy, LightningAEPolicy):
+        policy.update_params({"threshold": threshold})
+    elif isinstance(policy, RandomPolicy):
+        policy.update_params(threshold)
+    else:
+        raise ValueError(
+            f"Policy type {type(policy)} currently not supported for threshold search"
+        )
+
+
+if __name__ == "__main__":
+    main()

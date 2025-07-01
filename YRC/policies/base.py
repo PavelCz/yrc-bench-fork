@@ -12,6 +12,7 @@ from YRC.core.policy import Policy
 import YRC.models as models
 from YRC.core.configs.global_configs import get_global_variable
 from YRC.core.configs.utils import config_logging
+from typing import Tuple, Optional
 
 
 class BasePolicy(Policy):
@@ -119,3 +120,14 @@ class RandomPolicy(Policy):
     def load_model(self, load_path):
         ckpt = torch.load(load_path)
         self.prob = ckpt["prob"]
+
+    def compute_train_percentiles(
+        self, num_thresholds: int
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        percentile_steps = np.linspace(0, 100, num_thresholds)
+        thresholds = percentile_steps
+
+        return thresholds, percentile_steps
+    
+    def get_train_decision_scores(self) -> Optional[np.ndarray]:
+        return None

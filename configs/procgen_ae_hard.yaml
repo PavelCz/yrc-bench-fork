@@ -1,0 +1,15 @@
+name: 'procgen_ae_hard'
+general:
+    benchmark: 'procgen'
+    algorithm: 'lightning_ae'
+    device: 0
+    skyline: 0
+    seed: 10
+coord_policy:
+    cls: LightningAEPolicy
+    feature_type: 'obs'
+    collect_data_agent: 'weak'
+agents:
+    sim_weak: 'YRC/checkpoints/procgen/coinrun/weak/model_80019456.pth'
+    weak: 'YRC/checkpoints/procgen/coinrun/strong/model_200015872.pth'
+    strong: 'YRC/checkpoints/procgen/coinrun/strong/model_200015872.pth'
