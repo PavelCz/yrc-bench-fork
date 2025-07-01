@@ -7,12 +7,15 @@ import YRC.core.policy as policy_factory
 from YRC.core import Evaluator
 from YRC.core.configs.global_configs import get_global_variable
 
-from YRC.policies import *  # noqa: F403
+from YRC.policies.lightning_ae import LightningAEPolicy
+from YRC.policies.base import RandomPolicy
+
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 
-if __name__ == "__main__":
+
+def main():
     args = flags.make()
     args.eval_mode = True
     config = config_utils.load(args.config, flags=args)
@@ -20,7 +23,10 @@ if __name__ == "__main__":
     envs = env_factory.make(config)
     policy = policy_factory.make(config, envs["train"])
     if config.general.algorithm != "always" and not config.coord_policy.baseline:
-        policy.load_model(os.path.join(config.experiment_dir, config.file_name))
+        # If we are doing threshold search, the random alg does not need to train
+        # anything. Thus, we do not need to load here.
+        if config.general.algorithm != "random":
+            policy.load_model(os.path.join(config.experiment_dir, config.file_name))
     evaluator = Evaluator(config.evaluation)
 
     # Determine threshold percentiles
@@ -64,8 +70,7 @@ if __name__ == "__main__":
 
     summaries = []
     for threshold, percentile_step in zip(thresholds, percentile_steps):
-        params = {"threshold": threshold}
-        policy.update_params(params)
+        update_policy_params(policy, threshold)
         summary = evaluator.eval(
             policy,
             envs,
@@ -92,3 +97,20 @@ if __name__ == "__main__":
         results=np.array(summaries),
         training_scores=policy._train_decision_scores,
     )
+
+
+def update_policy_params(policy, threshold):
+    # if isinstance(policy, OODPolicy):
+    #     policy.update_params(params)
+    if isinstance(policy, LightningAEPolicy):
+        policy.update_params({"threshold": threshold})
+    elif isinstance(policy, RandomPolicy):
+        policy.update_params(threshold)
+    else:
+        raise ValueError(
+            f"Policy type {type(policy)} currently not supported for threshold search"
+        )
+
+
+if __name__ == "__main__":
+    main()
