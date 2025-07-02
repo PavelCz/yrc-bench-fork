@@ -125,7 +125,7 @@ class RandomPolicy(Policy):
         self, num_thresholds: int
     ) -> Tuple[np.ndarray, np.ndarray]:
         percentile_steps = np.linspace(0, 100, num_thresholds)
-        thresholds = percentile_steps
+        thresholds = percentile_steps * 0.01
 
         return thresholds, percentile_steps
     
