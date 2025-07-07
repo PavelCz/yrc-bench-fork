@@ -141,6 +141,12 @@ class OODPolicy(Policy):
 
     def update_params(self, params):
         self.params = dc(params)
+        if "threshold" not in params:
+            raise ValueError(
+                "Threshold is not in the provided params. "
+                "You're probably doing something wrong"
+            )
+        self.clf.threshold_ = params["threshold"]
 
     def fit(self, x, x_threshold, y=None):
         if self.clf_name == "DeepSVDD":
