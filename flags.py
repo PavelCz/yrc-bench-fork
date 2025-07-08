@@ -139,10 +139,10 @@ def make():
     
     # Additional flags for evaluation.
     parser.add_argument(
-        "-num_thresholds", 
-        "--eval.num_thresholds", 
+        "-threshold_bins", 
+        "--eval.threshold_bins", 
         type=int,
-        help="number of thresholds to evaluate", 
+        help="number of threshold bins to evaluate. Choose at least 5", 
         default=10
     )
 
