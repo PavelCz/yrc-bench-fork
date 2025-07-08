@@ -69,7 +69,7 @@ def main():
 
     split = "test"
 
-    summaries = []
+    results = []
     for threshold, percentile_step in zip(thresholds, percentile_steps):
         update_policy_params(policy, threshold)
         summary = evaluator.eval(
@@ -80,7 +80,13 @@ def main():
             threshold=threshold,
             percentile_step=percentile_step,
         )
-        summaries.append(summary)
+        results.append({
+            "reward_mean": summary[split]["reward_mean"],
+            "reward_std": summary[split]["reward_std"],
+            "action_1_frac": summary[split]["action_1_frac"],
+            # "threshold": threshold,
+            # "percentile_step": percentile_step,
+        })
 
     # Save result summary to file.
     log_file_path = get_global_variable("log_file")
@@ -94,8 +100,8 @@ def main():
     )
     np.savez(
         results_file_path,
-        thresholds=thresholds,
-        results=np.array(summaries),
+        # thresholds=thresholds,
+        results=np.array(results),
         training_scores=policy.get_train_decision_scores(),
     )
 
