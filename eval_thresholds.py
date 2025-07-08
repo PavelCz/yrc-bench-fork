@@ -80,13 +80,15 @@ def main():
             threshold=threshold,
             percentile_step=percentile_step,
         )
-        results.append({
-            "reward_mean": summary[split]["reward_mean"],
-            "reward_std": summary[split]["reward_std"],
-            "action_1_frac": summary[split]["action_1_frac"],
-            # "threshold": threshold,
-            # "percentile_step": percentile_step,
-        })
+        results.append(
+            {
+                "reward_mean": summary[split]["reward_mean"],
+                "reward_std": summary[split]["reward_std"],
+                "action_1_frac": summary[split]["action_1_frac"],
+                # "threshold": threshold,
+                # "percentile_step": percentile_step,
+            }
+        )
 
     # Save result summary to file.
     log_file_path = get_global_variable("log_file")
