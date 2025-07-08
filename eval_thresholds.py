@@ -16,6 +16,7 @@ from YRC.policies.base import RandomPolicy
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger
 import wandb
+from typing import List
 
 
 def main():
@@ -37,7 +38,7 @@ def main():
     if num_threshold_bins < 5:
         raise ValueError("Number of threshold bins must be at least 5")
 
-    # For our initial set of thresolds, we determine threshold percentiles based on 
+    # For our initial set of thresolds, we determine threshold percentiles based on
     # training scores
     thresholds, percentile_steps = policy.compute_train_percentiles(3)
 
@@ -77,31 +78,24 @@ def main():
 
     summaries = [None] * num_threshold_bins
     binned_thresholds = [None] * num_threshold_bins
+    percentile_bins = np.linspace(0, 100, num_threshold_bins + 1)
 
     # Evaluat for extreme values
     update_policy_params(policy, float("-inf"))
     summary = evaluator.eval(
-        policy,
-        envs,
-        [split],
-        logger=wandb_logger,
-        threshold=float("-inf")
+        policy, envs, [split], logger=wandb_logger, threshold=float("-inf")
     )
     summaries[0] = summary
     update_policy_params(policy, float("inf"))
     summary = evaluator.eval(
-        policy,
-        envs,
-        [split],
-        logger=wandb_logger,
-        threshold=float("inf")
+        policy, envs, [split], logger=wandb_logger, threshold=float("inf")
     )
     summaries[-1] = summary
 
     binned_thresholds[0] = thresholds[0]
     binned_thresholds[-1] = thresholds[-1]
 
-    current_num_evals = 2
+    # current_num_evals = 2
 
     left_index = 0
     right_index = num_threshold_bins - 0
@@ -132,41 +126,24 @@ def main():
         threshold=right_threshold,
         # percentile_step=percentile_step,
     )
-    summary_batch.append(summary)
+    # summary_batch.append(summary)
     afhp = summary[split]["action_1_frac"]
     if afhp < percentile_bins[-2]:
         binned_thresholds[-2] = right_threshold
         summaries[-2] = summary
         right_index -= 1
 
-    
-    bin = determine_bin(percentile_bins, afhp)
-
-
-    update_policy_params(policy, threshold)
-    summary = evaluator.eval(
-        policy,
-        envs,
-        [split],
-        logger=wandb_logger,
-        threshold=threshold,
-        percentile_step=percentile_step,
-    )
-    summary_batch.append(summary)
-    afhp = summary[split]["action_1_frac"]
-    bin = determine_bin(percentile_bins, afhp)
-
     determine_results(
-        summaries, 
-        thresholds, 
-        percentile_bins, 
-        left_index, 
+        summaries,
+        thresholds,
+        percentile_bins,
+        left_index,
         right_index,
         split,
         policy,
         envs,
         wandb_logger,
-        evaluator
+        evaluator,
     )
 
     # Save result summary to file.
@@ -186,17 +163,18 @@ def main():
         training_scores=policy.get_train_decision_scores(),
     )
 
+
 def determine_results(
-    summaries: List[dict], 
-    thresholds: List[float], 
+    summaries: List[dict],
+    thresholds: List[float],
     percentile_bins: List[float],
-    left_index: int, 
+    left_index: int,
     right_index: int,
     split: str,
     policy,
     envs,
     wandb_logger,
-    evaluator
+    evaluator,
 ):
     left_threshold = thresholds[left_index]
     right_threshold = thresholds[right_index]
@@ -210,7 +188,6 @@ def determine_results(
         threshold=middle_threshold,
         # percentile_step=percentile_step,
     )
-    summary_batch.append(summary)
     afhp = summary[split]["action_1_frac"]
     bin_idx = determine_bin(percentile_bins, afhp)
     if summaries[bin_idx] is None:
@@ -220,44 +197,57 @@ def determine_results(
     # Check if empty bins remain left
     left_remaining = bins_remaining(percentile_bins, left_index, bin_idx)
     if left_remaining:
-        
         determine_results(
-            summaries, 
-            thresholds, 
-            percentile_bins, 
-            left_index, 
+            summaries,
+            thresholds,
+            percentile_bins,
+            left_index,
             bin_idx,
             split,
             policy,
             envs,
             wandb_logger,
-            evaluator
+            evaluator,
         )
 
     right_remaining = bins_remaining(summaries, left_index, bin_idx)
     if right_remaining:
-
         determine_results(
-            summaries, 
-            thresholds, 
-            percentile_bins, 
-            bin_idx, 
+            summaries,
+            thresholds,
+            percentile_bins,
+            bin_idx,
             right_index,
             split,
             policy,
             envs,
             wandb_logger,
-            evaluator
+            evaluator,
         )
 
 
+def determine_bin(percentile_bins, afhp) -> int:
+    if afhp < 0.0 or afhp > 1.0:
+        raise ValueError(f"Error, encountered an AFHP of {afhp}")
+    afhp_percent = afhp * 100
+    for i in range(len(percentile_bins) - 1):
+        if (
+            afhp_percent >= percentile_bins[i]
+            and afhp_percent <= percentile_bins[i + 1]
+        ):
+            return i
+    raise ValueError(
+        f"Encountered issue with percentile_bins {percentile_bins} "
+        f"and afhp {afhp_percent}."
+    )
+
+
 def bins_remaining(summaries, left_index, right_index) -> bool:
-    for i in range(left_index +1, right_index):
+    for i in range(left_index + 1, right_index):
         if summaries[i] is None:
             # Found at least one remaining bin that wasn't filled yet.
             return True
     return False
-
 
 
 def update_policy_params(policy, threshold):
