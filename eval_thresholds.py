@@ -182,6 +182,7 @@ def determine_results(
     # is on the LEFT and the LOW threshold is on the RIGHT. This, to find the point in
     # the middle, we need to
     middle_threshold = right_threshold + (left_threshold - right_threshold) / 2
+    update_policy_params(policy, middle_threshold)
     summary = evaluator.eval(
         policy,
         envs,
