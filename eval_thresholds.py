@@ -1,5 +1,8 @@
 from pathlib import Path
 import os
+import time
+
+from sympy import O
 import flags
 import YRC.core.configs.utils as config_utils
 import YRC.core.environment as env_factory
@@ -20,6 +23,9 @@ def main():
     args = flags.make()
     args.eval_mode = True
     config = config_utils.load(args.config, flags=args)
+    
+    # Record time for profiling purposes
+    start_time = time.time()
 
     envs = env_factory.make(config)
     policy = policy_factory.make(config, envs["train"])
@@ -106,6 +112,9 @@ def main():
         results=np.array(results),
         training_scores=policy.get_train_decision_scores(),
     )
+
+    end_time = time.time()
+    print(f"Time taken: {end_time - start_time} seconds")
 
 
 def update_policy_params(policy, threshold):
