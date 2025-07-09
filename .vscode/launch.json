@@ -35,11 +35,12 @@
             "program": "${workspaceFolder}/eval_thresholds.py",
             "args": [
                 "-wandb_project", "yrc-debug",
-                "-wandb_mode", "offline",
+                // "-wandb_mode", "offline",
                 // "-c", "configs/procgen_ae.yaml",
                 // "-c", "configs/procgen_random_hard.yaml",
                 "-c", "configs/procgen_ood.yaml",
                 "-n", "debug_ood_deepsvdd",
+                // "-en", "coinrun",
                 "-en", "coinrun",
                 "-sim", "YRC/checkpoints/procgen/coinrun/sim_weak/model_40009728.pth",
                 "-weak", "YRC/checkpoints/procgen/coinrun/weak/model_80019456.pth",
