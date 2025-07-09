@@ -35,7 +35,7 @@
             "program": "${workspaceFolder}/eval_thresholds.py",
             "args": [
                 "-wandb_project", "yrc-debug",
-                // "-wandb_mode", "offline",
+                "-wandb_mode", "offline",
                 // "-c", "configs/procgen_ae.yaml",
                 // "-c", "configs/procgen_random_hard.yaml",
                 "-c", "configs/procgen_ood.yaml",
