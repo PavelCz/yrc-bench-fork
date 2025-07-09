@@ -198,7 +198,7 @@ def determine_results(
         thresholds[bin_idx] = middle_threshold
 
     # Check if empty bins remain left
-    left_remaining = bins_remaining(percentile_bins, left_index, bin_idx)
+    left_remaining = bins_remaining(summaries, left_index, bin_idx)
     if left_remaining:
         determine_results(
             summaries,
@@ -213,7 +213,7 @@ def determine_results(
             evaluator,
         )
 
-    right_remaining = bins_remaining(summaries, left_index, bin_idx)
+    right_remaining = bins_remaining(summaries, bin_idx, right_index)
     if right_remaining:
         determine_results(
             summaries,
