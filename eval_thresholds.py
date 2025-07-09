@@ -37,9 +37,12 @@ def main():
     if num_threshold_bins < 5:
         raise ValueError("Number of threshold bins must be at least 5")
 
-    # For our initial set of thresolds, we determine threshold percentiles based on
-    # training scores
-    initial_thresholds, percentile_steps = policy.compute_train_percentiles(3)
+    train_decision_scores = policy.get_train_decision_scores()
+
+    # Left vs right is in terms of the "ask for help percentage". A high threshold means
+    # a low AFHP, a low threshold a high AFHP
+    left_threshold = max(train_decision_scores)
+    right_threshold = min(train_decision_scores)
 
     # Linearly extend the thresholds below the lowest threshold.
     # delta = thresholds[-1] - thresholds[0]
@@ -84,22 +87,19 @@ def main():
     summary = evaluator.eval(
         policy, envs, [split], logger=wandb_logger, threshold=float("-inf")
     )
-    summaries[0] = summary
+    summaries[-1] = summary
     update_policy_params(policy, float("inf"))
     summary = evaluator.eval(
         policy, envs, [split], logger=wandb_logger, threshold=float("inf")
     )
-    summaries[-1] = summary
+    summaries[0] = summary
 
-    binned_thresholds[0] = initial_thresholds[0]
-    binned_thresholds[-1] = initial_thresholds[-1]
-
+    binned_thresholds[0] = left_threshold
+    binned_thresholds[-1] = right_threshold
     # current_num_evals = 2
 
     left_index = 0
-    right_index = num_threshold_bins - 0
-    left_threshold = initial_thresholds[0]
-    right_threshold = initial_thresholds[-1]
+    right_index = num_threshold_bins - 1
 
     update_policy_params(policy, left_threshold)
     summary = evaluator.eval(
@@ -157,7 +157,7 @@ def main():
     )
     np.savez(
         results_file_path,
-        thresholds=initial_thresholds,
+        thresholds=binned_thresholds,
         results=np.array(summaries),
         training_scores=policy.get_train_decision_scores(),
     )
@@ -178,7 +178,10 @@ def determine_results(
     left_threshold = thresholds[left_index]
     right_threshold = thresholds[right_index]
 
-    middle_threshold = left_threshold + (right_threshold - left_threshold) / 2
+    # Because left vs right is determined by low_afhp vs high_afhp, the HIGH threshold
+    # is on the LEFT and the LOW threshold is on the RIGHT. This, to find the point in
+    # the middle, we need to
+    middle_threshold = right_threshold + (left_threshold - right_threshold) / 2
     summary = evaluator.eval(
         policy,
         envs,

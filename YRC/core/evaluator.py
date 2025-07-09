@@ -95,7 +95,7 @@ class Evaluator:
         step = 0
         while not has_done.all():
             if not self.collected_actions_done:
-                self.collected_observations.append(obs["env_obs"])
+                 self.collected_observations.append(obs["env_obs"])
 
             action = policy.act(obs, greedy=args.act_greedy)
 
