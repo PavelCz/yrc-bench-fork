@@ -1,7 +1,6 @@
 from pathlib import Path
 import os
 
-from torch import threshold
 import flags
 import YRC.core.configs.utils as config_utils
 import YRC.core.environment as env_factory
@@ -40,7 +39,7 @@ def main():
 
     # For our initial set of thresolds, we determine threshold percentiles based on
     # training scores
-    thresholds, percentile_steps = policy.compute_train_percentiles(3)
+    initial_thresholds, percentile_steps = policy.compute_train_percentiles(3)
 
     # Linearly extend the thresholds below the lowest threshold.
     # delta = thresholds[-1] - thresholds[0]
@@ -92,15 +91,15 @@ def main():
     )
     summaries[-1] = summary
 
-    binned_thresholds[0] = thresholds[0]
-    binned_thresholds[-1] = thresholds[-1]
+    binned_thresholds[0] = initial_thresholds[0]
+    binned_thresholds[-1] = initial_thresholds[-1]
 
     # current_num_evals = 2
 
     left_index = 0
     right_index = num_threshold_bins - 0
-    left_threshold = threshold[0]
-    right_threshold = threshold[-1]
+    left_threshold = initial_thresholds[0]
+    right_threshold = initial_thresholds[-1]
 
     update_policy_params(policy, left_threshold)
     summary = evaluator.eval(
@@ -135,7 +134,7 @@ def main():
 
     determine_results(
         summaries,
-        thresholds,
+        binned_thresholds,
         percentile_bins,
         left_index,
         right_index,
@@ -158,7 +157,7 @@ def main():
     )
     np.savez(
         results_file_path,
-        thresholds=thresholds,
+        thresholds=initial_thresholds,
         results=np.array(summaries),
         training_scores=policy.get_train_decision_scores(),
     )
