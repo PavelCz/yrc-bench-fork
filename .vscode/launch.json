@@ -51,7 +51,7 @@
                 "-query_cost", "0",
                 "-over",
                 "-seed", "1",
-                "-test_episodes", "8"
+                "-test_episodes", "64"
             ],
             "console": "integratedTerminal",
             "justMyCode": true,

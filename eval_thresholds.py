@@ -2,7 +2,6 @@ from pathlib import Path
 import os
 import time
 
-from sympy import O
 import flags
 import YRC.core.configs.utils as config_utils
 import YRC.core.environment as env_factory
@@ -23,7 +22,7 @@ def main():
     args = flags.make()
     args.eval_mode = True
     config = config_utils.load(args.config, flags=args)
-    
+
     # Record time for profiling purposes
     start_time = time.time()
 
