@@ -107,7 +107,7 @@ class Evaluator:
 
                 episode_log["reward"][i] += reward[i]
                 episode_log["episode_length"][i] += 1
-                episode_log[f"action_{self.LOGGED_ACTION}"] += (action[i] == self.LOGGED_ACTION).sum()
+                episode_log[f"action_{self.LOGGED_ACTION}"][i] += (action[i] == self.LOGGED_ACTION).sum()
 
                 if done[i] and num_episodes < max_episodes:
                     log["reward"].append(episode_log["reward"][i])
