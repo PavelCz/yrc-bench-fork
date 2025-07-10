@@ -40,11 +40,7 @@ class Evaluator:
 
             logging.info(f"Evaluation on {split} for {num_episodes} episodes")
 
-            num_iterations = num_episodes // envs[split].num_envs
-            log = {}
-            for _ in range(num_iterations):
-                this_log = self._eval_one_iteration(policy, envs[split])
-                self._update_log(log, this_log)
+            log = self._eval_loop(policy, envs[split], num_episodes)
 
             summary[split] = self.summarize(log)
             self.write_summary(split, summary[split])
@@ -71,62 +67,68 @@ class Evaluator:
 
         return summary
 
-    def _update_log(self, log, this_log):
-        if not log:
-            log.update(this_log)
-        for k, v in this_log.items():
-            if isinstance(v, list):
-                log[k].extend(v)
-            else:
-                log[k] += v
-
-    def _eval_one_iteration(self, policy, env):
+    def _eval_loop(self, policy, env, max_episodes: int) -> dict:
         args = self.args
+
         log = {
+            "reward": [],
+            "env_reward": [],
+            "episode_length": [],
+            f"action_{self.LOGGED_ACTION}": [],
+        }
+
+        # A temporary log that only contains stats for the current episode.
+        episode_log = {
             "reward": [0] * env.num_envs,
             "env_reward": [0] * env.num_envs,
             "episode_length": [0] * env.num_envs,
-            f"action_{self.LOGGED_ACTION}": 0,
+            f"action_{self.LOGGED_ACTION}": [0] * env.num_envs,
         }
 
         obs = env.reset()
+
+        # This tracks the very first done and is only used to determine whether to keep
+        # collecting observations that are later used to generate the video.
         has_done = np.array([False] * env.num_envs)
-        step = 0
-        while not has_done.all():
-            if not self.collected_actions_done:
+        num_episodes = 0
+
+        while num_episodes < max_episodes:
+            if not all(has_done):
                 self.collected_observations.append(obs["env_obs"])
 
             action = policy.act(obs, greedy=args.act_greedy)
 
             obs, reward, done, info = env.step(action)
 
-            """
-            if action.ndim == 0:
-                action = action.reshape(1)
-                reward = reward.reshape(1)
-            """
-
             for i in range(env.num_envs):
 
                 if "env_reward" in info[i]:
-                    log["env_reward"][i] += info[i]["env_reward"] * (1 - has_done[i])
+                    episode_log["env_reward"][i] += info[i]["env_reward"]
 
-                log["reward"][i] += reward[i] * (1 - has_done[i])
-                log["episode_length"][i] += 1 - has_done[i]
-                if not has_done[i]:
-                    log[f"action_{self.LOGGED_ACTION}"] += (action[i] == self.LOGGED_ACTION).sum()
+                episode_log["reward"][i] += reward[i]
+                episode_log["episode_length"][i] += 1
+                episode_log[f"action_{self.LOGGED_ACTION}"] += (action[i] == self.LOGGED_ACTION).sum()
+
+                if done[i] and num_episodes < max_episodes:
+                    log["reward"].append(episode_log["reward"][i])
+                    log["env_reward"].append(episode_log["env_reward"][i])
+                    log["episode_length"].append(episode_log["episode_length"][i])
+                    log[f"action_{self.LOGGED_ACTION}"].append(episode_log[f"action_{self.LOGGED_ACTION}"][i])
+                    num_episodes += 1
+
+                    episode_log["reward"][i] = 0
+                    episode_log["env_reward"][i] = 0
+                    episode_log["episode_length"][i] = 0
+                    episode_log[f"action_{self.LOGGED_ACTION}"][i] = 0
 
             has_done |= done
-            step += 1
-
-        # When the first iteration of eval is done we stop collecting observations
-        self.collected_observations_done = True
 
         return log
 
     def summarize(self, log):
+        total_steps = int(sum(log["episode_length"]))
         return {
-            "steps": int(sum(log["episode_length"])),
+            "steps": total_steps,
             "episode_length_mean": float(np.mean(log["episode_length"])),
             "episode_length_min": int(np.min(log["episode_length"])),
             "episode_length_max": int(np.max(log["episode_length"])),
@@ -136,7 +138,7 @@ class Evaluator:
             "env_reward_mean": float(np.mean(log["env_reward"])),
             "env_reward_std": float(np.std(log["env_reward"])),
             f"action_{self.LOGGED_ACTION}_frac": float(
-                log[f"action_{self.LOGGED_ACTION}"] / sum(log["episode_length"])
+                sum(log[f"action_{self.LOGGED_ACTION}"]) / total_steps
             ),
         }
 
