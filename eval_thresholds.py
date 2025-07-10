@@ -43,20 +43,6 @@ def main():
 
     train_decision_scores = policy.get_train_decision_scores()
 
-    # Left vs right is in terms of the "ask for help percentage". A high threshold means
-    # a low AFHP, a low threshold a high AFHP
-    left_threshold = max(train_decision_scores)
-    right_threshold = min(train_decision_scores)
-
-    # Linearly extend the thresholds below the lowest threshold.
-    # delta = thresholds[-1] - thresholds[0]
-    # Similarly, extend the thresholds above the highest threshold.
-    # additional_thresholds = []
-    # highest_threshold = thresholds[-1]
-    # for i in range(0, args.eval.num_thresholds * 2):
-    #     additional_thresholds.append(highest_threshold + delta * (2**i))
-    # thresholds = np.concatenate([thresholds, np.array(additional_thresholds)])
-
     # Initialize wandb logger
     save_dir = Path(str(get_global_variable("experiment_dir")))
 
@@ -83,63 +69,49 @@ def main():
     split = "test"
 
     summaries = [None] * num_threshold_bins
+    # A list of bins, where each value in the bin is the TRAINING (inverse) percentile,
+    # based on the empirical AFHP value.
+    # I.e. index one corresponds to the bin 0% <= AFHP <= 10%, and the value inside
+    # will be the inverse precentile of the threshold that got binned into that bin.
+    binned_train_percentiles = [None] * num_threshold_bins
     binned_thresholds = [None] * num_threshold_bins
-    percentile_bins = np.linspace(0, 100, num_threshold_bins + 1)
+    afhp_bins = np.linspace(0, 100, num_threshold_bins + 1)
 
-    # Evaluat for extreme values
+    # Evaluate for extreme values.
+    # A threshold of -inf should correspond with a 100% AFHP.
     update_policy_params(policy, float("-inf"))
     summary = evaluator.eval(
         policy, envs, [split], logger=wandb_logger, threshold=float("-inf")
     )
     summaries[-1] = summary
+    binned_train_percentiles[-1] = 100
+    binned_thresholds[-1] = float("-inf")
+    # A threshold of inf should correspond with a 0% AFHP.
     update_policy_params(policy, float("inf"))
     summary = evaluator.eval(
         policy, envs, [split], logger=wandb_logger, threshold=float("inf")
     )
     summaries[0] = summary
+    binned_train_percentiles[0] = 0
+    binned_thresholds[0] = float("inf")
 
-    binned_thresholds[0] = left_threshold
-    binned_thresholds[-1] = right_threshold
-    # current_num_evals = 2
-
+    # These indices point to the actual bins, where the training inverse percentiles got
+    # binned to. We want to do a bisecting search, where start at 0,100 and then we use
+    # dynamic programming to insert 25 and 75 into the bins and so on.
     left_index = 0
     right_index = num_threshold_bins - 1
+    left_percentile = 0
+    right_percentile = 100
 
-    update_policy_params(policy, left_threshold)
-    summary = evaluator.eval(
-        policy,
-        envs,
-        [split],
-        logger=wandb_logger,
-        threshold=left_threshold,
-        # percentile_step=percentile_step,
-    )
-    afhp = summary[split]["action_1_frac"]
-    if afhp > percentile_bins[1]:
-        binned_thresholds[1] = left_threshold
-        summaries[1] = summary
-        left_index += 1
-
-    update_policy_params(policy, right_threshold)
-    summary = evaluator.eval(
-        policy,
-        envs,
-        [split],
-        logger=wandb_logger,
-        threshold=right_threshold,
-        # percentile_step=percentile_step,
-    )
-    # summary_batch.append(summary)
-    afhp = summary[split]["action_1_frac"]
-    if afhp < percentile_bins[-2]:
-        binned_thresholds[-2] = right_threshold
-        summaries[-2] = summary
-        right_index -= 1
-
-    determine_results(
+    total_evals = 2
+    new_evals = determine_results(
         summaries,
+        binned_train_percentiles,
         binned_thresholds,
-        percentile_bins,
+        train_decision_scores,
+        afhp_bins,
+        left_percentile,
+        right_percentile,
         left_index,
         right_index,
         split,
@@ -148,6 +120,7 @@ def main():
         wandb_logger,
         evaluator,
     )
+    total_evals += new_evals
 
     # Save result summary to file.
     log_file_path = get_global_variable("log_file")
@@ -161,18 +134,24 @@ def main():
     )
     np.savez(
         results_file_path,
-        thresholds=binned_thresholds,
+        thresholds=binned_train_percentiles,
         results=np.array(summaries),
         training_scores=policy.get_train_decision_scores(),
     )
 
     end_time = time.time()
     print(f"Time taken: {end_time - start_time} seconds")
+    print(f"Total evals: {total_evals}")
+
 
 def determine_results(
     summaries: List[dict],
-    thresholds: List[float],
-    percentile_bins: List[float],
+    binned_train_percentiles: List[float],
+    binned_thresholds: List[float],
+    train_decision_scores: np.ndarray,
+    afhp_bins: List[float],
+    left_percentile: float,
+    right_percentile: float,
     left_index: int,
     right_index: int,
     split: str,
@@ -181,35 +160,48 @@ def determine_results(
     wandb_logger,
     evaluator,
 ):
-    left_threshold = thresholds[left_index]
-    right_threshold = thresholds[right_index]
+    # Determine the new percentile to check, which will be the middle of the two
+    # percentiles indicated by the left and right indices.
+    middle_percentile = (left_percentile + right_percentile) / 2
 
-    # Because left vs right is determined by low_afhp vs high_afhp, the HIGH threshold
-    # is on the LEFT and the LOW threshold is on the RIGHT. This, to find the point in
-    # the middle, we need to
-    middle_threshold = right_threshold + (left_threshold - right_threshold) / 2
+    # Determine the threshold for the given middle percentile. Remember that these are
+    # inverse percentiles, so we need to invert the percentile to get the threshold.
+    middle_threshold = np.percentile(train_decision_scores, 100 - middle_percentile)
+
+    # Update the policy with the new threshold.
     update_policy_params(policy, middle_threshold)
+
+    # Run eval with the new threshold.
     summary = evaluator.eval(
         policy,
         envs,
         [split],
         logger=wandb_logger,
         threshold=middle_threshold,
-        # percentile_step=percentile_step,
+        percentile_step=middle_percentile,
     )
+    # This is the empirically determined AFHP.
     afhp = summary[split]["action_1_frac"]
-    bin_idx = determine_bin(percentile_bins, afhp)
+    # Determine which bin the AFHP would go into.
+    bin_idx = determine_bin(afhp_bins, afhp)
     if summaries[bin_idx] is None:
+        # If the bin is empty, we can add the summary and threshold to the bin.
         summaries[bin_idx] = summary
-        thresholds[bin_idx] = middle_threshold
+        binned_thresholds[bin_idx] = middle_threshold
+        binned_train_percentiles[bin_idx] = middle_percentile
 
     # Check if empty bins remain left
     left_remaining = bins_remaining(summaries, left_index, bin_idx)
+    evals_left = 0
     if left_remaining:
-        determine_results(
+        evals_left = determine_results(
             summaries,
-            thresholds,
-            percentile_bins,
+            binned_train_percentiles,
+            binned_thresholds,
+            train_decision_scores,
+            afhp_bins,
+            left_percentile,
+            middle_percentile,
             left_index,
             bin_idx,
             split,
@@ -218,13 +210,17 @@ def determine_results(
             wandb_logger,
             evaluator,
         )
-
+    evals_right = 0
     right_remaining = bins_remaining(summaries, bin_idx, right_index)
     if right_remaining:
-        determine_results(
+        evals_right = determine_results(
             summaries,
-            thresholds,
-            percentile_bins,
+            binned_train_percentiles,
+            binned_thresholds,
+            train_decision_scores,
+            afhp_bins,
+            middle_percentile,
+            right_percentile,
             bin_idx,
             right_index,
             split,
@@ -233,21 +229,18 @@ def determine_results(
             wandb_logger,
             evaluator,
         )
+    return evals_left + evals_right + 1
 
 
-def determine_bin(percentile_bins, afhp) -> int:
+def determine_bin(afhp_bins: List[float], afhp: float) -> int:
     if afhp < 0.0 or afhp > 1.0:
         raise ValueError(f"Error, encountered an AFHP of {afhp}")
     afhp_percent = afhp * 100
-    for i in range(len(percentile_bins) - 1):
-        if (
-            afhp_percent >= percentile_bins[i]
-            and afhp_percent <= percentile_bins[i + 1]
-        ):
+    for i in range(len(afhp_bins) - 1):
+        if afhp_percent >= afhp_bins[i] and afhp_percent <= afhp_bins[i + 1]:
             return i
     raise ValueError(
-        f"Encountered issue with percentile_bins {percentile_bins} "
-        f"and afhp {afhp_percent}."
+        f"Encountered issue with percentile_bins {afhp_bins} and afhp {afhp_percent}."
     )
 
 
