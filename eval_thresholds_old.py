@@ -37,7 +37,7 @@ def main():
 
     # Determine threshold percentiles
     thresholds, percentile_steps = policy.compute_train_percentiles(
-        args.eval.num_thresholds
+        args.eval.threshold_bins
     )
 
     # Linearly extend the thresholds below the lowest threshold.
