@@ -32,7 +32,7 @@
             "name": "Eval Thresholds Coinrun OOD AE",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/eval_thresholds.py",
+            "program": "${workspaceFolder}/eval_thresholds_old.py",
             "args": [
                 "-wandb_project", "yrc-debug",
                 // "-wandb_mode", "offline",
