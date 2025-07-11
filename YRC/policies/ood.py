@@ -295,13 +295,7 @@ class OODPolicy(Policy):
             return torch.from_numpy(data).float()  # .to(self.device)
         return data
 
-    def get_train_decision_scores(self) -> Optional[np.ndarray]:
-        return self.clf.decision_scores_
-    
-    def compute_train_percentiles(
-        self, num_thresholds: int
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        percentile_steps = np.linspace(0, 100, num_thresholds)
-        thresholds = np.percentile(self.clf.decision_scores_, percentile_steps)
-
-        return thresholds, percentile_steps
+    def train_percentile(
+        self, percentile: float
+    ) -> float:
+        return np.percentile(self.clf.decision_scores_, percentile)
