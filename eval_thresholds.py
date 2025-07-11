@@ -184,6 +184,8 @@ def determine_results(
     afhp = summary[split]["action_1_frac"]
     # Determine which bin the AFHP would go into.
     bin_idx = determine_bin(afhp_bins, afhp)
+
+    # We only add new evals to the bin if it is empty.
     if summaries[bin_idx] is None:
         # If the bin is empty, we can add the summary and threshold to the bin.
         summaries[bin_idx] = summary
