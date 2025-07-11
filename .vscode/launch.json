@@ -32,7 +32,7 @@
             "name": "Eval Thresholds Coinrun OOD AE",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/eval_thresholds.py",
+            "program": "${workspaceFolder}/eval_thresholds_old.py",
             "args": [
                 "-wandb_project", "yrc-debug",
                 // "-wandb_mode", "offline",
@@ -40,6 +40,7 @@
                 // "-c", "configs/procgen_random_hard.yaml",
                 "-c", "configs/procgen_ood.yaml",
                 "-n", "debug_ood_deepsvdd",
+                // "-en", "coinrun",
                 "-en", "coinrun",
                 "-sim", "YRC/checkpoints/procgen/coinrun/sim_weak/model_40009728.pth",
                 "-weak", "YRC/checkpoints/procgen/coinrun/weak/model_80019456.pth",
@@ -49,6 +50,7 @@
                 "-cp_feature", "obs",
                 "-f_n", "trained.joblib",
                 "-query_cost", "0",
+                "-threshold_bins", "5",
                 "-over",
                 "-seed", "1",
                 "-test_episodes", "64"

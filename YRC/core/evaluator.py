@@ -53,13 +53,14 @@ class Evaluator:
             vid = vid.astype(np.int8)
             logger.experiment.log(
                 {
-                    f"eval_episode_{percentile_step}": wandb.Video(
+                    f"eval_episode_{threshold:.2f}": wandb.Video(
                         # (batch dim, time dim, c, h, w)
                         vid,
                         fps=15,
                         format="gif",
                         caption=(
-                            f"Threshold: {threshold}, Percentile: {percentile_step}"
+                            f"Threshold: {threshold:.2f}, "
+                            # f"Percentile: {percentile_step:.2f}"
                         ),
                     ),
                 }
