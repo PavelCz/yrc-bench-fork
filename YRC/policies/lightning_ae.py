@@ -356,6 +356,8 @@ class LightningAEPolicy(OODPolicy):
         super().update_params(params)
         if "threshold" in params:
             self.threshold_ = params["threshold"]
+        else:
+            raise ValueError("Threshold not found in params")
 
     def save_model(self, name: str, save_dir: str) -> None:
         """
