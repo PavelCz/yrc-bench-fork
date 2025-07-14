@@ -121,13 +121,9 @@ class RandomPolicy(Policy):
         ckpt = torch.load(load_path)
         self.prob = ckpt["prob"]
 
-    def compute_train_percentiles(
-        self, num_thresholds: int
-    ) -> Tuple[np.ndarray, np.ndarray]:
-        percentile_steps = np.linspace(0, 100, num_thresholds)
-        thresholds = percentile_steps * 0.01
-
-        return thresholds, percentile_steps
+    def train_percentile(
+        self, percentile: float
+    ) -> float:
+        """Take a percentile and return the threshold for that percentile."""
+        return (100 - percentile) * 0.01
     
-    def get_train_decision_scores(self) -> Optional[np.ndarray]:
-        return None
