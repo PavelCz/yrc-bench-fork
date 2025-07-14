@@ -162,7 +162,7 @@ def determine_results(
 
     # Determine the threshold for the given middle percentile. Remember that these are
     # inverse percentiles, so we need to invert the percentile to get the threshold.
-    middle_threshold = policy.train_percentile(middle_percentile)
+    middle_threshold = policy.train_percentile(100 - middle_percentile)
 
     # Update the policy with the new threshold.
     update_policy_params(policy, middle_threshold)
