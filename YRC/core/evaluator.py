@@ -97,6 +97,8 @@ class Evaluator:
             if not all(has_done):
                 self.collected_observations.append(obs["env_obs"])
 
+            # For most policies I have seen, the greedy flag is ignored. These include
+            # random, lightning_ae, and ood.
             action = policy.act(obs, greedy=args.act_greedy)
 
             obs, reward, done, info = env.step(action)

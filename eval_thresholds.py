@@ -252,7 +252,16 @@ def update_policy_params(policy, threshold):
     if isinstance(policy, LightningAEPolicy) or isinstance(policy, OODPolicy):
         policy.update_params({"threshold": threshold})
     elif isinstance(policy, RandomPolicy):
+        if threshold == float("inf"):
+            # An infinite threshold means that the policy will never ask for help.
+            # We need to set the probability to 0.
+            threshold = 0.0
+        elif threshold == float("-inf"):
+            # A negative infinite threshold means that the policy will always ask for help.
+            # We need to set the probability to 1.
+            threshold = 1.0
         policy.update_params(threshold)
+
     else:
         raise ValueError(
             f"Policy type {type(policy)} currently not supported for threshold search"
