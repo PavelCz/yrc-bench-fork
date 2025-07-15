@@ -10,6 +10,7 @@ import sys
 from YRC.policies.ood import OODPolicy
 from YRC.core.configs.global_configs import get_global_variable
 from YRC.core.dataset import ObservationDataset, ObservationDataModule
+from YRC.core.utils import to_tensor
 
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
@@ -328,13 +329,13 @@ class LightningAEPolicy(OODPolicy):
 
         if get_global_variable("benchmark") in ["cliport", "minigrid"]:
             observation = [
-                self.to_tensor(
-                    obs[key]["image"] if key == "env_obs" else self.to_tensor(obs[key])
+                to_tensor(
+                    obs[key]["image"] if key == "env_obs" else to_tensor(obs[key])
                 )
                 for key in keys
             ]
         else:
-            observation = [self.to_tensor(obs[key]) for key in keys]
+            observation = [to_tensor(obs[key]) for key in keys]
 
         if self.feature_type in ["obs", "hidden", "dist"]:
             observation = observation[0]

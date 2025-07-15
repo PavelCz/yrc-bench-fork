@@ -9,6 +9,7 @@ from lib.pyod.pyod.models import deep_svdd, auto_encoder
 from joblib import dump, load
 from YRC.core.configs.global_configs import get_global_variable
 from YRC.models.utils import AutoEncoderWithVal
+from YRC.core.utils import to_tensor
 
 
 
@@ -66,9 +67,9 @@ class OODPolicy(Policy):
         }[self.feature_type]
 
         if get_global_variable("benchmark") in ["cliport", "minigrid"]:
-            observation = [self.to_tensor(obs[key]["image"] if key == "env_obs" else self.to_tensor(obs[key])) for key in keys]
+            observation = [to_tensor(obs[key]["image"] if key == "env_obs" else to_tensor(obs[key])) for key in keys]
         else:
-            observation = [self.to_tensor(obs[key]) for key in keys]
+            observation = [to_tensor(obs[key]) for key in keys]
 
         if self.feature_type in ["obs", "hidden", "dist"]:
             observation = observation[0]
@@ -167,21 +168,6 @@ class OODPolicy(Policy):
         self.clf_name = state_dict['clf_name']
 
         return self
-
-    def to_tensor(self, data):
-        """Converts input to a torch tensor if it's not already."""
-        if isinstance(data, dict):
-            for key in data:
-                data[key] = self.to_tensor(data[key])
-            return data
-        if isinstance(data, tuple):
-            return data
-        if not torch.is_tensor(data):
-            # (pavel 2025-06-11) I removed the to device call since we don't want our
-            # training dataset to be fully moved to the GPU by default. If this breaks
-            # something somewhere else, I might have to reconsider this.
-            return torch.from_numpy(data).float()  # .to(self.device)
-        return data
 
     def train_percentile(
         self, percentile: float
