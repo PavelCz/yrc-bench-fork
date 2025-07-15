@@ -1,6 +1,8 @@
 import logging
 import importlib
 import wandb
+from typing import List
+import torch
 
 from YRC.core.configs import get_global_variable
 
@@ -18,6 +20,7 @@ class Algorithm:
         self,
         policy,
         envs,
+        rollout_obs: List[torch.Tensor],
         evaluator=None,
         train_split=None,
         eval_splits=None,

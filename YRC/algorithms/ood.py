@@ -3,7 +3,8 @@ import logging
 from YRC.core import Algorithm
 from YRC.core.configs.global_configs import get_global_variable
 from YRC.models.utils import AutoEncoderWithVal
-
+from typing import List
+import torch
 
 class OODAlgorithm(Algorithm):
     def __init__(self, config, env):
@@ -16,6 +17,7 @@ class OODAlgorithm(Algorithm):
         self,
         policy,
         envs,
+        rollout_obs: List[torch.Tensor],
         evaluator=None,
         train_split=None,
         eval_splits=None,
@@ -28,9 +30,8 @@ class OODAlgorithm(Algorithm):
         # Initialize OOD detector
         policy.initialize_ood_detector(args, envs["train"])
 
-        # Generate rollouts for training OOD detector
-        rollout_obs = policy.gather_rollouts(envs["train"], args.num_rollouts)
-        rollout_obs_threshold = policy.gather_rollouts(envs["train"], args.num_rollouts)
+        # rollout_obs_threshold = policy.gather_rollouts(envs["train"], args.num_rollouts)
+        rollout_obs_threshold = None
 
         # Train OOD detector
         policy.fit(x=rollout_obs, x_threshold=rollout_obs_threshold)

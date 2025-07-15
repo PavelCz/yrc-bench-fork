@@ -3,7 +3,8 @@ import pprint
 import logging
 from YRC.core import Algorithm
 from YRC.core.configs.global_configs import get_global_variable
-
+from typing import List, Optional
+import torch
 
 class RandomAlgorithm(Algorithm):
     def __init__(self, config, env):
@@ -13,6 +14,7 @@ class RandomAlgorithm(Algorithm):
             self,
             policy,
             envs,
+            rollout_obs: Optional[List[torch.Tensor]],
             evaluator=None,
             train_split=None,
             eval_splits=None,

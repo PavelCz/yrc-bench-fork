@@ -8,6 +8,9 @@ import wandb
 from pytorch_lightning.loggers import WandbLogger
 from YRC.core.configs.global_configs import get_global_variable
 from pathlib import Path
+import json
+import torch
+from typing import List
 
 # Algorithms that support training without threshold search.
 ALGORITHMS = ["ood", "lightning_ae"]
@@ -15,7 +18,6 @@ ALGORITHMS = ["ood", "lightning_ae"]
 if __name__ == "__main__":
     args = flags.make()
     config = config_utils.load(args.config, flags=args)
-
 
     envs = env_factory.make(config)
     policy = policy_factory.make(config, envs["train"])
@@ -60,3 +62,27 @@ if __name__ == "__main__":
         eval_splits=["val_sim", "val_true"],
         do_threshold_search=False,
     )
+
+
+def load_rollouts(config) -> List[torch.Tensor]:
+    rollouts_config = {
+        "num_rollouts": config.algorithm.num_rollouts,
+        "feature_type": config.coord_policy.feature_type,
+        "collect_data_agent": config.coord_policy.collect_data_agent,
+    }
+
+    rollouts_dir = Path(config.rollout_dir)
+
+    with (rollouts_dir / "rollouts_config.json").open("r") as f:
+        rollouts_config_loaded = json.load(f)
+
+    with (rollouts_dir / "rollouts.pt").open("rb") as f:
+        rollout_obs = torch.load(f)
+
+    if rollouts_config_loaded != rollouts_config:
+        raise ValueError(
+            f"Rollouts config mismatch: {rollouts_config_loaded} != {rollouts_config}"
+        )
+
+    return rollout_obs
+

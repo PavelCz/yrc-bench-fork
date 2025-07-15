@@ -5,6 +5,7 @@ from YRC.core import Algorithm
 from YRC.core.configs.global_configs import get_global_variable
 from YRC.core.configs.utils import config_logging
 from YRC.policies.lightning_ae import LightningAEPolicy
+import torch
 
 
 class AutoencoderAlgorithm(Algorithm):
@@ -29,6 +30,7 @@ class AutoencoderAlgorithm(Algorithm):
         self,
         policy: LightningAEPolicy,
         envs: Optional[Dict[str, Any]],
+        rollout_obs: List[torch.Tensor],
         evaluator: Optional[Any] = None,
         train_split: Optional[str] = None,
         eval_splits: Optional[List[str]] = None,
@@ -64,11 +66,6 @@ class AutoencoderAlgorithm(Algorithm):
             f"Gathering {args.num_rollouts} rollouts for training OOD detector."
         )
 
-        # Generate rollouts for training OOD detector
-        rollout_obs = policy.gather_rollouts(
-            envs["train"], args.num_rollouts, gather_all=True, return_list=True
-        )
-
         num_rollouts_test = max(args.num_rollouts // 10, 1)
         # Ensure that num_rollouts_test is divisible by envs["train"].num_envs.
         if num_rollouts_test % envs["train"].num_envs != 0:
@@ -76,9 +73,10 @@ class AutoencoderAlgorithm(Algorithm):
                 envs["train"].num_envs - num_rollouts_test % envs["train"].num_envs
             )
 
-        rollout_obs_threshold = policy.gather_rollouts(
-            envs["train"], num_rollouts_test, gather_all=True, return_list=True
-        )
+        # rollout_obs_threshold = policy.gather_rollouts(
+        #     envs["train"], num_rollouts_test, gather_all=True, return_list=True
+        # )
+        rollout_obs_threshold = None
 
         logging.info(f"Collected training dataset of shape {len(rollout_obs)}")
 
