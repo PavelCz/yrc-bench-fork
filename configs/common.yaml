@@ -126,7 +126,6 @@ algorithm:
         min_pct: 0
         max_pct: 101
         pct_step: 10
-        num_rollouts: 64
     ppo:
         cls: PPOAlgorithm
         log_freq: 10
@@ -147,7 +146,6 @@ algorithm:
         cls: OODAlgorithm
         contamination: 0.1
         use_ae: False
-        num_rollouts: 64
         num_thresholds: 10
         epoch: 100
         batch_size: 64
@@ -157,4 +155,8 @@ algorithm:
         epoch: 200
         batch_size: 64
         model_config_path: 'lib/pytorch_vae/configs/base_ae.yaml'
-        num_rollouts: 256
+gather_rollouts:
+    num_rollouts: 256
+    feature_type: 'obs'
+    collect_data_agent: 'weak'
+    rollout_dir: 'experiments/rollouts'

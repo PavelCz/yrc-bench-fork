@@ -66,7 +66,6 @@ if __name__ == "__main__":
 
 def load_rollouts(config) -> List[torch.Tensor]:
     rollouts_config = {
-        "num_rollouts": config.algorithm.num_rollouts,
         "feature_type": config.coord_policy.feature_type,
         "collect_data_agent": config.coord_policy.collect_data_agent,
     }
@@ -79,10 +78,15 @@ def load_rollouts(config) -> List[torch.Tensor]:
     with (rollouts_dir / "rollouts.pt").open("rb") as f:
         rollout_obs = torch.load(f)
 
-    if rollouts_config_loaded != rollouts_config:
-        raise ValueError(
-            f"Rollouts config mismatch: {rollouts_config_loaded} != {rollouts_config}"
-        )
+    for key, value in rollouts_config.items():
+        if rollouts_config_loaded[key] != value:
+            raise ValueError(
+                f"Rollouts config mismatch: {rollouts_config_loaded[key]} != {value}"
+            )
+
+    print(f"Loaded rollouts from {rollouts_dir}")
+    print(f"Rollout obs shape: {rollout_obs[0].shape}")
+    print(f"Number of rollouts: {rollouts_config['num_rollouts']}")
 
     return rollout_obs
 

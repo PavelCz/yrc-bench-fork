@@ -118,7 +118,7 @@ def make():
 
     parser.add_argument(
         "-num_rollouts", 
-        "--algorithm.num_rollouts", 
+        "--gather_rollouts.num_rollouts", 
         type=int,
         help="number of rollouts to collect for training"
     )

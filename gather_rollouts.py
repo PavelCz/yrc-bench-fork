@@ -17,19 +17,21 @@ import json
 
 def main():
     args = flags.make()
-    config = config_utils.load(args.config, flags=args)
+    config = config_utils.load_partial(args.config, "gather_rollouts", flags=args)
 
     envs = env_factory.make(config)
 
+    num_rollouts = config.num_rollouts
+
     rollout_helper = RolloutHelper(config, envs["train"])
     rollout_obs: List[torch.Tensor] = rollout_helper.gather_rollouts(
-        envs["train"], config.algorithm.num_rollouts, gather_all=True, return_list=True
+        envs["train"], num_rollouts, gather_all=True, return_list=True
     )
 
     rollouts_config = {
-        "num_rollouts": config.algorithm.num_rollouts,
-        "feature_type": config.coord_policy.feature_type,
-        "collect_data_agent": config.coord_policy.collect_data_agent,
+        "num_rollouts": num_rollouts,
+        "feature_type": config.feature_type,
+        "collect_data_agent": config.collect_data_agent,
     }
 
     rollouts_dir = Path(config.rollout_dir)

@@ -2,6 +2,21 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Gather Rollouts Coinrun",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/gather_rollouts.py",
+            "args": [
+                "-en", "coinrun",
+                "-num_rollouts", "2",
+                "-use_bg", "True",
+                "-wandb_project", "yrc-debug",
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}"
+        },
+        {
             "name": "Train No Threshold Coinrun OOD",
             "type": "debugpy",
             "request": "launch",
@@ -87,6 +102,7 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "cwd": "${workspaceFolder}"
-        }
+        },
+        
     ]
 } 

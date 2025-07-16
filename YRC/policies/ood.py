@@ -27,7 +27,6 @@ class OODPolicy(Policy):
         self.feature_type = config.coord_policy.feature_type
 
 
-
     def update_params(self, params):
         self.params = dc(params)
         if "threshold" not in params:
