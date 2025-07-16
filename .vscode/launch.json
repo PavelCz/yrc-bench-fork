@@ -44,6 +44,7 @@
                 "-use_bg", "True",
                 "-wandb_project", "yrc-debug",
                 // "-d", "-1"
+                "-rollout_dir", "experiments/debug_gather_rollouts"
             ],
             "console": "integratedTerminal",
             "justMyCode": true,

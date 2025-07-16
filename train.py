@@ -11,17 +11,23 @@ from pathlib import Path
 import json
 import torch
 from typing import List
+from YRC.core.configs import ConfigDict
+from YRC.core.utils import print_dict_diff
 
 # Algorithms that support training without threshold search.
 ALGORITHMS = ["ood", "lightning_ae"]
 
-if __name__ == "__main__":
+def main():
     args = flags.make()
-    config = config_utils.load(args.config, flags=args)
+    config: ConfigDict = config_utils.load(args.config, flags=args)
 
     envs = env_factory.make(config)
     policy = policy_factory.make(config, envs["train"])
     evaluator = Evaluator(config.evaluation)
+
+    if config.training.rollout_dir is not None:
+        rollouts = load_rollouts(config)
+        policy.load_rollouts(rollouts)
 
     if hasattr(policy, "logger"):
 
@@ -64,13 +70,9 @@ if __name__ == "__main__":
     )
 
 
-def load_rollouts(config) -> List[torch.Tensor]:
-    rollouts_config = {
-        "feature_type": config.coord_policy.feature_type,
-        "collect_data_agent": config.coord_policy.collect_data_agent,
-    }
+def load_rollouts(config: ConfigDict) -> List[torch.Tensor]:
 
-    rollouts_dir = Path(config.rollout_dir)
+    rollouts_dir = Path(config.training.rollout_dir)
 
     with (rollouts_dir / "rollouts_config.json").open("r") as f:
         rollouts_config_loaded = json.load(f)
@@ -78,15 +80,19 @@ def load_rollouts(config) -> List[torch.Tensor]:
     with (rollouts_dir / "rollouts.pt").open("rb") as f:
         rollout_obs = torch.load(f)
 
-    for key, value in rollouts_config.items():
-        if rollouts_config_loaded[key] != value:
-            raise ValueError(
-                f"Rollouts config mismatch: {rollouts_config_loaded[key]} != {value}"
-            )
+    # for key, value in rollouts_config.items():
+    #     if rollouts_config_loaded[key] != value:
+    #         raise ValueError(
+    #             f"Rollouts config mismatch: {rollouts_config_loaded[key]} != {value}"
+    #         )
 
     print(f"Loaded rollouts from {rollouts_dir}")
     print(f"Rollout obs shape: {rollout_obs[0].shape}")
-    print(f"Number of rollouts: {rollouts_config['num_rollouts']}")
+    # print(f"Number of rollouts: {rollouts_config['num_rollouts']}")
+
 
     return rollout_obs
 
+
+if __name__ == "__main__":
+    main()

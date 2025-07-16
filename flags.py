@@ -154,6 +154,13 @@ def make():
         default=256
     )
 
+    parser.add_argument(
+        "-rollout_dir",
+        "--training.rollout_dir",
+        type=str,
+        help="directory to save rollouts",
+    )
+
     args = parser.parse_args()
 
     return args
