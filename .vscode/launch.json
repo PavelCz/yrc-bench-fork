@@ -7,14 +7,20 @@
             "request": "launch",
             "program": "${workspaceFolder}/gather_rollouts.py",
             "args": [
+                "-c", "configs/procgen_ood.yaml",
                 "-en", "coinrun",
-                "-num_rollouts", "2",
+                "-n", "debug_gather_rollouts",
+                "-num_rollouts", "8",
                 "-use_bg", "True",
                 "-wandb_project", "yrc-debug",
+                "-wandb_mode", "offline",
             ],
             "console": "integratedTerminal",
             "justMyCode": true,
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+            }
         },
         {
             "name": "Train No Threshold Coinrun OOD",

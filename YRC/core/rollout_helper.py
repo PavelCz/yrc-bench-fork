@@ -19,7 +19,7 @@ class RolloutHelper:
     def gather_rollouts(
         self,
         env,
-        num_rollouts,
+        num_rollouts: int,
         gather_all=False,
         return_list=False,
     ) -> Union[torch.Tensor, List[torch.Tensor]]:

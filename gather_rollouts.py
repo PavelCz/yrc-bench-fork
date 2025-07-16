@@ -1,53 +1,57 @@
 import flags
-import YRC.core.algorithm as algo_factory
 import YRC.core.configs.utils as config_utils
 import YRC.core.environment as env_factory
-import YRC.core.policy as policy_factory
-from YRC.core import Evaluator
-import wandb
-from pytorch_lightning.loggers import WandbLogger
 from YRC.core.configs.global_configs import get_global_variable
 from pathlib import Path
 from YRC.core.rollout_helper import RolloutHelper
 from typing import List
 import torch
-import numpy as np
 import json
 
 
 def main():
     args = flags.make()
-    config = config_utils.load_partial(args.config, "gather_rollouts", flags=args)
+    args.eval_mode = True
+    config = config_utils.load(args.config, flags=args)
 
     envs = env_factory.make(config)
 
-    num_rollouts = config.num_rollouts
+    num_rollouts = config.algorithm.num_rollouts
 
     rollout_helper = RolloutHelper(config, envs["train"])
     rollout_obs: List[torch.Tensor] = rollout_helper.gather_rollouts(
         envs["train"], num_rollouts, gather_all=True, return_list=True
     )
 
-    rollouts_config = {
-        "num_rollouts": num_rollouts,
-        "feature_type": config.feature_type,
-        "collect_data_agent": config.collect_data_agent,
-    }
+    save_dir = Path(str(get_global_variable("experiment_dir")))
+    save_dir.mkdir(parents=True, exist_ok=True)
 
-    rollouts_dir = Path(config.rollout_dir)
-    rollouts_dir.mkdir(parents=True, exist_ok=True)
-
-    print(f"Saving rollouts to {rollouts_dir}")
+    print(f"Saving rollouts to {save_dir}")
     print(f"Rollout obs shape: {rollout_obs[0].shape}")
 
     # Save rollout obs to file.
-    with (rollouts_dir / "rollouts_config.json").open("w") as f:
-        json.dump(rollouts_config, f)
+    with (save_dir / "rollouts_config.json").open("w") as f:
+        # Skip keys that are not JSON serializable, e.g. torch device.
+        config_dict = config.as_dict()
+        
+        # Convert torch.device objects to strings for JSON serialization
+        def convert_devices(obj):
+            if isinstance(obj, dict):
+                return {k: convert_devices(v) for k, v in obj.items()}
+            elif isinstance(obj, torch.device):
+                return str(obj)
+            elif isinstance(obj, list):
+                return [convert_devices(item) for item in obj]
+            else:
+                return obj
+        
+        serializable_config = convert_devices(config_dict)
+        json.dump(serializable_config, f)
 
-    print(f"Saving rollouts to {rollouts_dir / 'rollouts.pt'}")
+    print(f"Saving rollouts to {save_dir / 'rollouts.pt'}")
 
     # Save rollout obs to file.
-    with (rollouts_dir / "rollouts.pt").open("wb") as f:
+    with (save_dir / "rollouts.pt").open("wb") as f:
         torch.save(rollout_obs, f)
 
 

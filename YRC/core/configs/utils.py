@@ -16,27 +16,7 @@ from YRC.core.configs import ConfigDict
 from YRC.core.configs.global_configs import set_global_variable
 
 
-def load_partial(yaml_file_or_str, part: str,flags=None):
-    with open("configs/common.yaml") as f:
-        common_config = yaml.safe_load(f)
-
-    # We only care about part of the config.
-    if part in common_config:
-        config_dict = common_config[part]
-    else:
-        raise ValueError(f"Part {part} not found in {yaml_file_or_str}")
-
-    flags_dict = flags.as_dict() if flags is not None else {}
-    if flags is not None:
-        # We only update the part of the config that we care about.
-        for k in config_dict.keys():
-            if k in flags_dict:
-                config_dict[k] = flags_dict[k]
-    
-    return ConfigDict(**config_dict)
-
-
-def load(yaml_file_or_str, flags=None):
+def load(yaml_file_or_str, flags=None) -> ConfigDict:
     if yaml_file_or_str.endswith(".yaml"):
         with open(yaml_file_or_str) as f:
             config_dict = yaml.safe_load(f)
