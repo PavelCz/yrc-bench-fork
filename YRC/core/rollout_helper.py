@@ -78,7 +78,11 @@ class RolloutHelper:
             ]:
                 observations = observations[1::3]
                 if not return_list:
-                    observations = torch.cat(observations[1::3], dim=0)
+                    # TODO: I (pavel) just changed this to observations from
+                    # observations[1::3] I assume this was a copy paste bug previously.
+                    # This is not a big deal, since we have no plans to use mingrid or
+                    # other feature types.
+                    observations = torch.cat(observations, dim=0)
             else:
                 if not return_list:
                     observations = torch.stack(observations)
