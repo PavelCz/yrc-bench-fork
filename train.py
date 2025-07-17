@@ -60,9 +60,10 @@ def main():
 
     algorithm = algo_factory.make(config, envs["train"])
     algorithm.train(
-        policy,
-        envs,
-        evaluator,
+        policy=policy,
+        envs=envs,
+        rollout_obs=rollout_obs,
+        evaluator=evaluator,
         train_split="train",
         eval_splits=["val_sim", "val_true"],
         do_threshold_search=False,
