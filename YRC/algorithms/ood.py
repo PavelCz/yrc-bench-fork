@@ -30,11 +30,35 @@ class OODAlgorithm(Algorithm):
         # Initialize OOD detector
         policy.initialize_ood_detector(args, envs["train"])
 
-        # rollout_obs_threshold = policy.gather_rollouts(envs["train"], args.num_rollouts)
-        rollout_obs_threshold = None
+        # TODO: There is some asymmetry here. rollout_obs is a list of tensors in the
+        # algorithms that I (pavel) implemented, in order to fit them into memory more
+        # easily. OODPolicy expects a single tensor that is a stack of the list.
+        # Potentially, we should re-write the OODPolicy to accept a list of tensors
+        # to get the same memory benefits.
+        if isinstance(rollout_obs, list):
+            if get_global_variable(
+                "benchmark"
+            ) == "minigrid" and self.feature_type not in [
+                "hidden",
+                "dist",
+                "hidden_dist",
+            ]:
+                rollout_obs = rollout_obs[1::3]
+                rollout_obs = torch.cat(rollout_obs, dim=0)
+            else:
+                rollout_obs = torch.stack(rollout_obs)
+        else:
+            raise ValueError(
+                "Expected rollout_obs to be a list of tensors, got "
+                f"{type(rollout_obs)}, something might be wrong."
+            )
 
         # Train OOD detector
-        policy.fit(x=rollout_obs, x_threshold=rollout_obs_threshold)
+        # x_threshold is currently being used to determine 'training' scores.
+        # This could eventually be used to determine scores on an in-distribution
+        # validation set that is different from the training set. Not sure if we 
+        # want to do this.
+        policy.fit(x=rollout_obs, x_threshold=rollout_obs)
 
         # clf: AutoEncoderWithVal = policy.clf
         # val_scores = clf.val_score_list
