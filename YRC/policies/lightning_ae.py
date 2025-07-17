@@ -63,6 +63,8 @@ class LightningAEPolicy(OODPolicy):
 
         self.logger = None
 
+        self.disable_test: bool = False
+
     def initialize_ood_detector(self, args: Any, env: Any) -> None:
         """Initialize the Lightning autoencoder model."""
         dummy_obs: Dict[str, Any] = env.reset()
@@ -115,6 +117,8 @@ class LightningAEPolicy(OODPolicy):
         self.batch_size = args.batch_size
 
         epochs = args.epoch
+
+        self.disable_test = args.disable_test
 
         # Adjust model config based on input shape
         # if len(dummy_obs_shape) > 2:  # Image data
@@ -246,9 +250,10 @@ class LightningAEPolicy(OODPolicy):
 
         self.runner.fit(self.experiment, datamodule=datamodule)
 
-        # Run test run to generate samples. Uses test dataset from datamodule as
-        # specified above.
-        self.runner.test(self.experiment, datamodule=datamodule)
+        if not self.disable_test:
+            # Run test run to generate samples. Uses test dataset from datamodule as
+            # specified above.
+            self.runner.test(self.experiment, datamodule=datamodule)
 
         # Compute decision scores for threshold setting
         self._train_decision_scores = self._compute_decision_scores(x_threshold)

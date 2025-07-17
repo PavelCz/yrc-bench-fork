@@ -85,6 +85,13 @@ def make():
     )
 
     parser.add_argument(
+        "-disable_test", 
+        "--algorithm.disable_test", 
+        action="store_true",
+        help="disable PyTorch Lightning test run."
+    )
+
+    parser.add_argument(
         "-cp_epoch", 
         "--algorithm.epoch", 
         type=int,
