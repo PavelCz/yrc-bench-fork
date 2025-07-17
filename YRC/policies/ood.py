@@ -1,11 +1,9 @@
 import os
 import numpy as np
 from copy import deepcopy as dc
-from typing import Union, List, Optional, Tuple
-import torch
 import logging
 from YRC.core import Policy
-from lib.pyod.pyod.models import deep_svdd, auto_encoder
+from lib.pyod.pyod.models import deep_svdd
 from joblib import dump, load
 from YRC.core.configs.global_configs import get_global_variable
 from YRC.models.utils import AutoEncoderWithVal
