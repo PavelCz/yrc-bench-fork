@@ -66,13 +66,6 @@ class AutoencoderAlgorithm(Algorithm):
             f"Gathering {args.num_rollouts} rollouts for training OOD detector."
         )
 
-        num_rollouts_test = max(args.num_rollouts // 10, 1)
-        # Ensure that num_rollouts_test is divisible by envs["train"].num_envs.
-        if num_rollouts_test % envs["train"].num_envs != 0:
-            num_rollouts_test += (
-                envs["train"].num_envs - num_rollouts_test % envs["train"].num_envs
-            )
-
         logging.info(f"Collected training dataset of shape {len(rollout_obs)}")
 
         logging.info("Starting training OOD detector.")
