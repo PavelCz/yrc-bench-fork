@@ -90,7 +90,9 @@ def load_rollouts(config: ConfigDict) -> List[torch.Tensor]:
     print(f"Rollout obs shape: {rollout_obs[0].shape}")
     # print(f"Number of rollouts: {rollouts_config['num_rollouts']}")
 
-    print_dict_diff(config.as_dict(), rollouts_config_loaded)
+    # TODO: In the future, we can use the diff to check that certain important config
+    # parameters are the same.
+    diff = print_dict_diff(config.as_dict(), rollouts_config_loaded)
 
     return rollout_obs
 
