@@ -251,7 +251,7 @@ class LightningAEPolicy(OODPolicy):
         self.runner.test(self.experiment, datamodule=datamodule)
 
         # Compute decision scores for threshold setting
-        self._train_decision_scores = self._compute_decision_scores(x)
+        self._train_decision_scores = self._compute_decision_scores(x_threshold)
 
     def _compute_decision_scores(self, x: torch.Tensor) -> np.ndarray:
         """Compute reconstruction error scores on the training data."""

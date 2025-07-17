@@ -73,17 +73,12 @@ class AutoencoderAlgorithm(Algorithm):
                 envs["train"].num_envs - num_rollouts_test % envs["train"].num_envs
             )
 
-        # rollout_obs_threshold = policy.gather_rollouts(
-        #     envs["train"], num_rollouts_test, gather_all=True, return_list=True
-        # )
-        rollout_obs_threshold = None
-
         logging.info(f"Collected training dataset of shape {len(rollout_obs)}")
 
         logging.info("Starting training OOD detector.")
 
         # Train OOD detector
-        policy.fit(x=rollout_obs, x_threshold=rollout_obs_threshold)
+        policy.fit(x=rollout_obs, x_threshold=rollout_obs)
 
         # TODO: Implement autoencoder validation set
 
