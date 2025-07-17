@@ -26,8 +26,7 @@ def main():
     evaluator = Evaluator(config.evaluation)
 
     if config.training.rollout_dir is not None:
-        rollouts = load_rollouts(config)
-        policy.load_rollouts(rollouts)
+        rollout_obs = load_rollouts(config)
 
     if hasattr(policy, "logger"):
 
@@ -71,8 +70,10 @@ def main():
 
 
 def load_rollouts(config: ConfigDict) -> List[torch.Tensor]:
+    experiment_dir = Path(str(get_global_variable("experiment_dir")))
 
-    rollouts_dir = Path(config.training.rollout_dir)
+    output_dir = experiment_dir.parent
+    rollouts_dir = output_dir / config.training.rollout_dir
 
     with (rollouts_dir / "rollouts_config.json").open("r") as f:
         rollouts_config_loaded = json.load(f)
