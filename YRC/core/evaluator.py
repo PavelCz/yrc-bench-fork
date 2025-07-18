@@ -9,7 +9,7 @@ class Evaluator:
 
     def __init__(self, config):
         self.args = config
-        self.collected_observations = []
+        self.collected_states = []
         self.collected_actions_done = False
 
     def eval(
@@ -26,7 +26,7 @@ class Evaluator:
         policy.eval()
 
         self.collected_actions_done = False
-        self.collected_observations = []
+        self.collected_states = []
 
         summary = {}
         for split in eval_splits:
@@ -48,7 +48,13 @@ class Evaluator:
             envs[split].close()
 
         if logger is not None:
-            vid = np.stack(self.collected_observations, axis=1)
+
+            obs = [x["obs"] for x in self.collected_states]
+            scores = [x["scores"] for x in self.collected_states]
+            recons = [x["recons"] for x in self.collected_states]
+            action = [x["action"] for x in self.collected_states]
+
+            vid = np.stack(obs, axis=1)
             vid = vid * 255
             vid = vid.astype(np.int8)
             logger.experiment.log(
@@ -94,12 +100,20 @@ class Evaluator:
         num_episodes = 0
 
         while num_episodes < max_episodes:
-            if not all(has_done):
-                self.collected_observations.append(obs["env_obs"])
 
             # For most policies I have seen, the greedy flag is ignored. These include
             # random, lightning_ae, and ood.
-            action = policy.act(obs, greedy=args.act_greedy)
+            action, scores, recons = policy.act(
+                obs, greedy=args.act_greedy, return_scores_and_recons=True
+            )
+
+            if not all(has_done):
+                self.collected_states.append({
+                    "obs": obs["env_obs"],
+                    "scores": scores,
+                    "recons": recons,
+                    "action": action,
+                })
 
             obs, reward, done, info = env.step(action)
 

@@ -2,7 +2,7 @@ import os
 import logging
 import numpy as np
 import torch
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Union
 from pathlib import Path
 import sys
 
@@ -258,7 +258,9 @@ class LightningAEPolicy(OODPolicy):
         # Compute decision scores for threshold setting
         self._train_decision_scores = self._compute_decision_scores(x_threshold)
 
-    def _compute_decision_scores(self, x: torch.Tensor) -> np.ndarray:
+    def _compute_decision_scores(
+        self, x: torch.Tensor, return_recons: bool = False
+    ) -> np.ndarray:
         """Compute reconstruction error scores on the training data."""
         if self.clf is None:
             raise ValueError("Model not initialized")
@@ -268,6 +270,7 @@ class LightningAEPolicy(OODPolicy):
         self.clf.to(self.device)
 
         scores: List[float] = []
+        recons: List[np.ndarray] = []
 
         with torch.no_grad():
             # Go through each observation in the dataset.
@@ -275,18 +278,6 @@ class LightningAEPolicy(OODPolicy):
                 img: torch.Tensor = x[i].to(self.device)
                 # Add a batch dimension.
                 batch = img.unsqueeze(0)
-
-                # Handle different input types
-                # if len(batch.shape) == 2:  # Flattened data
-                #     # Reshape to appropriate image format if needed
-                #     if self.feature_type == "obs":
-                #         # Assume square images, infer dimensions
-                #         size: int = int(
-                #             np.sqrt(batch.shape[1] // self.model_config["in_channels"])
-                #         )
-                #         batch = batch.view(
-                #             -1, self.model_config["in_channels"], size, size
-                #         )
 
                 # Get reconstruction
                 if hasattr(self.clf, "forward"):
@@ -307,17 +298,25 @@ class LightningAEPolicy(OODPolicy):
                     reconstruction, batch, recons_features, input_features
                 )
                 loss = loss_dict["loss"]
+
+                if return_recons:
+                    recons.append(reconstruction.cpu().numpy())
+
                 # Loss is a single scalar value.
                 scores.append(loss.cpu().numpy())
 
         decision_scores = np.array(scores)
-        # logging.info(
-        #     f"Computed decision scores: min={decision_scores.min():.4f}, "
-        #     f"max={decision_scores.max():.4f}, mean={decision_scores.mean():.4f}"
-        # )
+
+        if return_recons:
+            return decision_scores, recons
         return decision_scores
 
-    def act(self, obs: np.ndarray, greedy: bool = False) -> np.ndarray:
+    def act(
+        self,
+        obs: np.ndarray,
+        greedy: bool = False,
+        return_scores_and_recons: bool = False,
+    ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray, List[np.ndarray]]]:
         """
         Act chooses to either ask for help or not, which is equivalent to asking whther
         the input observation is normal or OOD.
@@ -346,13 +345,21 @@ class LightningAEPolicy(OODPolicy):
             observation = observation[0]
 
         # Get decision score for the observation.
-        scores: np.ndarray = self._compute_decision_scores(observation)
+        if return_scores_and_recons:
+            scores, recons = self._compute_decision_scores(
+                observation, return_recons=return_scores_and_recons
+            )
+        else:
+            scores = self._compute_decision_scores(observation)
 
         # Use our own threshold instead of self.clf.threshold_
         action: np.ndarray = (scores > self.threshold_).astype(int)
 
         if not np.any(action == 0) and not np.any(action == 1):
             logging.warning("No action selected as normal or OOD")
+
+        if return_scores_and_recons:
+            return action, scores, recons
 
         return action
 
