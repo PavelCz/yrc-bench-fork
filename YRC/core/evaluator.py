@@ -21,7 +21,6 @@ class Evaluator:
         num_episodes=None, 
         logger: Optional[WandbLogger] = None, 
         threshold: Optional[float] = None,
-        percentile_step: Optional[float] = None,
     ):
         args = self.args
         policy.eval()
@@ -49,11 +48,12 @@ class Evaluator:
             envs[split].close()
 
         if logger is not None:
-            self._log_evaluation_video(logger, threshold)
+            afhp = summary[split]["action_1_frac"]
+            self._log_evaluation_video(logger, threshold, afhp)
 
         return summary
 
-    def _log_evaluation_video(self, logger: WandbLogger, threshold: float) -> None:
+    def _log_evaluation_video(self, logger: WandbLogger, threshold: float, afhp: float) -> None:
         """
         Generate and log evaluation video with score bars to wandb.
         
@@ -194,7 +194,7 @@ class Evaluator:
             
             combined_vid = vid_with_bars
 
-        caption = f"Threshold: {threshold:.2f}"
+        caption = f"Threshold: {threshold:.2E} - AFHP: {afhp:.2f}"
 
         if use_recons:
             caption += " - Left: Original, Right: Reconstruction"
@@ -206,7 +206,7 @@ class Evaluator:
             
         logger.experiment.log(
             {
-                f"eval_episode_{threshold:.2f}": wandb.Video(
+                f"eval_episode_{afhp:.2f}": wandb.Video(
                     # (batch dim, time dim, c, h, w)
                     combined_vid,
                     fps=10,
