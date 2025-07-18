@@ -68,7 +68,7 @@ class Evaluator:
 
         # We determine whether our OOD detector uses reconstructions by checking
         # whether the first element of the first reconstruction is None.
-        use_recons = recons[0][0] is not None
+        use_recons = recons[0] is not None
 
         # Stack observations and reconstructions
         obs_vid = np.stack(obs, axis=1)
@@ -100,7 +100,7 @@ class Evaluator:
         score_max = np.max(all_scores)
         
         # Create score bar visualization
-        bar_height = 17  # Height of the score bar in pixels
+        bar_height = 15  # Height of the score bar in pixels
         batch_size, time_steps, channels, height, width = combined_vid.shape
         
         # Create new video with extra height for score bar
@@ -195,7 +195,7 @@ class Evaluator:
                 f"eval_episode_{threshold:.2f}": wandb.Video(
                     # (batch dim, time dim, c, h, w)
                     combined_vid,
-                    fps=15,
+                    fps=10,
                     format="gif",
                     caption=(
                         f"Threshold: {threshold:.2f} - "

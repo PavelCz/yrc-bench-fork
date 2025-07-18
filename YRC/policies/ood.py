@@ -54,7 +54,7 @@ class OODPolicy(Policy):
         else:
             raise ValueError(f"Unknown OOD detector type: {self.clf_name}")
 
-    def act(self, obs, greedy=False):
+    def act(self, obs, greedy=False, return_scores_and_recons=False):
         keys = {
             "obs": ["env_obs"],
             "hidden": ["weak_features"],
@@ -87,6 +87,10 @@ class OODPolicy(Policy):
         action = 1 - (score < self.clf.threshold_).astype(int)
         if 0 not in action and 1 not in action:
             print("No action is selected as OOD")
+
+        if return_scores_and_recons:
+            return action, score, None
+
         return action
 
     def initialize_ood_detector(self, args, env):
