@@ -2,10 +2,32 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Train No Threshold Coinrun OOD",
+            "name": "Gather Rollouts Coinrun",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/train_no_threshold_search.py",
+            "program": "${workspaceFolder}/gather_rollouts.py",
+            "args": [
+                "-c", "configs/procgen_gather.yaml",
+                "-en", "coinrun",
+                "-n", "debug_gather_rollouts_2",
+                "-num_rollouts", "2",
+                "-num_envs", "2",
+                "-use_bg", "True",
+                "-wandb_project", "yrc-debug",
+                "-wandb_mode", "offline",
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+            }
+        },
+        {
+            "name": "Train OOD",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
             "args": [
                 "-c", "configs/procgen_ood.yaml",
                 // "-c", "configs/procgen_ae_hard.yaml",
@@ -14,19 +36,55 @@
                 // "-cp_method", "AutoEncoder",
                 // "-cp_method", "Autoencoder",
                 "-cp_method", "DeepSVDD",
+                // "-cp_feature", "hidden",
                 "-query_cost", "0",
                 "-cp_epoch", "2",
                 "-over",
-                "-num_rollouts", "2",
                 "-num_envs", "2",
                 "-cp_latent_dim", "128",
                 "-use_bg", "True",
                 "-wandb_project", "yrc-debug",
                 // "-d", "-1"
+                "-rollout_dir", "debug_gather_rollouts"
             ],
             "console": "integratedTerminal",
             "justMyCode": true,
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+            }
+        },
+        {
+            "name": "Train base_ae",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "args": [
+                "-c", "configs/procgen_ae_hard.yaml",
+                // "-c", "configs/procgen_ae_hard.yaml",
+                "-n", "debug_base_ae",
+                "-en", "coinrun",
+                // "-cp_method", "AutoEncoder",
+                "-cp_method", "Autoencoder",
+                // "-cp_method", "DeepSVDD",
+                // "-cp_feature", "hidden",
+                "-query_cost", "0",
+                "-cp_epoch", "2",
+                "-over",
+                "-num_envs", "2",
+                "-cp_latent_dim", "128",
+                "-use_bg", "True",
+                "-disable_test",
+                "-wandb_project", "yrc-debug",
+                // "-d", "-1"
+                "-rollout_dir", "debug_gather_rollouts_2"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+            }
         },
         {
             "name": "Eval Thresholds Coinrun OOD AE",
@@ -87,6 +145,7 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "cwd": "${workspaceFolder}"
-        }
+        },
+        
     ]
 } 

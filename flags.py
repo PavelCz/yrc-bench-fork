@@ -85,6 +85,13 @@ def make():
     )
 
     parser.add_argument(
+        "-disable_test", 
+        "--algorithm.disable_test", 
+        action="store_true",
+        help="disable PyTorch Lightning test run."
+    )
+
+    parser.add_argument(
         "-cp_epoch", 
         "--algorithm.epoch", 
         type=int,
@@ -106,7 +113,7 @@ def make():
                         help="suffix for the test environment name")
 
     # procgen
-    parser.add_argument("-use_bg", "--environment.common.use_background", type=bool, default=True,
+    parser.add_argument("-use_bg", "--environment.common.use_backgrounds", type=bool, default=True,
                         help="use background - only for procgen envs")
     parser.add_argument("-use_mono_asset", "--environment.common.use_monochrome_assets", type=bool, default=False,
                         help="use monochrome assets - only for procgen envs")
@@ -152,6 +159,13 @@ def make():
         type=int,
         help="number of test episodes for procgen",
         default=256
+    )
+
+    parser.add_argument(
+        "-rollout_dir",
+        "--training.rollout_dir",
+        type=str,
+        help="directory to save rollouts",
     )
 
     args = parser.parse_args()

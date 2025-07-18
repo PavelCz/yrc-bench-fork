@@ -1,15 +1,13 @@
 import os
 import numpy as np
 from copy import deepcopy as dc
-from typing import Union, List, Optional, Tuple
-import torch
 import logging
-from torch.distributions.categorical import Categorical
 from YRC.core import Policy
-from lib.pyod.pyod.models import deep_svdd, auto_encoder
+from lib.pyod.pyod.models import deep_svdd
 from joblib import dump, load
 from YRC.core.configs.global_configs import get_global_variable
 from YRC.models.utils import AutoEncoderWithVal
+from YRC.core.utils import to_tensor
 
 
 
@@ -26,118 +24,6 @@ class OODPolicy(Policy):
         self.device = get_global_variable("device")
         self.feature_type = config.coord_policy.feature_type
 
-    def gather_rollouts(
-        self,
-        env,
-        num_rollouts,
-        gather_all=False,
-        return_list=False,
-    ) -> Union[torch.Tensor, List[torch.Tensor]]:
-        """
-        Gathers rollouts from the environment.
-
-        Args:
-            env: Environment
-            num_rollouts: Number of rollouts to gather
-            gather_all: Whether to gather all rollouts. If set to false, only a random
-                subset of 0.5% of the rollouts are gathered.
-            return_list: If set to False, the list of observations is concatenated into
-                a single contiguous tensor. If set to True, instead, the observations
-                are returned as a list of tensors.
-        """
-        assert num_rollouts % env.num_envs == 0
-        observations = []
-        for i in range(num_rollouts // env.num_envs):
-            observations.extend(self._rollout_once(env, gather_all))
-        if self.feature_type in ["hidden_obs", "hidden_dist", "obs_dist"]:
-            feature_tensors = [[], []]
-            for i, tensor in enumerate(observations):
-                if isinstance(tensor, dict):
-                    tensor = tensor["image"]
-                feature_tensors[i % 2].append(tensor)
-            observations = [torch.cat(tensors, dim=0) for tensors in feature_tensors]
-        elif self.feature_type in ["obs_hidden_dist"]:
-            feature_tensors = [[], [], []]
-            for i, tensor in enumerate(observations):
-                feature_tensors[i % 3].append(tensor)
-            if get_global_variable("benchmark") == "procgen":
-                observations = [torch.cat(tensors, dim=0) for tensors in feature_tensors]
-            elif get_global_variable("benchmark") == "minigrid":
-                observations = []
-                for tensors in feature_tensors:
-                    if isinstance(tensors[0], dict):
-                        obs_dict = {}
-                        for tensor_dict in tensors:
-                            for k, v in tensor_dict.items():
-                                obs_dict.setdefault(k, []).extend(v)
-                        for v in obs_dict.values():
-                            observations.append(v if isinstance(v[0], str) else torch.stack(v, dim=0))
-                    else:
-                        observations.append(torch.cat(tensors, dim=0))
-        else:
-            if get_global_variable("benchmark") == "minigrid" and self.feature_type not in ["hidden", "dist", "hidden_dist"]:
-                observations = observations[1::3]
-                if not return_list:
-                    observations = torch.cat(observations[1::3], dim=0)
-            else:
-                if not return_list:
-                    observations = torch.stack(observations)
-        return observations
-
-    def maybe_convert_to_tensor(self, features):
-        """Converts features to tensors if they are not already tensors."""
-        if isinstance(features, list):  # Handle lists of features (e.g., for concatenation)
-            return [self.to_tensor(f) if not torch.is_tensor(f) else f for f in features]
-        return self.to_tensor(features) if not torch.is_tensor(features) else features
-
-    def _rollout_once(self, env, gather_all=False):
-        def sample_action(logit):
-            """Samples an action using a categorical distribution with exploration temperature."""
-            dist = Categorical(logits=logit / self.params["explore_temp"])
-            return dist.sample().cpu().numpy()
-
-        def get_features(obs, feature_type):
-            """Retrieves features based on the specified feature type."""
-            feature_map = {
-                "obs": lambda obs: obs["env_obs"]["image"] if get_global_variable("benchmark") == "cliport" else obs["env_obs"],
-                "hidden": lambda obs: obs["weak_features"],
-                "hidden_obs": lambda obs: [obs["env_obs"]["image"], obs["weak_features"]] if get_global_variable("benchmark") == "cliport" else [obs["env_obs"], obs["weak_features"]],
-                "dist": lambda obs: obs["weak_logit"],
-                "hidden_dist": lambda obs: [obs["weak_features"], obs["weak_logit"]],
-                "obs_dist": lambda obs: [obs["env_obs"]["image"], obs["weak_logit"]] if get_global_variable("benchmark") == "cliport" else [obs["env_obs"], obs["weak_logit"]],
-                "obs_hidden_dist": lambda obs: [obs["env_obs"]["image"], obs["weak_features"], obs["weak_logit"]] if get_global_variable("benchmark") == "cliport" else [obs["env_obs"], obs["weak_features"], obs["weak_logit"]]
-            }
-            return feature_map[feature_type](obs)
-
-        agent = self.agent
-        agent.eval()
-        obs = env.reset()
-        has_done = np.array([False] * env.num_envs)
-        observations = []
-
-        while not has_done.all():
-            logit = agent.forward(obs["env_obs"])
-
-            if get_global_variable("benchmark") == "cliport":
-                obs_features = get_features(obs, self.feature_type)
-                obs_features = self.maybe_convert_to_tensor(obs_features)
-                observations.extend(obs_features)
-            else:
-                for i in range(env.num_envs):
-                    if not has_done[i]:
-                        obs_features = get_features(obs, self.feature_type)
-                        if gather_all or np.random.rand() < 0.005:  # Randomly sample for memory efficiency
-                            obs_features = self.maybe_convert_to_tensor(obs_features)
-                            if isinstance(obs_features, dict):
-                                observations.extend(v for k, v in obs_features.items())
-                            else:
-                                observations.extend(obs_features)
-
-            action = sample_action(logit)
-            obs, reward, done, info = env.step(action)
-            has_done |= done
-
-        return observations
 
     def update_params(self, params):
         self.params = dc(params)
@@ -150,8 +36,10 @@ class OODPolicy(Policy):
 
     def fit(self, x, x_threshold, y=None):
         if self.clf_name == "DeepSVDD":
-            x = x.to(self.device)
-            x_threshold = x_threshold.to(self.device)
+            # We don't want to move the complete datasets to the GPU, we move the
+            # the batches separately.
+            # x = x.to(self.device)
+            # x_threshold = x_threshold.to(self.device)
             self.clf.fit(X=x, X_threshold=x_threshold, y=y)
         elif self.clf_name == "AutoEncoder":
             x = x.cpu()
@@ -178,9 +66,9 @@ class OODPolicy(Policy):
         }[self.feature_type]
 
         if get_global_variable("benchmark") in ["cliport", "minigrid"]:
-            observation = [self.to_tensor(obs[key]["image"] if key == "env_obs" else self.to_tensor(obs[key])) for key in keys]
+            observation = [to_tensor(obs[key]["image"] if key == "env_obs" else to_tensor(obs[key])) for key in keys]
         else:
-            observation = [self.to_tensor(obs[key]) for key in keys]
+            observation = [to_tensor(obs[key]) for key in keys]
 
         if self.feature_type in ["obs", "hidden", "dist"]:
             observation = observation[0]
@@ -279,21 +167,6 @@ class OODPolicy(Policy):
         self.clf_name = state_dict['clf_name']
 
         return self
-
-    def to_tensor(self, data):
-        """Converts input to a torch tensor if it's not already."""
-        if isinstance(data, dict):
-            for key in data:
-                data[key] = self.to_tensor(data[key])
-            return data
-        if isinstance(data, tuple):
-            return data
-        if not torch.is_tensor(data):
-            # (pavel 2025-06-11) I removed the to device call since we don't want our
-            # training dataset to be fully moved to the GPU by default. If this breaks
-            # something somewhere else, I might have to reconsider this.
-            return torch.from_numpy(data).float()  # .to(self.device)
-        return data
 
     def train_percentile(
         self, percentile: float

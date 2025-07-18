@@ -16,7 +16,7 @@ from YRC.core.configs import ConfigDict
 from YRC.core.configs.global_configs import set_global_variable
 
 
-def load(yaml_file_or_str, flags=None):
+def load(yaml_file_or_str, flags=None) -> ConfigDict:
     if yaml_file_or_str.endswith(".yaml"):
         with open(yaml_file_or_str) as f:
             config_dict = yaml.safe_load(f)

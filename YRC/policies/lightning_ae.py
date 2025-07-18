@@ -10,6 +10,7 @@ import sys
 from YRC.policies.ood import OODPolicy
 from YRC.core.configs.global_configs import get_global_variable
 from YRC.core.dataset import ObservationDataset, ObservationDataModule
+from YRC.core.utils import to_tensor
 
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
@@ -61,6 +62,8 @@ class LightningAEPolicy(OODPolicy):
         self.data_config: Optional[Dict[str, Any]] = None
 
         self.logger = None
+
+        self.disable_test: bool = False
 
     def initialize_ood_detector(self, args: Any, env: Any) -> None:
         """Initialize the Lightning autoencoder model."""
@@ -114,6 +117,8 @@ class LightningAEPolicy(OODPolicy):
         self.batch_size = args.batch_size
 
         epochs = args.epoch
+
+        self.disable_test = args.disable_test
 
         # Adjust model config based on input shape
         # if len(dummy_obs_shape) > 2:  # Image data
@@ -245,12 +250,13 @@ class LightningAEPolicy(OODPolicy):
 
         self.runner.fit(self.experiment, datamodule=datamodule)
 
-        # Run test run to generate samples. Uses test dataset from datamodule as
-        # specified above.
-        self.runner.test(self.experiment, datamodule=datamodule)
+        if not self.disable_test:
+            # Run test run to generate samples. Uses test dataset from datamodule as
+            # specified above.
+            self.runner.test(self.experiment, datamodule=datamodule)
 
         # Compute decision scores for threshold setting
-        self._train_decision_scores = self._compute_decision_scores(x)
+        self._train_decision_scores = self._compute_decision_scores(x_threshold)
 
     def _compute_decision_scores(self, x: torch.Tensor) -> np.ndarray:
         """Compute reconstruction error scores on the training data."""
@@ -328,13 +334,13 @@ class LightningAEPolicy(OODPolicy):
 
         if get_global_variable("benchmark") in ["cliport", "minigrid"]:
             observation = [
-                self.to_tensor(
-                    obs[key]["image"] if key == "env_obs" else self.to_tensor(obs[key])
+                to_tensor(
+                    obs[key]["image"] if key == "env_obs" else to_tensor(obs[key])
                 )
                 for key in keys
             ]
         else:
-            observation = [self.to_tensor(obs[key]) for key in keys]
+            observation = [to_tensor(obs[key]) for key in keys]
 
         if self.feature_type in ["obs", "hidden", "dist"]:
             observation = observation[0]
