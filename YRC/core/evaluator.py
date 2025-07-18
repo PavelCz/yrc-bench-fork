@@ -100,7 +100,7 @@ class Evaluator:
         score_max = np.max(all_scores)
         
         # Create score bar visualization
-        bar_height = 20  # Height of the score bar in pixels
+        bar_height = 17  # Height of the score bar in pixels
         batch_size, time_steps, channels, height, width = combined_vid.shape
         
         # Create new video with extra height for score bar
@@ -124,12 +124,13 @@ class Evaluator:
                     # Calculate bar width (as fraction of total width)
                     bar_width = int(normalized_score * width)
                     
-                    # Create score bar (red for high scores, green for low scores)
-                    bar_color = [
-                        int(255 * normalized_score),      # Red channel
-                        int(255 * (1 - normalized_score)), # Green channel  
-                        0                                  # Blue channel
-                    ]
+                    # Create score bar (green by default, red if action is 1)
+                    if t < len(action) and b < len(action[t]) and action[t][b] == 1:
+                        # Red for action = 1 (OOD detected)
+                        bar_color = [255, 0, 0]  # Red
+                    else:
+                        # Green for action = 0 (normal)
+                        bar_color = [0, 255, 0]  # Green
                     
                     # Fill the bar area
                     if bar_width > 0:
@@ -199,7 +200,7 @@ class Evaluator:
                     caption=(
                         f"Threshold: {threshold:.2f} - "
                         f"{'Left: Original, Right: Reconstruction' if use_recons else 'Original observations'} - "
-                        f"Top bar: Score with values (Green=Low, Red=High, Range: {score_min:.3f}-{score_max:.3f})"
+                        f"Top bar: Score with values (Green=Normal, Red=OOD, Range: {score_min:.3f}-{score_max:.3f})"
                     ),
                 ),
             }
