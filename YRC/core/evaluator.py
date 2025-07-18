@@ -81,6 +81,9 @@ class Evaluator:
             if obs_vid.shape != recons_vid.shape:
                 # Reshape reconstructions to match observations if needed
                 recons_vid = np.resize(recons_vid, obs_vid.shape)
+
+            # Clip the reconstructions to the range 0-1.
+            recons_vid = np.clip(recons_vid, 0, 1)
             
             # Concatenate horizontally (side by side)
             # obs_vid and recons_vid have shape (batch, time, c, h, w)
