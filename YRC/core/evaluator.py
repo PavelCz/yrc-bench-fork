@@ -205,7 +205,7 @@ class Evaluator:
             caption += " - Original observations"
 
         if use_score_bars:
-            caption += " - Top bar: Score with values (Green=Normal, Red=OOD, Range: {score_min:.3f}-{score_max:.3f})"
+            caption += f" - Top bar: Score with values (Green=Normal, Red=OOD, Range: {score_min:.3f}-{score_max:.3f})"
             
         logger.experiment.log(
             {
