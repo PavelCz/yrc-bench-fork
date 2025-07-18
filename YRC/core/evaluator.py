@@ -54,19 +54,34 @@ class Evaluator:
             recons = [x["recons"] for x in self.collected_states]
             action = [x["action"] for x in self.collected_states]
 
-            vid = np.stack(obs, axis=1)
-            vid = vid * 255
-            vid = vid.astype(np.int8)
+            # Stack observations and reconstructions
+            obs_vid = np.stack(obs, axis=1)
+            
+            recons_vid = np.stack(recons, axis=1)
+            
+            # Ensure both videos have the same shape
+            if obs_vid.shape != recons_vid.shape:
+                # Reshape reconstructions to match observations if needed
+                recons_vid = np.resize(recons_vid, obs_vid.shape)
+            
+            # Concatenate horizontally (side by side)
+            # obs_vid and recons_vid have shape (batch, time, c, h, w)
+            # We want to concatenate along the width dimension (last dimension)
+            combined_vid = np.concatenate([obs_vid, recons_vid], axis=-1)
+            
+            # Normalize to 0-255 range
+            combined_vid = combined_vid * 255
+            combined_vid = combined_vid.astype(np.uint8)
+            
             logger.experiment.log(
                 {
                     f"eval_episode_{threshold:.2f}": wandb.Video(
                         # (batch dim, time dim, c, h, w)
-                        vid,
+                        combined_vid,
                         fps=15,
                         format="gif",
                         caption=(
-                            f"Threshold: {threshold:.2f}, "
-                            # f"Percentile: {percentile_step:.2f}"
+                            f"Threshold: {threshold:.2f} - Left: Original, Right: Reconstruction"
                         ),
                     ),
                 }
