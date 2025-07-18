@@ -68,6 +68,7 @@ def main():
         eval_splits=["val_sim", "val_true"],
         do_threshold_search=False,
     )
+    wandb.finish()
 
 
 def load_rollouts(config: ConfigDict) -> List[torch.Tensor]:

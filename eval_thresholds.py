@@ -174,7 +174,6 @@ def determine_results(
         [split],
         logger=wandb_logger,
         threshold=middle_threshold,
-        percentile_step=middle_percentile,
     )
     # This is the empirically determined AFHP.
     afhp = summary[split]["action_1_frac"]

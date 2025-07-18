@@ -93,7 +93,7 @@ class RandomPolicy(Policy):
         self.prob = 0.5
         self.device = get_global_variable("device")
 
-    def act(self, obs, greedy=False):
+    def act(self, obs, greedy=False, return_scores_and_recons=False):
         benchmark = get_global_variable("benchmark")
         env_obs = obs["env_obs"]
 
@@ -107,6 +107,10 @@ class RandomPolicy(Policy):
 
         action = torch.rand(action_shape).to(self.device) < self.prob
         action = action.int()
+
+        if return_scores_and_recons:
+            return action.cpu().numpy(), None, None
+
         return action.cpu().numpy()
 
     def update_params(self, prob):

@@ -87,7 +87,7 @@
             }
         },
         {
-            "name": "Eval Thresholds Coinrun OOD AE",
+            "name": "Eval deep svdd",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/eval_thresholds.py",
@@ -115,7 +115,45 @@
             ],
             "console": "integratedTerminal",
             "justMyCode": true,
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+            }
+        },
+        {
+            "name": "Eval AE",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/eval_thresholds.py",
+            "args": [
+                "-wandb_project", "yrc-debug",
+                // "-wandb_mode", "offline",
+                "-c", "configs/procgen_ae_hard.yaml",
+                // "-c", "configs/procgen_random_hard.yaml",
+                // "-c", "configs/procgen_ood.yaml",
+                "-n", "debug_base_ae",
+                // "-en", "coinrun",
+                "-en", "coinrun",
+                "-sim", "YRC/checkpoints/procgen/coinrun/sim_weak/model_40009728.pth",
+                "-weak", "YRC/checkpoints/procgen/coinrun/weak/model_80019456.pth",
+                "-strong", "YRC/checkpoints/procgen/coinrun/strong/model_200015872.pth",
+                "-cp_method", "Autoencoder",
+                // "-cp_method", "DeepSVDD",
+                "-cp_feature", "obs",
+                // "-f_n", "trained.joblib",
+                "-f_n", "trained.pt",
+                "-query_cost", "0",
+                "-threshold_bins", "5",
+                "-over",
+                "-seed", "1",
+                "-test_episodes", "64"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+            }
         },
         {
             "name": "Random Eval Thresholds Coinrun",
@@ -144,7 +182,10 @@
             ],
             "console": "integratedTerminal",
             "justMyCode": true,
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+            }
         },
         
     ]
