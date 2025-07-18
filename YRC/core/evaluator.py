@@ -54,20 +54,28 @@ class Evaluator:
             recons = [x["recons"] for x in self.collected_states]
             action = [x["action"] for x in self.collected_states]
 
+            # We determine whether our OOD detector uses reconstructions by checking
+            # whether the first element of the first reconstruction is None.
+            use_recons = recons[0][0] is not None
+
             # Stack observations and reconstructions
             obs_vid = np.stack(obs, axis=1)
-            
-            recons_vid = np.stack(recons, axis=1)
-            
-            # Ensure both videos have the same shape
-            if obs_vid.shape != recons_vid.shape:
-                # Reshape reconstructions to match observations if needed
-                recons_vid = np.resize(recons_vid, obs_vid.shape)
-            
-            # Concatenate horizontally (side by side)
-            # obs_vid and recons_vid have shape (batch, time, c, h, w)
-            # We want to concatenate along the width dimension (last dimension)
-            combined_vid = np.concatenate([obs_vid, recons_vid], axis=-1)
+
+            if use_recons:
+                
+                recons_vid = np.stack(recons, axis=1)
+                
+                # Ensure both videos have the same shape
+                if obs_vid.shape != recons_vid.shape:
+                    # Reshape reconstructions to match observations if needed
+                    recons_vid = np.resize(recons_vid, obs_vid.shape)
+                
+                # Concatenate horizontally (side by side)
+                # obs_vid and recons_vid have shape (batch, time, c, h, w)
+                # We want to concatenate along the width dimension (last dimension)
+                combined_vid = np.concatenate([obs_vid, recons_vid], axis=-1)
+            else:
+                combined_vid = obs_vid
             
             # Normalize to 0-255 range
             combined_vid = combined_vid * 255
