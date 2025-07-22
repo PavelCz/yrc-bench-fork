@@ -26,7 +26,7 @@ def main():
     evaluator = Evaluator(config.evaluation)
 
     if config.training.rollout_dir is not None:
-        rollout_obs = load_rollouts(config)
+        rollout_obs = load_rollouts_from_file(config)
 
     if hasattr(policy, "logger"):
 
@@ -71,7 +71,7 @@ def main():
     wandb.finish()
 
 
-def load_rollouts(config: ConfigDict) -> List[torch.Tensor]:
+def load_rollouts_from_file(config: ConfigDict) -> List[torch.Tensor]:
     experiment_dir = Path(str(get_global_variable("experiment_dir")))
 
     output_dir = experiment_dir.parent
