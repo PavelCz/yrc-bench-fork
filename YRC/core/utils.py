@@ -1,4 +1,10 @@
+import json
+from pathlib import Path
+from typing import List
 import torch
+
+from YRC.core.configs import ConfigDict
+from YRC.core.configs.global_configs import get_global_variable
 
 def to_tensor(data):
     """Converts input to a torch tensor if it's not already."""
@@ -122,3 +128,32 @@ def print_dict_diff(dict1, dict2, dict1_name="Dict1", dict2_name="Dict2", print_
                 print(f"{indent_str}  {GREEN}+ {val2}{RESET}")
     
     return result
+
+
+def load_rollouts_from_file(config: ConfigDict) -> List[torch.Tensor]:
+    experiment_dir = Path(str(get_global_variable("experiment_dir")))
+
+    output_dir = experiment_dir.parent
+    rollouts_dir = output_dir / config.training.rollout_dir
+
+    with (rollouts_dir / "rollouts_config.json").open("r") as f:
+        rollouts_config_loaded = json.load(f)
+
+    with (rollouts_dir / "rollouts.pt").open("rb") as f:
+        rollout_obs = torch.load(f)
+
+    # for key, value in rollouts_config.items():
+    #     if rollouts_config_loaded[key] != value:
+    #         raise ValueError(
+    #             f"Rollouts config mismatch: {rollouts_config_loaded[key]} != {value}"
+    #         )
+
+    print(f"Loaded rollouts from {rollouts_dir}")
+    print(f"Rollout obs shape: {rollout_obs[0].shape}")
+    # print(f"Number of rollouts: {rollouts_config['num_rollouts']}")
+
+    # TODO: In the future, we can use the diff to check that certain important config
+    # parameters are the same.
+    diff = print_dict_diff(config.as_dict(), rollouts_config_loaded)
+
+    return rollout_obs
