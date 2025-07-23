@@ -14,6 +14,8 @@ coord_policy:
         cls: OODPolicy
     lightning_ae:
         cls: LightningAEPolicy
+    mahalanobis_ae:
+        cls: MahalanobisAEPolicy
 coord_env:
     procgen:
         strong_query_cost_ratio: 0.4
