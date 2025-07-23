@@ -63,6 +63,7 @@ class MahalanobisAEPolicy(LightningAEPolicy):
             obs = obs.to(self.device)
             # Encode returns a list of length 1, so we need to index into it.
             encoded_obs = self.clf.encode(obs.unsqueeze(0))[0]
+            obs = obs.cpu()
             if aggregated_vector is None:
                 aggregated_vector = encoded_obs.cpu().detach().numpy()
             else:
