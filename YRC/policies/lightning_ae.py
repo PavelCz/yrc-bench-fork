@@ -315,7 +315,7 @@ class LightningAEPolicy(OODPolicy):
 
     def act(
         self,
-        obs: np.ndarray,
+        obs: dict,
         greedy: bool = False,
         return_scores_and_recons: bool = False,
     ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray, List[np.ndarray]]]:

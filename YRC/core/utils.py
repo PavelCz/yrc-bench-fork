@@ -131,6 +131,10 @@ def print_dict_diff(dict1, dict2, dict1_name="Dict1", dict2_name="Dict2", print_
 
 
 def load_rollouts_from_file(config: ConfigDict) -> List[torch.Tensor]:
+    """Reads a ConfigDict and loads the rollouts, i.e. a dataset of collected
+    observations from the file. As a sanity check the differences in the passed config
+    and the config saved with the rollouts are printed.
+    """
     experiment_dir = Path(str(get_global_variable("experiment_dir")))
 
     output_dir = experiment_dir.parent
