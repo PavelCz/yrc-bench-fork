@@ -182,7 +182,8 @@
                 "-over",
                 "-seed", "1",
                 "-test_episodes", "64",
-                "-rollout_dir", "debug_gather_rollouts_2"
+                "-rollout_dir", "debug_gather_rollouts_2",
+                "-val_rollout_dir", "debug_gather_val_rollouts_2"
             ],
             "console": "integratedTerminal",
             "justMyCode": true,

@@ -168,6 +168,13 @@ def make():
         help="directory to save rollouts",
     )
 
+    parser.add_argument(
+        "-val_rollout_dir",
+        "--training.val_rollout_dir",
+        type=str,
+        help="directory to save val rollouts. Currently only used for Mahalanobis AE.",
+    )
+
     args = parser.parse_args()
 
     return args

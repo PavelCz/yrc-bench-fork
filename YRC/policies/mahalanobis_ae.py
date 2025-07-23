@@ -42,8 +42,8 @@ class MahalanobisAEPolicy(LightningAEPolicy):
         # Alpha and beta are mixing parameters for the novelty loss.
         # Alpha is the weight of the Mahalanobis distance, beta is the weight of the
         # reconstruction loss.
-        self.alpha: float = 0.5
-        self.beta: float = 0.5
+        self.alpha: Optional[float] = None
+        self.beta: Optional[float] = None
 
         self.mean_vector: Optional[np.ndarray] = None
         self.inv_cov_matrix: Optional[np.ndarray] = None
@@ -89,7 +89,32 @@ class MahalanobisAEPolicy(LightningAEPolicy):
         )  # rowvar=False treats rows as samples
         self.inv_cov_matrix = np.linalg.inv(cov_matrix)
 
-        # TODO: Determine alpha and beta parameters.
+        # TODO: Determine alpha and beta parameters. We use the validation set to
+        # determine the parameters as described in the paper.
+        val_rollout_dir = output_dir / config.training.val_rollout_dir
+        # Determine mean vector of the encoded training set.
+        val_set = load_rollouts_from_file(val_rollout_dir)
+
+        # As described in the paper, alphs is set to the reciprocal of standard
+        # deviation of the Mahalanobis distance between the encoded validation data and
+        # the mean latent train vector.
+        val_set_tensor = torch.stack(val_set).to(self.device)
+        mahalanobis_distances = self._compute_mahalanobis_distance(val_set_tensor)
+        alpha = 1 / np.std(mahalanobis_distances)
+        self.alpha = alpha
+
+        # Betas is the reciprocal of the standard deviation of the reconstruction error
+        # on the validation set.
+        # We use _compute_decision_scores from the parent class to get the
+        # reconstruction errors only, not including the Mahalanobis distance.
+        recon_scores = super()._compute_decision_scores(
+            val_set_tensor, return_recons=False
+        )
+        beta = 1 / np.std(recon_scores)
+        self.beta = beta
+
+        # From now on, when doing either self._compute_decision_scores or self.act,
+        # the inferred values of alpha and beta will be used.
 
         # since the Mahalanobis is an augmentation of a base AE-based OOD detector,
         # we also need to update the training set decision scores.

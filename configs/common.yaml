@@ -163,3 +163,4 @@ gather_rollouts:
     feature_type: 'obs'
     collect_data_agent: 'weak'
     rollout_dir: 'experiments/rollouts'
+    val_rollout_dir: 'experiments/val_rollouts'
