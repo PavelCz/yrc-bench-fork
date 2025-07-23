@@ -3,6 +3,7 @@ import logging
 import numpy as np
 from typing import List, Optional, Any, Tuple, Union, cast
 import sys
+from pathlib import Path
 from YRC.core.configs import ConfigDict
 import torch
 from scipy.spatial.distance import mahalanobis
@@ -48,8 +49,12 @@ class MahalanobisAEPolicy(LightningAEPolicy):
         self.inv_cov_matrix: Optional[np.ndarray] = None
 
     def initialize_mahalanobis_detector(self, config: ConfigDict) -> None:
+        experiment_dir = Path(str(get_global_variable("experiment_dir")))
+
+        output_dir = experiment_dir.parent
+        rollout_dir = output_dir / config.training.rollout_dir
         # Determine mean vector of the encoded training set.
-        training_set = load_rollouts_from_file(config)
+        training_set = load_rollouts_from_file(rollout_dir)
 
         # Encode the training set.
         aggregated_vector = None

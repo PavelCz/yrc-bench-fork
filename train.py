@@ -23,7 +23,12 @@ def main():
     evaluator = Evaluator(config.evaluation)
 
     if config.training.rollout_dir is not None:
-        rollout_obs = load_rollouts_from_file(config)
+
+        experiment_dir = Path(str(get_global_variable("experiment_dir")))
+
+        output_dir = experiment_dir.parent
+        rollout_dir = output_dir / config.training.rollout_dir
+        rollout_obs = load_rollouts_from_file(rollout_dir, config)
 
     if hasattr(policy, "logger"):
 
