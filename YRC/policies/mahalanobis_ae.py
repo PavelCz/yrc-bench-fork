@@ -64,16 +64,16 @@ class MahalanobisAEPolicy(LightningAEPolicy):
             # Encode returns a list of length 1, so we need to index into it.
             encoded_obs = self.clf.encode(obs.unsqueeze(0))[0]
             if aggregated_vector is None:
-                aggregated_vector = encoded_obs
+                aggregated_vector = encoded_obs.cpu().detach().numpy()
             else:
-                aggregated_vector += encoded_obs
+                aggregated_vector += encoded_obs.cpu().detach().numpy()
             count += 1
 
         # Divide by the number of observations to get the mean.
         aggregated_vector /= count
 
-        # Store the mean vector.
-        self.mean_vector = aggregated_vector[0].cpu().detach().numpy()
+        # Store the mean vector (it's a 1 x d matrix, so we need to index into it).
+        self.mean_vector = aggregated_vector[0]
 
         # Encode the training set.
         encoded_training_set = []
