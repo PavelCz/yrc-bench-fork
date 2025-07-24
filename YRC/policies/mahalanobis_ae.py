@@ -95,11 +95,11 @@ class MahalanobisAEPolicy(LightningAEPolicy):
         # As described in the paper, alphs is set to the reciprocal of standard
         # deviation of the Mahalanobis distance between the encoded validation data and
         # the mean latent train vector.
-        val_set_tensor = torch.stack(val_set).to(self.device)
-        mahalanobis_distances = self._compute_mahalanobis_distance(val_set_tensor)
+        mahalanobis_distances = self._compute_mahalanobis_distance(val_set)
         alpha = 1 / np.std(mahalanobis_distances)
         self.alpha = alpha
 
+        val_set_tensor = torch.stack(val_set)
         # Betas is the reciprocal of the standard deviation of the reconstruction error
         # on the validation set.
         # We use _compute_decision_scores from the parent class to get the
@@ -131,7 +131,6 @@ class MahalanobisAEPolicy(LightningAEPolicy):
         else:
             recon_scores = ret
 
-        x = x.to(self.device)
         # Compute the Mahalanobis distance.
         mahalanobis_distance = self._compute_mahalanobis_distance(x)
 
@@ -194,16 +193,17 @@ class MahalanobisAEPolicy(LightningAEPolicy):
 
         return action
 
-    def _compute_mahalanobis_distance(self, obs: torch.Tensor) -> np.ndarray:
-        # Encode the observation.
-        # Encode returns a list of length 1, so we need to index into it.
-        encoded_obs = self.clf.encode(obs)[0].cpu().detach().numpy()
-
+    def _compute_mahalanobis_distance(
+        self, obs: Union[List[torch.Tensor], torch.Tensor]
+    ) -> np.ndarray:
         mahalanobis_distances = []
-        for i in range(len(encoded_obs)):
-            # Compute the Mahalanobis distance.
+        for i in range(len(obs)):
+            obs_i = obs[i].to(self.device)
+            encoded_obs_i = (
+                self.clf.encode(obs_i.unsqueeze(0))[0].squeeze(0).cpu().detach().numpy()
+            )
             mahalanobis_distance = mahalanobis(
-                encoded_obs[i], self.mean_vector, self.inv_cov_matrix
+                encoded_obs_i, self.mean_vector, self.inv_cov_matrix
             )
             mahalanobis_distances.append(mahalanobis_distance)
 
