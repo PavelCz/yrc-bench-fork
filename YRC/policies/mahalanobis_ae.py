@@ -58,36 +58,31 @@ class MahalanobisAEPolicy(LightningAEPolicy):
 
         # Encode the training set.
         aggregated_vector = None
+        encoded_training_set = []
         count = 0
         for obs in training_set:
             obs = obs.to(self.device)
             # Encode returns a list of length 1, so we need to index into it.
             self.clf.eval()
-            encoded_obs = self.clf.encode(obs.unsqueeze(0))[0]
+            encoded_obs = self.clf.encode(obs.unsqueeze(0))[0].squeeze(0)
             obs = obs.cpu()
             if aggregated_vector is None:
                 aggregated_vector = encoded_obs.cpu().detach().numpy()
             else:
                 aggregated_vector += encoded_obs.cpu().detach().numpy()
+            encoded_training_set.append(encoded_obs.cpu().detach().numpy())
             count += 1
 
         # Divide by the number of observations to get the mean.
         aggregated_vector /= count
 
         # Store the mean vector (it's a 1 x d matrix, so we need to index into it).
-        self.mean_vector = aggregated_vector[0]
+        self.mean_vector = aggregated_vector
 
-        # Encode the training set.
-        encoded_training_set = []
-        for obs in training_set:
-            obs = obs.to(self.device)
-            encoded_obs = self.clf.encode(obs.unsqueeze(0))[0].squeeze(0)
-            encoded_training_set.append(encoded_obs.cpu())
-
-        training_set_tensor = torch.stack(encoded_training_set).detach().numpy()
+        training_set_array = np.array(encoded_training_set)
         # Flatten images into vectors.
         cov_matrix = np.cov(
-            training_set_tensor, rowvar=False
+            training_set_array, rowvar=False
         )  # rowvar=False treats rows as samples
         self.inv_cov_matrix = np.linalg.inv(cov_matrix)
 
