@@ -1,5 +1,6 @@
 import os
 import logging
+from typing import cast
 import numpy as np
 import torch
 from typing import Dict, List, Optional, Any, Tuple, Union
@@ -256,11 +257,12 @@ class LightningAEPolicy(OODPolicy):
             self.runner.test(self.experiment, datamodule=datamodule)
 
         # Compute decision scores for threshold setting
-        self._train_decision_scores = self._compute_decision_scores(x_threshold)
+        train_decision_scores = self._compute_decision_scores(x_threshold)
+        self._train_decision_scores = cast(np.ndarray, train_decision_scores)
 
     def _compute_decision_scores(
         self, x: torch.Tensor, return_recons: bool = False
-    ) -> np.ndarray:
+    ) -> Union[np.ndarray, Tuple[np.ndarray, List[np.ndarray]]]:
         """Compute reconstruction error scores on the training data."""
         if self.clf is None:
             raise ValueError("Model not initialized")
@@ -313,7 +315,7 @@ class LightningAEPolicy(OODPolicy):
 
     def act(
         self,
-        obs: np.ndarray,
+        obs: dict,
         greedy: bool = False,
         return_scores_and_recons: bool = False,
     ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray, List[np.ndarray]]]:

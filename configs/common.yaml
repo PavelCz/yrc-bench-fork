@@ -14,6 +14,8 @@ coord_policy:
         cls: OODPolicy
     lightning_ae:
         cls: LightningAEPolicy
+    mahalanobis_ae:
+        cls: MahalanobisAEPolicy
 coord_env:
     procgen:
         strong_query_cost_ratio: 0.4
@@ -161,3 +163,4 @@ gather_rollouts:
     feature_type: 'obs'
     collect_data_agent: 'weak'
     rollout_dir: 'experiments/rollouts'
+    val_rollout_dir: 'experiments/val_rollouts'

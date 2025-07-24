@@ -8,6 +8,7 @@ SRC_FILES=(
     "YRC/core/dataset.py"
     "YRC/core/rollout_helper.py"
     "eval_thresholds.py"
+    "YRC/policies/mahalanobis_ae.py"
 )
 EXCLUDED_FILES=("")
 

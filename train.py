@@ -1,3 +1,4 @@
+from YRC.core.utils import load_rollouts_from_file
 import flags
 import YRC.core.algorithm as algo_factory
 import YRC.core.configs.utils as config_utils
@@ -8,11 +9,7 @@ import wandb
 from pytorch_lightning.loggers import WandbLogger
 from YRC.core.configs.global_configs import get_global_variable
 from pathlib import Path
-import json
-import torch
-from typing import List
 from YRC.core.configs import ConfigDict
-from YRC.core.utils import print_dict_diff
 
 # Algorithms that support training without threshold search.
 ALGORITHMS = ["ood", "lightning_ae"]
@@ -26,7 +23,12 @@ def main():
     evaluator = Evaluator(config.evaluation)
 
     if config.training.rollout_dir is not None:
-        rollout_obs = load_rollouts(config)
+
+        experiment_dir = Path(str(get_global_variable("experiment_dir")))
+
+        output_dir = experiment_dir.parent
+        rollout_dir = output_dir / config.training.rollout_dir
+        rollout_obs = load_rollouts_from_file(rollout_dir, config)
 
     if hasattr(policy, "logger"):
 
@@ -69,35 +71,6 @@ def main():
         do_threshold_search=False,
     )
     wandb.finish()
-
-
-def load_rollouts(config: ConfigDict) -> List[torch.Tensor]:
-    experiment_dir = Path(str(get_global_variable("experiment_dir")))
-
-    output_dir = experiment_dir.parent
-    rollouts_dir = output_dir / config.training.rollout_dir
-
-    with (rollouts_dir / "rollouts_config.json").open("r") as f:
-        rollouts_config_loaded = json.load(f)
-
-    with (rollouts_dir / "rollouts.pt").open("rb") as f:
-        rollout_obs = torch.load(f)
-
-    # for key, value in rollouts_config.items():
-    #     if rollouts_config_loaded[key] != value:
-    #         raise ValueError(
-    #             f"Rollouts config mismatch: {rollouts_config_loaded[key]} != {value}"
-    #         )
-
-    print(f"Loaded rollouts from {rollouts_dir}")
-    print(f"Rollout obs shape: {rollout_obs[0].shape}")
-    # print(f"Number of rollouts: {rollouts_config['num_rollouts']}")
-
-    # TODO: In the future, we can use the diff to check that certain important config
-    # parameters are the same.
-    diff = print_dict_diff(config.as_dict(), rollouts_config_loaded)
-
-    return rollout_obs
 
 
 if __name__ == "__main__":

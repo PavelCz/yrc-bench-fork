@@ -10,6 +10,7 @@ from YRC.core import Evaluator
 from YRC.core.configs.global_configs import get_global_variable
 
 from YRC.policies.lightning_ae import LightningAEPolicy
+from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
 from YRC.policies.ood import OODPolicy
 from YRC.policies.base import RandomPolicy
 
@@ -34,6 +35,11 @@ def main():
         # anything. Thus, we do not need to load here.
         if config.general.algorithm != "random":
             policy.load_model(os.path.join(config.experiment_dir, config.file_name))
+
+        # For the Mahalanobis AE, we need some additional initialization.
+        if isinstance(policy, MahalanobisAEPolicy):
+            policy.initialize_mahalanobis_detector(config)
+
     evaluator = Evaluator(config.evaluation)
 
     num_threshold_bins = args.eval.threshold_bins
