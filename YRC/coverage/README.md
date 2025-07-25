@@ -8,14 +8,14 @@ When evaluating threshold-based policies, we need to understand how performance 
 - **X-axis**: AFHP (0% to 100%)
 - **Y-axis**: Return/Performance
 
-The challenge is to efficiently sample thresholds to accurately characterize this curve with minimal evaluations.
+The task is to sample thresholds to characterize this curve with a limited evaluation budget.
 
 ## Algorithm: Adaptive Binary Search with Binning
 
-The current implementation uses an adaptive binary search algorithm that fills bins along the AFHP axis. This approach is well-suited for monotonic curves where:
-1. We want uniform coverage along the X-axis (AFHP)
+The implementation uses a binary search algorithm that fills bins along the AFHP axis. This approach applies when:
+1. The goal is uniform coverage along the X-axis (AFHP)
 2. The relationship between threshold percentiles and AFHP is monotonic
-3. We need to handle noise in the evaluation results
+3. The evaluation results may contain noise
 
 ### Key Concepts
 

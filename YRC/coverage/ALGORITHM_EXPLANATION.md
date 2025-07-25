@@ -11,7 +11,7 @@ This creates a monotonic curve where lower thresholds (higher percentiles) lead 
 
 ## The Binary Search Solution
 
-The algorithm uses binary search to efficiently fill bins along the AFHP axis. Here's why this works well:
+The algorithm uses binary search to fill bins along the AFHP axis. Here's how it works:
 
 ### 1. **Monotonicity Exploitation**
 
@@ -70,12 +70,12 @@ def determine_results(left_percentile, right_percentile, left_bin, right_bin):
         determine_results(middle_percentile, right_percentile, bin_idx, right_bin)
 ```
 
-## Advantages of This Approach
+## Characteristics of This Approach
 
-1. **Efficiency**: O(n log n) evaluations for n bins
-2. **Guaranteed Coverage**: Ensures all bins get filled (if possible)
-3. **Adaptive**: Automatically handles non-linear percentile-to-AFHP mappings
-4. **Simple**: Easy to implement and understand
+1. **Complexity**: O(n log n) evaluations for n bins
+2. **Coverage**: Attempts to fill all bins (when possible)
+3. **Behavior**: Handles non-linear percentile-to-AFHP mappings
+4. **Implementation**: Uses recursive binary search
 
 ## Limitations and Improvements
 
@@ -86,12 +86,12 @@ def determine_results(left_percentile, right_percentile, left_bin, right_bin):
 3. **Single Sample per Bin**: Doesn't capture within-bin variation
 4. **No Noise Handling**: Assumes deterministic evaluations
 
-### Potential Improvements
+### Potential Modifications
 
-1. **Adaptive Bin Sizing**: Smaller bins where the curve is steep
-2. **Multiple Samples per Bin**: Better characterization of each region
-3. **Confidence Intervals**: Account for evaluation noise
-4. **Interpolation**: Smooth curve fitting between samples
+1. **Adaptive Bin Sizing**: Variable bin widths based on local properties
+2. **Multiple Samples per Bin**: Multiple evaluations within each bin
+3. **Confidence Intervals**: Statistical treatment of evaluation noise
+4. **Interpolation**: Curve fitting between sampled points
 
 ## Example Usage
 
@@ -117,6 +117,6 @@ print(f"Filled {summary['bins_filled']}/{sampler.num_bins} bins")
 print(f"Used {summary['total_evaluations']} evaluations")
 ```
 
-## Conclusion
+## Summary
 
-The binary search approach is well-suited for sampling monotonic curves. It efficiently ensures uniform coverage along the AFHP axis while respecting the constraint that we can only sample points on the actual performance curve. This makes it an effective solution for threshold evaluation in coordination policies.
+The binary search approach samples monotonic curves by recursively bisecting the input space to fill bins along the output axis. It leverages the monotonic relationship between input and output to determine where to sample next. The algorithm terminates when all bins contain samples or no further bisection is possible.
