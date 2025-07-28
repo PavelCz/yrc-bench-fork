@@ -224,6 +224,17 @@
                 "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
             }
         },
-        
+        {
+            "name": "Coverage Example Usage",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/YRC/coverage/example_usage.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        }
     ]
 } 

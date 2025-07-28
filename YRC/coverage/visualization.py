@@ -17,6 +17,7 @@ def plot_coverage_results(
     figsize: Tuple[int, int] = (10, 6),
     show_bins: bool = True,
     show_order: bool = False,
+    uniform_samples: Optional[List[Tuple[float, float]]] = None,
 ) -> plt.Figure:
     """
     Plot the results of coverage sampling.
@@ -30,6 +31,7 @@ def plot_coverage_results(
         figsize: Figure size
         show_bins: Whether to show bin boundaries
         show_order: Whether to number points by evaluation order
+        uniform_samples: Optional list of (afhp, return) tuples for uniform sampling comparison
         
     Returns:
         matplotlib figure object
@@ -53,8 +55,21 @@ def plot_coverage_results(
     sorted_returns = [returns[i] for i in sorted_indices]
     
     # Plot the curve
-    ax.plot(sorted_outputs, sorted_returns, 'b-', linewidth=2, label='Sampled curve')
-    ax.scatter(output_values, returns, c='red', s=50, zorder=5, label='Sample points')
+    ax.plot(sorted_outputs, sorted_returns, 'b-', linewidth=2, label='Binary search curve')
+    ax.scatter(output_values, returns, c='red', s=50, zorder=5, label='Binary search points')
+    
+    # Plot uniform samples if provided
+    if uniform_samples is not None:
+        uniform_afhps = [afhp for afhp, _ in uniform_samples]
+        uniform_returns = [ret for _, ret in uniform_samples]
+        
+        # Sort for line plot
+        sorted_uniform_indices = np.argsort(uniform_afhps)
+        sorted_uniform_afhps = [uniform_afhps[i] for i in sorted_uniform_indices]
+        sorted_uniform_returns = [uniform_returns[i] for i in sorted_uniform_indices]
+        
+        ax.plot(sorted_uniform_afhps, sorted_uniform_returns, 'g--', linewidth=2, alpha=0.7, label='Uniform curve')
+        ax.scatter(uniform_afhps, uniform_returns, c='green', s=50, zorder=4, alpha=0.7, label='Uniform points')
     
     # Show evaluation order if requested
     if show_order:
@@ -95,6 +110,8 @@ def plot_sampling_efficiency(
     all_samples: List[SamplePoint],
     title: str = "Sampling Efficiency",
     figsize: Tuple[int, int] = (10, 4),
+    uniform_samples: Optional[List[Tuple[float, float]]] = None,
+    num_bins: int = 10,
 ) -> plt.Figure:
     """
     Plot how the coverage evolves with each evaluation.
@@ -103,6 +120,8 @@ def plot_sampling_efficiency(
         all_samples: All samples in evaluation order
         title: Plot title
         figsize: Figure size
+        uniform_samples: Optional list of (afhp, return) tuples for uniform sampling comparison
+        num_bins: Number of bins for coverage calculation
         
     Returns:
         matplotlib figure object
@@ -122,23 +141,42 @@ def plot_sampling_efficiency(
     ax1.grid(True, alpha=0.3)
     
     # Plot 2: Coverage percentage over evaluations
-    coverage_pcts = []
-    output_ranges = []
+    bin_edges = np.linspace(0, 100, num_bins + 1)
     
+    # Binary search coverage evolution
+    bs_coverage_pcts = []
     for i in range(1, len(all_samples) + 1):
-        current_outputs = [s.output_value for s in all_samples[:i]]
-        if current_outputs:
-            output_range = max(current_outputs) - min(current_outputs)
-            output_ranges.append(output_range)
-            # Simple coverage metric: range covered / total possible range
-            coverage_pcts.append(output_range / 100.0 * 100)
+        bins_filled = set()
+        for sample in all_samples[:i]:
+            bin_idx = int(sample.output_value // (100 / num_bins))
+            if bin_idx >= num_bins:
+                bin_idx = num_bins - 1
+            bins_filled.add(bin_idx)
+        bs_coverage_pcts.append(100.0 * len(bins_filled) / num_bins)
     
-    ax2.plot(eval_numbers, coverage_pcts, 'g-', linewidth=2)
+    ax2.plot(eval_numbers, bs_coverage_pcts, 'b-', linewidth=2, label='Binary Search')
+    
+    # Uniform sampling coverage evolution if provided
+    if uniform_samples is not None:
+        uniform_coverage_pcts = []
+        for i in range(1, len(uniform_samples) + 1):
+            bins_filled = set()
+            for afhp, _ in uniform_samples[:i]:
+                bin_idx = int(afhp // (100 / num_bins))
+                if bin_idx >= num_bins:
+                    bin_idx = num_bins - 1
+                bins_filled.add(bin_idx)
+            uniform_coverage_pcts.append(100.0 * len(bins_filled) / num_bins)
+        
+        uniform_eval_numbers = list(range(1, len(uniform_samples) + 1))
+        ax2.plot(uniform_eval_numbers, uniform_coverage_pcts, 'g--', linewidth=2, label='Uniform Sampling')
+    
     ax2.set_xlabel("Evaluation Number")
     ax2.set_ylabel("Coverage (%)")
     ax2.set_title("Coverage Evolution")
     ax2.grid(True, alpha=0.3)
     ax2.set_ylim([0, 105])
+    ax2.legend()
     
     fig.suptitle(title)
     plt.tight_layout()
