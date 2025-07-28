@@ -92,7 +92,7 @@ def main():
 
     # Run the sampling
     print(f"Running binary search sampling with {num_threshold_bins} bins...")
-    bin_samples = sampler.run()
+    bin_samples = sampler.run_with_return_refinement()
 
     # Get coverage summary
     coverage_summary = sampler.get_coverage_summary()

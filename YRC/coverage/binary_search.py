@@ -36,6 +36,8 @@ class BinarySearchSampler:
         output_range: Tuple[float, float] = (0.0, 100.0),
         input_to_threshold: Optional[Callable[[float], float]] = None,
         verbose: bool = True,
+        return_bins: int = 0,
+        max_additional_evals: int = 20,
     ):
         """
         Initialize the sampler.
@@ -49,6 +51,8 @@ class BinarySearchSampler:
             input_to_threshold: Optional function to convert input values
                                to actual thresholds for evaluation
             verbose: Whether to print progress messages
+            return_bins: Number of return bins for curve smoothing (0 = disabled)
+            max_additional_evals: Maximum additional evaluations for return refinement
         """
         self.eval_function = eval_function
         self.num_bins = num_bins
@@ -56,6 +60,8 @@ class BinarySearchSampler:
         self.output_range = output_range
         self.input_to_threshold = input_to_threshold or (lambda x: x)
         self.verbose = verbose
+        self.return_bins = return_bins
+        self.max_additional_evals = max_additional_evals
 
         # Initialize bins
         self.bin_edges: NDArray[np.float64] = np.linspace(
@@ -63,6 +69,7 @@ class BinarySearchSampler:
         )
         self.bin_samples: List[Optional[SamplePoint]] = [None] * num_bins
         self.all_samples: List[SamplePoint] = []
+        self.return_refinement_samples: List[SamplePoint] = []
         self.total_evals: int = 0
 
     def determine_bin(self, output_value: float) -> int:
@@ -210,6 +217,241 @@ class BinarySearchSampler:
             "gaps": gaps,
             "total_evaluations": self.total_evals,
         }
+
+    def extract_return_value(self, sample: SamplePoint) -> float:
+        """Extract return value from sample metadata."""
+        # Try different possible keys for return value
+        metadata = sample.metadata
+        if "summary" in metadata:
+            summary = metadata["summary"]
+            if isinstance(summary, dict):
+                # Try different split names
+                for split in ["test", "val", "eval"]:
+                    if split in summary and "return_mean" in summary[split]:
+                        return summary[split]["return_mean"]
+
+        # Fallback: look for return_mean directly in metadata
+        if "return_mean" in metadata:
+            return metadata["return_mean"]
+
+        # Final fallback: assume it's stored as 'return'
+        if "return" in metadata:
+            return metadata["return"]
+
+        raise ValueError(
+            f"Could not extract return value from sample metadata: {metadata}"
+        )
+
+    def fill_return_gaps(
+        self, initial_samples: List[Optional[SamplePoint]]
+    ) -> List[SamplePoint]:
+        """
+        Fill gaps in return values using binary search.
+
+        Args:
+            initial_samples: Samples from the initial AFHP-based binary search
+
+        Returns:
+            List of additional samples to fill return gaps
+        """
+        if self.return_bins == 0:
+            return []
+
+        # Extract valid samples and their returns
+        valid_samples = [s for s in initial_samples if s is not None]
+        if len(valid_samples) < 2:
+            return []
+
+        # Extract return values
+        try:
+            returns = [self.extract_return_value(s) for s in valid_samples]
+        except ValueError as e:
+            if self.verbose:
+                print(f"Warning: Could not extract return values for gap filling: {e}")
+            return []
+
+        min_return = min(returns)
+        max_return = max(returns)
+
+        if max_return <= min_return:
+            if self.verbose:
+                print("Warning: All return values are equal, cannot fill gaps")
+            return []
+
+        # Create return bins
+        return_bin_edges = np.linspace(min_return, max_return, self.return_bins + 1)
+
+        # Find which return bins are already filled
+        filled_return_bins = set()
+        for ret in returns:
+            # Find which bin this return belongs to
+            bin_idx = int(
+                (ret - min_return) / (max_return - min_return) * self.return_bins
+            )
+            if bin_idx >= self.return_bins:
+                bin_idx = self.return_bins - 1
+            filled_return_bins.add(bin_idx)
+
+        # Identify empty return bins
+        empty_return_bins = []
+        for i in range(self.return_bins):
+            if i not in filled_return_bins:
+                target_return_min = return_bin_edges[i]
+                target_return_max = return_bin_edges[i + 1]
+                target_return = (target_return_min + target_return_max) / 2
+                empty_return_bins.append(
+                    (i, target_return, target_return_min, target_return_max)
+                )
+
+        if self.verbose and empty_return_bins:
+            print(f"Found {len(empty_return_bins)} empty return bins to fill")
+
+        # Fill empty return bins using binary search
+        additional_samples = []
+        evals_used = 0
+
+        for bin_idx, target_return, return_min, return_max in empty_return_bins:
+            if evals_used >= self.max_additional_evals:
+                break
+
+            sample = self.search_for_return_range(
+                valid_samples, target_return, return_min, return_max
+            )
+            if sample is not None:
+                additional_samples.append(sample)
+                self.return_refinement_samples.append(sample)
+                evals_used += 1
+
+        if self.verbose and additional_samples:
+            print(f"Added {len(additional_samples)} samples for return gap filling")
+
+        return additional_samples
+
+    def search_for_return_range(
+        self,
+        existing_samples: List[SamplePoint],
+        target_return: float,
+        return_min: float,
+        return_max: float,
+        max_iterations: int = 10,
+    ) -> Optional[SamplePoint]:
+        """
+        Binary search for an input value that produces a return in the specified range.
+
+        Args:
+            existing_samples: Existing samples to guide the search
+            target_return: Target return value (midpoint of range)
+            return_min: Minimum acceptable return value
+            return_max: Maximum acceptable return value
+            max_iterations: Maximum binary search iterations
+
+        Returns:
+            SamplePoint if found, None if not found within max_iterations
+        """
+        # Sort existing samples by return value to use for interpolation
+        samples_with_returns = []
+        for sample in existing_samples:
+            try:
+                ret = self.extract_return_value(sample)
+                samples_with_returns.append((sample, ret))
+            except ValueError:
+                continue
+
+        if len(samples_with_returns) < 2:
+            return None
+
+        samples_with_returns.sort(key=lambda x: x[1])  # Sort by return value
+
+        # Find the two samples that bracket the target return
+        lower_sample, lower_return = samples_with_returns[0]
+        upper_sample, upper_return = samples_with_returns[-1]
+
+        # Find the best bracketing samples
+        for i in range(len(samples_with_returns) - 1):
+            sample1, return1 = samples_with_returns[i]
+            sample2, return2 = samples_with_returns[i + 1]
+
+            if return1 <= target_return <= return2:
+                lower_sample, lower_return = sample1, return1
+                upper_sample, upper_return = sample2, return2
+                break
+
+        # If target is outside the range of existing samples, we can't find it
+        if target_return < lower_return or target_return > upper_return:
+            return None
+
+        # Binary search between the bracketing input values
+        left_input = lower_sample.input_value
+        right_input = upper_sample.input_value
+
+        for _ in range(max_iterations):
+            # Calculate middle input value
+            middle_input = (left_input + right_input) / 2
+
+            # Evaluate at middle point
+            sample = self.evaluate_at_input(middle_input)
+
+            try:
+                sample_return = self.extract_return_value(sample)
+            except ValueError:
+                # If we can't extract return, skip this sample
+                return None
+
+            # Check if we found a return in the target range
+            if return_min <= sample_return <= return_max:
+                return sample
+
+            # Update search bounds based on monotonicity assumption
+            if sample_return < target_return:
+                left_input = middle_input
+            else:
+                right_input = middle_input
+
+            # Stop if search space is too small
+            if abs(right_input - left_input) < 1e-6:
+                break
+
+        return None
+
+    def run_with_return_refinement(self) -> List[Optional[SamplePoint]]:
+        """
+        Run the enhanced sampling algorithm with return gap filling.
+
+        This is the main entry point for the two-phase algorithm:
+        1. Phase 1: Standard AFHP-based binary search
+        2. Phase 2: Return gap filling (if return_bins > 0)
+
+        Returns:
+            Combined list of samples from both phases
+        """
+        # Phase 1: Standard AFHP coverage
+        if self.verbose:
+            print("Phase 1: AFHP coverage using binary search...")
+
+        afhp_samples = self.run()
+
+        # Phase 2: Return gap filling
+        if self.return_bins > 0:
+            if self.verbose:
+                print(
+                    f"Phase 2: Return gap filling with {self.return_bins} return bins..."
+                )
+
+            self.fill_return_gaps(afhp_samples)
+
+            # Return combined samples, but maintain the original bin structure
+            # The additional samples are stored separately in return_refinement_samples
+            return afhp_samples
+        else:
+            return afhp_samples
+
+    def get_all_samples_including_refinement(self) -> List[SamplePoint]:
+        """Return all samples including those from return refinement."""
+        return self.all_samples + self.return_refinement_samples
+
+    def get_return_refinement_samples(self) -> List[SamplePoint]:
+        """Return only the samples added during return refinement."""
+        return self.return_refinement_samples
 
 
 def create_threshold_sampler(
