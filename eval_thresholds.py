@@ -14,10 +14,12 @@ from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
 from YRC.policies.ood import OODPolicy
 from YRC.policies.base import RandomPolicy
 
+from YRC.coverage.binary_search import BinarySearchSampler
+
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger
 import wandb
-from typing import List
+from typing import Tuple, Dict, Any
 
 
 def main():
@@ -72,58 +74,47 @@ def main():
 
     split = "test"
 
-    summaries = [None] * num_threshold_bins
-    # A list of bins, where each value in the bin is the TRAINING (inverse) percentile,
-    # based on the empirical AFHP value.
-    # I.e. index one corresponds to the bin 0% <= AFHP <= 10%, and the value inside
-    # will be the inverse precentile of the threshold that got binned into that bin.
-    binned_train_percentiles = [None] * num_threshold_bins
-    binned_thresholds = [None] * num_threshold_bins
-    afhp_bins = np.linspace(0, 100, num_threshold_bins + 1)
+    # Create evaluation function
+    eval_function = create_eval_function(policy, evaluator, envs, split, wandb_logger)
 
-    # Evaluate for extreme values.
-    # A threshold of -inf should correspond with a 100% AFHP.
-    update_policy_params(policy, float("-inf"))
-    summary = evaluator.eval(
-        policy, envs, [split], logger=wandb_logger, threshold=float("-inf")
-    )
-    summaries[-1] = summary
-    binned_train_percentiles[-1] = 100
-    binned_thresholds[-1] = float("-inf")
-    # A threshold of inf should correspond with a 0% AFHP.
-    update_policy_params(policy, float("inf"))
-    summary = evaluator.eval(
-        policy, envs, [split], logger=wandb_logger, threshold=float("inf")
-    )
-    summaries[0] = summary
-    binned_train_percentiles[0] = 0
-    binned_thresholds[0] = float("inf")
+    # Create percentile to threshold converter
+    def input_to_threshold(percentile: float) -> float:
+        return percentile_to_threshold(policy, percentile)
 
-    # These indices point to the actual bins, where the training inverse percentiles got
-    # binned to. We want to do a bisecting search, where start at 0,100 and then we use
-    # dynamic programming to insert 25 and 75 into the bins and so on.
-    left_index = 0
-    right_index = num_threshold_bins - 1
-    left_percentile = 0
-    right_percentile = 100
-
-    total_evals = 2
-    new_evals = determine_results(
-        summaries,
-        binned_train_percentiles,
-        binned_thresholds,
-        afhp_bins,
-        left_percentile,
-        right_percentile,
-        left_index,
-        right_index,
-        split,
-        policy,
-        envs,
-        wandb_logger,
-        evaluator,
+    # Create the binary search sampler
+    sampler = BinarySearchSampler(
+        eval_function=eval_function,
+        num_bins=num_threshold_bins,
+        input_range=(0.0, 100.0),  # Percentiles
+        output_range=(0.0, 100.0),  # AFHP percentage
+        input_to_threshold=input_to_threshold,
     )
-    total_evals += new_evals
+
+    # Run the sampling
+    print(f"Running binary search sampling with {num_threshold_bins} bins...")
+    bin_samples = sampler.run()
+
+    # Get coverage summary
+    coverage_summary = sampler.get_coverage_summary()
+    print(f"Coverage: {coverage_summary['coverage_percentage']:.1f}%")
+    print(f"Bins filled: {coverage_summary['bins_filled']}/{num_threshold_bins}")
+
+    # Extract summaries, percentiles, and thresholds from samples
+    summaries = []
+    binned_train_percentiles = []
+    binned_thresholds = []
+
+    for sample in bin_samples:
+        if sample is not None:
+            summaries.append(sample.metadata["summary"])
+            binned_train_percentiles.append(sample.input_value)
+            binned_thresholds.append(sample.metadata["threshold"])
+        else:
+            summaries.append(None)
+            binned_train_percentiles.append(None)
+            binned_thresholds.append(None)
+
+    total_evals = sampler.total_evals
 
     # Save result summary to file.
     log_file_path = get_global_variable("log_file")
@@ -147,112 +138,6 @@ def main():
     print(f"Total evals: {total_evals}")
 
 
-def determine_results(
-    summaries: List[dict],
-    binned_train_percentiles: List[float],
-    binned_thresholds: List[float],
-    afhp_bins: List[float],
-    left_percentile: float,
-    right_percentile: float,
-    left_index: int,
-    right_index: int,
-    split: str,
-    policy,
-    envs,
-    wandb_logger,
-    evaluator,
-):
-    # Determine the new percentile to check, which will be the middle of the two
-    # percentiles indicated by the left and right indices.
-    middle_percentile = (left_percentile + right_percentile) / 2
-
-    # Determine the threshold for the given middle percentile. Remember that these are
-    # inverse percentiles, so we need to invert the percentile to get the threshold.
-    middle_threshold = policy.train_percentile(100 - middle_percentile)
-
-    # Update the policy with the new threshold.
-    update_policy_params(policy, middle_threshold)
-
-    # Run eval with the new threshold.
-    summary = evaluator.eval(
-        policy,
-        envs,
-        [split],
-        logger=wandb_logger,
-        threshold=middle_threshold,
-    )
-    # This is the empirically determined AFHP.
-    afhp = summary[split]["action_1_frac"]
-    # Determine which bin the AFHP would go into.
-    bin_idx = determine_bin(afhp_bins, afhp)
-
-    # We only add new evals to the bin if it is empty.
-    if summaries[bin_idx] is None:
-        # If the bin is empty, we can add the summary and threshold to the bin.
-        summaries[bin_idx] = summary
-        binned_thresholds[bin_idx] = middle_threshold
-        binned_train_percentiles[bin_idx] = middle_percentile
-
-    # Check if empty bins remain left
-    left_remaining = bins_remaining(summaries, left_index, bin_idx)
-    evals_left = 0
-    if left_remaining:
-        evals_left = determine_results(
-            summaries,
-            binned_train_percentiles,
-            binned_thresholds,
-            afhp_bins,
-            left_percentile,
-            middle_percentile,
-            left_index,
-            bin_idx,
-            split,
-            policy,
-            envs,
-            wandb_logger,
-            evaluator,
-        )
-    evals_right = 0
-    right_remaining = bins_remaining(summaries, bin_idx, right_index)
-    if right_remaining:
-        evals_right = determine_results(
-            summaries,
-            binned_train_percentiles,
-            binned_thresholds,
-            afhp_bins,
-            middle_percentile,
-            right_percentile,
-            bin_idx,
-            right_index,
-            split,
-            policy,
-            envs,
-            wandb_logger,
-            evaluator,
-        )
-    return evals_left + evals_right + 1
-
-
-def determine_bin(afhp_bins: List[float], afhp: float) -> int:
-    if afhp < 0.0 or afhp > 1.0:
-        raise ValueError(f"Error, encountered an AFHP of {afhp}")
-    afhp_percent = afhp * 100
-    for i in range(len(afhp_bins) - 1):
-        if afhp_percent >= afhp_bins[i] and afhp_percent <= afhp_bins[i + 1]:
-            return i
-    raise ValueError(
-        f"Encountered issue with percentile_bins {afhp_bins} and afhp {afhp_percent}."
-    )
-
-
-def bins_remaining(summaries, left_index, right_index) -> bool:
-    for i in range(left_index + 1, right_index):
-        if summaries[i] is None:
-            # Found at least one remaining bin that wasn't filled yet.
-            return True
-    return False
-
-
 def update_policy_params(policy, threshold):
     if isinstance(policy, LightningAEPolicy) or isinstance(policy, OODPolicy):
         policy.update_params({"threshold": threshold})
@@ -271,6 +156,38 @@ def update_policy_params(policy, threshold):
         raise ValueError(
             f"Policy type {type(policy)} currently not supported for threshold search"
         )
+
+
+def create_eval_function(policy, evaluator, envs, split, wandb_logger):
+    """Create an evaluation function for the BinarySearchSampler."""
+
+    def eval_function(threshold: float) -> Tuple[float, Dict[str, Any]]:
+        """Evaluate policy at given threshold."""
+        # Update policy with threshold
+        update_policy_params(policy, threshold)
+
+        # Run evaluation
+        summary = evaluator.eval(
+            policy, envs, [split], logger=wandb_logger, threshold=threshold
+        )
+
+        # Extract AFHP as output value (convert to percentage)
+        afhp = summary[split]["action_1_frac"] * 100
+
+        # Return AFHP and full summary as metadata
+        return afhp, {"summary": summary, "threshold": threshold}
+
+    return eval_function
+
+
+def percentile_to_threshold(policy, percentile: float) -> float:
+    """Convert percentile to threshold."""
+    if percentile == 0:
+        return float("inf")
+    elif percentile == 100:
+        return float("-inf")
+    else:
+        return policy.train_percentile(100 - percentile)
 
 
 if __name__ == "__main__":
