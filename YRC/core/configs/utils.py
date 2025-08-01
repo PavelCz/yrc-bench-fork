@@ -80,16 +80,37 @@ def load(yaml_file_or_str, flags=None) -> ConfigDict:
     config.start_time = time.time()
 
     if config.eval_mode:
+        # Generate timestamp for eval run
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Create eval run name with timestamp
+        if hasattr(config, 'eval_run_name') and config.eval_run_name:
+            eval_dir_name = f"{config.eval_run_name}_{timestamp}"
+        else:
+            eval_dir_name = f"eval_{timestamp}"
+        
+        # Create eval runs subdirectory
+        eval_runs_dir = os.path.join(config.experiment_dir, "eval_runs")
+        eval_run_dir = os.path.join(eval_runs_dir, eval_dir_name)
+        
+        # Create the directory if it doesn't exist
+        if not os.path.exists(eval_run_dir):
+            os.makedirs(eval_run_dir)
+        
+        # Set log file path based on file_name type
         if config.file_name is None or "trained" in config.file_name:
-            log_file = os.path.join(config.experiment_dir, f"eval_seed_{seed}.log")
+            log_file = os.path.join(eval_run_dir, f"eval_seed_{seed}.log")
         elif config.file_name.__contains__("sim"):
-            log_file = os.path.join(config.experiment_dir, f"eval_sim_seed_{seed}.log")
+            log_file = os.path.join(eval_run_dir, f"eval_sim_seed_{seed}.log")
         elif config.file_name.__contains__("true"):
-            log_file = os.path.join(config.experiment_dir, f"eval_true_seed_{seed}.log")
+            log_file = os.path.join(eval_run_dir, f"eval_true_seed_{seed}.log")
         else:
             raise ValueError(
                 f"Unrecognized eval setting with file name: {config.file_name}"
             )
+        
+        # Store eval run directory in config for potential use by other components
+        config.eval_run_dir = eval_run_dir
     else:
         log_file = os.path.join(config.experiment_dir, "run.log")
     set_global_variable("log_file", log_file)
