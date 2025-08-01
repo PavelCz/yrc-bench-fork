@@ -1,3 +1,6 @@
+# ABCS - Adaptive Binary Coverage Search library
+-e /media/linux-data/code/goal-misgen/abcs
+
 absl-py==0.7.0
 antlr4-python3-runtime==4.9
 appdirs==1.4.3

@@ -14,7 +14,7 @@ from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
 from YRC.policies.ood import OODPolicy
 from YRC.policies.base import RandomPolicy
 
-from YRC.coverage.binary_search import BinarySearchSampler
+from abcs import BinarySearchSampler
 
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger

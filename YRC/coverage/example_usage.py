@@ -6,7 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Tuple, Dict, Any
 
-from YRC.coverage.binary_search import BinarySearchSampler
+from abcs import BinarySearchSampler
 
 
 def example_monotonic_function(x: float) -> float:
