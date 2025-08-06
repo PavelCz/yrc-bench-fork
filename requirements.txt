@@ -1,5 +1,5 @@
 # ABCS - Adaptive Binary Coverage Search library
-abcs @ git+https://github.com/PavelCz/abcs.git@3cd3dd19c2dca22559848d7398f63506742c1051
+abcs @ git+https://github.com/PavelCz/abcs.git@8661260a78643cc0e336928a396b7ddd9aa956bf
 
 absl-py==0.7.0
 antlr4-python3-runtime==4.9
