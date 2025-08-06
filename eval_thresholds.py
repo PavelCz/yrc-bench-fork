@@ -85,6 +85,8 @@ def main():
     sampler = BinarySearchSampler(
         eval_function=eval_function,
         num_bins=num_threshold_bins,
+        return_bins=num_threshold_bins,
+        unbounded_mode=True,
         input_range=(0.0, 100.0),  # Percentiles
         output_range=(0.0, 100.0),  # AFHP percentage
         input_to_threshold=input_to_threshold,
