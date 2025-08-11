@@ -162,6 +162,13 @@ def make():
     )
 
     parser.add_argument(
+        "-eval_run_name",
+        "--eval_run_name",
+        type=str,
+        help="custom name for the evaluation run (timestamp will be appended automatically)",
+    )
+
+    parser.add_argument(
         "-rollout_dir",
         "--training.rollout_dir",
         type=str,
