@@ -44,10 +44,10 @@ def main():
 
     evaluator = Evaluator(config.evaluation)
 
-    num_threshold_bins = args.eval.threshold_bins
+    coverage_fraction = args.eval.coverage_fraction
 
-    if num_threshold_bins < 5:
-        raise ValueError("Number of threshold bins must be at least 5")
+    if coverage_fraction < 0.01:
+        raise ValueError("Coverage fraction must be at least 0.01")
 
     # Initialize wandb logger
     save_dir = Path(str(get_global_variable("experiment_dir")))
@@ -75,8 +75,8 @@ def main():
     split = "test"
 
     # Create the joint-coverage sampler via YRC wrapper (adapts to new abcs API)
-    coverage_fraction = 1.0 / float(num_threshold_bins)
-    max_total_evals = max(2 * num_threshold_bins, 20)
+    coverage_fraction = 1.0 / float(coverage_fraction)
+    max_total_evals = 200
 
     # Collect metadata via callback
     summaries_by_p: Dict[float, Dict[str, Any]] = {}
