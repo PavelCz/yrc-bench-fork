@@ -19,7 +19,6 @@ from YRC.coverage import create_threshold_sampler
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger
 import wandb
-from typing import Tuple, Dict, Any
 
 
 def main():
@@ -75,16 +74,7 @@ def main():
     split = "test"
 
     # Create the joint-coverage sampler via YRC wrapper (adapts to new abcs API)
-    coverage_fraction = 1.0 / float(coverage_fraction)
     max_total_evals = 200
-
-    # Collect metadata via callback
-    summaries_by_p: Dict[float, Dict[str, Any]] = {}
-    thresholds_by_p: Dict[float, float] = {}
-
-    def on_eval(p: float, thr: float, summary: Dict[str, Any]) -> None:
-        summaries_by_p[p] = summary
-        thresholds_by_p[p] = thr
 
     sampler = create_threshold_sampler(
         policy=policy,
@@ -94,13 +84,12 @@ def main():
         coverage_fraction=coverage_fraction,
         max_total_evals=max_total_evals,
         logger=wandb_logger,
-        on_eval=on_eval,
     )
 
     # Run the sampling
     print(
-        f"Running joint coverage sampling with coverage_fraction={coverage_fraction:.3f}, "
-        f"budget={max_total_evals}..."
+        f"Running joint coverage sampling with coverage_fraction="
+        f"{coverage_fraction:.3f}, budget={max_total_evals}..."
     )
     sampling_result = sampler.run()
 
@@ -110,17 +99,7 @@ def main():
         f"y-gap: {sampling_result.coverage_y_max_gap:.3f}"
     )
 
-    # Extract summaries, percentiles, and thresholds from points (sorted by percentile)
-    summaries = []
-    binned_train_percentiles = []
-    binned_thresholds = []
-
-    sorted_points = sorted(sampling_result.points, key=lambda p: p.percentile)
-    for pt in sorted_points:
-        p = float(pt.percentile)
-        summaries.append(summaries_by_p.get(p))
-        binned_train_percentiles.append(p * 100.0)
-        binned_thresholds.append(thresholds_by_p.get(p))
+    sorted_points = sorted(sampling_result.points, key=lambda p: p.afhp)
 
     total_evals = sampling_result.total_evals
 
@@ -136,9 +115,9 @@ def main():
     )
     np.savez(
         results_file_path,
-        binned_train_percentiles=binned_train_percentiles,
-        binned_thresholds=binned_thresholds,
-        results=np.array(summaries),
+        afhps=np.array([pt.afhp for pt in sorted_points]),
+        performances=np.array([pt.performance for pt in sorted_points]),
+        desired_percentiles=np.array([pt.desired_percentile for pt in sorted_points]),
     )
 
     end_time = time.time()
@@ -164,7 +143,6 @@ def update_policy_params(policy, threshold):
         raise ValueError(
             f"Policy type {type(policy)} currently not supported for threshold search"
         )
-    
 
 
 if __name__ == "__main__":

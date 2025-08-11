@@ -5,7 +5,7 @@ This module provides YRC-specific convenience functions that wrap the generic
 ACS library for the specific use case of threshold evaluation in YRC.
 """
 
-from typing import Tuple, Any, Dict, Callable, Optional
+from typing import Tuple, Any, Dict
 
 # Import the joint-coverage sampler from the external ACS library
 from abcs import JointCoverageSampler
@@ -20,7 +20,6 @@ def create_threshold_sampler(
     coverage_fraction: float = 0.10,
     max_total_evals: int = 200,
     logger=None,
-    on_eval: Optional[Callable[[float, float, Dict[str, Any]], None]] = None,
 ):
     """
     Create the joint-coverage sampler for threshold evaluation.
@@ -63,22 +62,16 @@ def create_threshold_sampler(
     def eval_at_percentile(p: float) -> Tuple[float, float]:
         thr = percentile_to_threshold(p)
         afhp, meta = _eval_with_threshold(thr)
-        if on_eval is not None:
-            on_eval(p, thr, meta["summary"])
         return afhp, meta["performance"]
 
     def eval_at_lower_extreme() -> Tuple[float, float]:
         thr = float("inf")
         afhp, meta = _eval_with_threshold(thr)
-        if on_eval is not None:
-            on_eval(0.0, thr, meta["summary"])
         return afhp, meta["performance"]
 
     def eval_at_upper_extreme() -> Tuple[float, float]:
         thr = float("-inf")
         afhp, meta = _eval_with_threshold(thr)
-        if on_eval is not None:
-            on_eval(1.0, thr, meta["summary"])
         return afhp, meta["performance"]
 
     return JointCoverageSampler(
