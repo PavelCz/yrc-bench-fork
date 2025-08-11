@@ -78,6 +78,14 @@ def main():
     coverage_fraction = 1.0 / float(num_threshold_bins)
     max_total_evals = max(2 * num_threshold_bins, 20)
 
+    # Collect metadata via callback
+    summaries_by_p: Dict[float, Dict[str, Any]] = {}
+    thresholds_by_p: Dict[float, float] = {}
+
+    def on_eval(p: float, thr: float, summary: Dict[str, Any]) -> None:
+        summaries_by_p[p] = summary
+        thresholds_by_p[p] = thr
+
     sampler = create_threshold_sampler(
         policy=policy,
         evaluator=evaluator,
@@ -86,6 +94,7 @@ def main():
         coverage_fraction=coverage_fraction,
         max_total_evals=max_total_evals,
         logger=wandb_logger,
+        on_eval=on_eval,
     )
 
     # Run the sampling
@@ -94,7 +103,6 @@ def main():
         f"budget={max_total_evals}..."
     )
     sampling_result = sampler.run()
-    summaries_by_p, thresholds_by_p = sampler.get_metadata()
 
     # Report coverage
     print(

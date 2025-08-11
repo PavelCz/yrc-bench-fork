@@ -5,7 +5,7 @@ This module provides YRC-specific convenience functions that wrap the generic
 ACS library for the specific use case of threshold evaluation in YRC.
 """
 
-from typing import Tuple, Any, Dict, Callable
+from typing import Tuple, Any, Dict, Callable, Optional
 
 # Import the joint-coverage sampler from the external ACS library
 from abcs import JointCoverageSampler
@@ -20,6 +20,7 @@ def create_threshold_sampler(
     coverage_fraction: float = 0.10,
     max_total_evals: int = 200,
     logger=None,
+    on_eval: Optional[Callable[[float, float, Dict[str, Any]], None]] = None,
 ):
     """
     Create the joint-coverage sampler for threshold evaluation.
@@ -38,12 +39,8 @@ def create_threshold_sampler(
         logger: Optional logger for tracking evaluations
 
     Returns:
-        An adapter exposing `.run() -> SamplingResult` and `.get_metadata()`.
+        JointCoverageSampler ready to run
     """
-
-    # Stores the most recent summary/threshold per percentile (keyed by float p in [0,1])
-    last_summaries: Dict[float, Any] = {}
-    last_thresholds: Dict[float, float] = {}
 
     def percentile_to_threshold(p: float) -> float:
         # p in [0,1]
@@ -66,42 +63,28 @@ def create_threshold_sampler(
     def eval_at_percentile(p: float) -> Tuple[float, float]:
         thr = percentile_to_threshold(p)
         afhp, meta = _eval_with_threshold(thr)
-        last_summaries[p] = meta["summary"]
-        last_thresholds[p] = thr
+        if on_eval is not None:
+            on_eval(p, thr, meta["summary"])
         return afhp, meta["performance"]
 
     def eval_at_lower_extreme() -> Tuple[float, float]:
         thr = float("inf")
         afhp, meta = _eval_with_threshold(thr)
-        last_summaries[0.0] = meta["summary"]
-        last_thresholds[0.0] = thr
+        if on_eval is not None:
+            on_eval(0.0, thr, meta["summary"])
         return afhp, meta["performance"]
 
     def eval_at_upper_extreme() -> Tuple[float, float]:
         thr = float("-inf")
         afhp, meta = _eval_with_threshold(thr)
-        last_summaries[1.0] = meta["summary"]
-        last_thresholds[1.0] = thr
+        if on_eval is not None:
+            on_eval(1.0, thr, meta["summary"])
         return afhp, meta["performance"]
 
-    sampler = JointCoverageSampler(
+    return JointCoverageSampler(
         eval_at_percentile=eval_at_percentile,
         eval_at_lower_extreme=eval_at_lower_extreme,
         eval_at_upper_extreme=eval_at_upper_extreme,
         coverage_fraction=coverage_fraction,
         max_total_evals=max_total_evals,
     )
-
-    class ThresholdSamplerAdapter:
-        def __init__(self, inner, summaries, thresholds):
-            self._inner = inner
-            self._summaries = summaries
-            self._thresholds = thresholds
-
-        def run(self):
-            return self._inner.run()
-
-        def get_metadata(self) -> Tuple[Dict[float, Any], Dict[float, float]]:
-            return self._summaries, self._thresholds
-
-    return ThresholdSamplerAdapter(sampler, last_summaries, last_thresholds)
