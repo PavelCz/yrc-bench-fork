@@ -8,7 +8,7 @@ This module provides YRC-specific wrappers around the ABCS library.
 from abcs import JointCoverageSampler, CurvePoint, SamplingResult
 
 # Import YRC-specific wrapper functions
-from .binary_search import create_threshold_sampler
+from .coverage_search import create_threshold_sampler
 
 __all__ = [
     'JointCoverageSampler',

@@ -1,13 +1,13 @@
 """
-YRC-specific wrappers for the ABCS (Adaptive Coverage Sampling) library.
+YRC-specific wrappers for the ACS (Adaptive Coverage Sampling) library.
 
 This module provides YRC-specific convenience functions that wrap the generic
-ABCS library for the specific use case of threshold evaluation in YRC.
+ACS library for the specific use case of threshold evaluation in YRC.
 """
 
 from typing import Tuple, Any, Dict, Callable
 
-# Import the joint-coverage sampler from the external ABCS library
+# Import the joint-coverage sampler from the external ACS library
 from abcs import JointCoverageSampler
 
 
@@ -24,7 +24,7 @@ def create_threshold_sampler(
     """
     Create the joint-coverage sampler for threshold evaluation.
 
-    This wrapper adapts YRC evaluation to the ABCS JointCoverageSampler API by
+    This wrapper adapts YRC evaluation to the ACS JointCoverageSampler API by
     providing evaluation callables for percentiles and extremes, and also
     records the latest summaries and thresholds used per percentile.
 
