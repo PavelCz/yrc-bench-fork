@@ -1,4 +1,4 @@
-# Detailed Algorithm Explanation: Binary Search Coverage Sampling
+# Detailed Algorithm Explanation: Joint Coverage Sampling
 
 ## Problem Statement
 
@@ -9,9 +9,9 @@ When evaluating threshold-based coordination policies, we need to understand the
 
 This creates a monotonic curve where lower thresholds (higher percentiles) lead to more frequent help requests.
 
-## The Binary Search Solution
+## The Joint Coverage Solution
 
-The algorithm uses binary search to fill bins along the AFHP axis. Here's how it works:
+The algorithm adaptively fills the largest normalized neighbor gap on either AFHP or performance, while enforcing monotonicity under noise via targeted re-runs. Here's how it works:
 
 ### 1. **Monotonicity Exploitation**
 
@@ -21,28 +21,16 @@ Since the percentile-to-AFHP mapping is monotonic:
 
 This monotonicity enables binary search.
 
-### 2. **Bin-Based Coverage**
+### 2. **Gap-Based Coverage**
 
-The algorithm divides the AFHP range into equal bins (e.g., [0-10%], [10-20%], ..., [90-100%]). The goal is to have at least one sample in each bin, ensuring uniform coverage along the X-axis.
+We measure normalized neighbor gaps on both axes and iteratively sample at the midpoint between the worst offending neighbors to reduce the gap.
 
-### 3. **Recursive Binary Search**
+### 3. **Single-Phase Refinement**
 
-```
-Initial state: Evaluate at 0% and 100% percentiles
-┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
-│  ✓  │     │     │     │     │     │     │     │     │  ✓  │
-└─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
-  0-10  10-20 20-30 30-40 40-50 50-60 60-70 70-80 80-90 90-100
-
-Step 1: Evaluate at 50% percentile (middle)
-        Suppose it gives AFHP = 45%
-┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
-│  ✓  │     │     │     │  ✓  │     │     │     │     │  ✓  │
-└─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
-
-Step 2: Recursively search [0%, 50%] and [50%, 100%]
-        Continue until all bins are filled
-```
+1. Evaluate extremes (0% and 100%)
+2. Resolve any monotonicity violations by re-running the offending neighbors
+3. Split the worst gap (on AFHP or performance) by sampling at the percentile midpoint
+4. Repeat until both axes meet the target coverage fraction or the budget is exhausted
 
 ### 4. **Algorithm Walkthrough**
 
@@ -95,27 +83,7 @@ def determine_results(left_percentile, right_percentile, left_bin, right_bin):
 
 ## Example Usage
 
-```python
-from YRC.coverage import BinarySearchSampler, create_threshold_sampler
-
-# Create a sampler for threshold evaluation
-sampler = create_threshold_sampler(
-    policy=policy,
-    evaluator=evaluator,
-    envs=envs,
-    split="test",
-    num_bins=20,
-    logger=wandb_logger
-)
-
-# Run the sampling
-samples = sampler.run()
-
-# Get coverage summary
-summary = sampler.get_coverage_summary()
-print(f"Filled {summary['bins_filled']}/{sampler.num_bins} bins")
-print(f"Used {summary['total_evaluations']} evaluations")
-```
+Refer to `YRC.coverage.binary_search.create_threshold_sampler` which adapts YRC evaluation to the ABCS `JointCoverageSampler`.
 
 ## Summary
 

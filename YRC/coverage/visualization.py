@@ -5,7 +5,7 @@ Visualization utilities for coverage algorithms.
 import matplotlib.pyplot as plt
 import numpy as np
 from typing import List, Optional, Tuple
-from .binary_search import SamplePoint
+from abcs import CurvePoint as SamplePoint
 
 
 def plot_coverage_results(
@@ -47,11 +47,9 @@ def plot_coverage_results(
         ax.text(0.5, 0.5, "No valid samples", ha="center", va="center")
         return fig
 
-    # Extract data
-    output_values = [s.output_value for s in valid_samples]
-    returns = [
-        s.metadata.get("summary", {}).get("return_mean", 0) for s in valid_samples
-    ]
+    # Extract data (CurvePoint fields)
+    output_values = [getattr(s, "afhp", 0) for s in valid_samples]
+    returns = [getattr(s, "performance", 0) for s in valid_samples]
 
     # Sort by output value for line plot
     sorted_indices = np.argsort(output_values)
@@ -96,11 +94,8 @@ def plot_coverage_results(
 
     # Plot return refinement samples if provided
     if return_refinement_samples is not None:
-        refinement_afhps = [s.output_value for s in return_refinement_samples]
-        refinement_returns = [
-            s.metadata.get("summary", {}).get("return_mean", 0)
-            for s in return_refinement_samples
-        ]
+        refinement_afhps = [getattr(s, "afhp", 0) for s in return_refinement_samples]
+        refinement_returns = [getattr(s, "performance", 0) for s in return_refinement_samples]
 
         ax.scatter(
             refinement_afhps,
@@ -120,8 +115,8 @@ def plot_coverage_results(
                 ax.annotate(
                     str(i),
                     (
-                        sample.output_value,
-                        sample.metadata.get("summary", {}).get("return_mean", 0),
+                        getattr(sample, "afhp", 0),
+                        getattr(sample, "performance", 0),
                     ),
                     xytext=(5, 5),
                     textcoords="offset points",
@@ -177,7 +172,7 @@ def plot_sampling_efficiency(
 
     # Track coverage evolution
     eval_numbers = list(range(1, len(all_samples) + 1))
-    output_values = [s.output_value for s in all_samples]
+    output_values = [getattr(s, "afhp", 0) for s in all_samples]
 
     # Plot 1: Output values over evaluations
     ax1.scatter(eval_numbers, output_values, c="blue", alpha=0.6)
@@ -193,7 +188,7 @@ def plot_sampling_efficiency(
     for i in range(1, len(all_samples) + 1):
         bins_filled = set()
         for sample in all_samples[:i]:
-            bin_idx = int(sample.output_value // (100 / num_bins))
+            bin_idx = int(getattr(sample, "afhp", 0) // (100 / num_bins))
             if bin_idx >= num_bins:
                 bin_idx = num_bins - 1
             bins_filled.add(bin_idx)

@@ -14,7 +14,7 @@ from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
 from YRC.policies.ood import OODPolicy
 from YRC.policies.base import RandomPolicy
 
-from abcs import BinarySearchSampler
+from YRC.coverage import create_threshold_sampler
 
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger
@@ -74,49 +74,47 @@ def main():
 
     split = "test"
 
-    # Create evaluation function
-    eval_function = create_eval_function(policy, evaluator, envs, split, wandb_logger)
+    # Create the joint-coverage sampler via YRC wrapper (adapts to new abcs API)
+    coverage_fraction = 1.0 / float(num_threshold_bins)
+    max_total_evals = max(2 * num_threshold_bins, 20)
 
-    # Create percentile to threshold converter
-    def input_to_threshold(percentile: float) -> float:
-        return percentile_to_threshold(policy, percentile)
-
-    # Create the binary search sampler
-    sampler = BinarySearchSampler(
-        eval_function=eval_function,
-        num_bins=num_threshold_bins,
-        return_bins=num_threshold_bins,
-        unbounded_mode=True,
-        input_range=(0.0, 100.0),  # Percentiles
-        output_range=(0.0, 100.0),  # AFHP percentage
-        input_to_threshold=input_to_threshold,
+    sampler = create_threshold_sampler(
+        policy=policy,
+        evaluator=evaluator,
+        envs=envs,
+        split=split,
+        coverage_fraction=coverage_fraction,
+        max_total_evals=max_total_evals,
+        logger=wandb_logger,
     )
 
     # Run the sampling
-    print(f"Running binary search sampling with {num_threshold_bins} bins...")
-    bin_samples = sampler.run_with_return_refinement()
+    print(
+        f"Running joint coverage sampling with coverage_fraction={coverage_fraction:.3f}, "
+        f"budget={max_total_evals}..."
+    )
+    sampling_result = sampler.run()
+    summaries_by_p, thresholds_by_p = sampler.get_metadata()
 
-    # Get coverage summary
-    coverage_summary = sampler.get_coverage_summary()
-    print(f"Coverage: {coverage_summary['coverage_percentage']:.1f}%")
-    print(f"Bins filled: {coverage_summary['bins_filled']}/{num_threshold_bins}")
+    # Report coverage
+    print(
+        f"Coverage x-gap: {sampling_result.coverage_x_max_gap:.3f}, "
+        f"y-gap: {sampling_result.coverage_y_max_gap:.3f}"
+    )
 
-    # Extract summaries, percentiles, and thresholds from samples
+    # Extract summaries, percentiles, and thresholds from points (sorted by percentile)
     summaries = []
     binned_train_percentiles = []
     binned_thresholds = []
 
-    for sample in bin_samples:
-        if sample is not None:
-            summaries.append(sample.metadata["summary"])
-            binned_train_percentiles.append(sample.input_value)
-            binned_thresholds.append(sample.metadata["threshold"])
-        else:
-            summaries.append(None)
-            binned_train_percentiles.append(None)
-            binned_thresholds.append(None)
+    sorted_points = sorted(sampling_result.points, key=lambda p: p.percentile)
+    for pt in sorted_points:
+        p = float(pt.percentile)
+        summaries.append(summaries_by_p.get(p))
+        binned_train_percentiles.append(p * 100.0)
+        binned_thresholds.append(thresholds_by_p.get(p))
 
-    total_evals = sampler.total_evals
+    total_evals = sampling_result.total_evals
 
     # Save result summary to file.
     log_file_path = get_global_variable("log_file")
@@ -158,38 +156,7 @@ def update_policy_params(policy, threshold):
         raise ValueError(
             f"Policy type {type(policy)} currently not supported for threshold search"
         )
-
-
-def create_eval_function(policy, evaluator, envs, split, wandb_logger):
-    """Create an evaluation function for the BinarySearchSampler."""
-
-    def eval_function(threshold: float) -> Tuple[float, Dict[str, Any]]:
-        """Evaluate policy at given threshold."""
-        # Update policy with threshold
-        update_policy_params(policy, threshold)
-
-        # Run evaluation
-        summary = evaluator.eval(
-            policy, envs, [split], logger=wandb_logger, threshold=threshold
-        )
-
-        # Extract AFHP as output value (convert to percentage)
-        afhp = summary[split]["action_1_frac"] * 100
-
-        # Return AFHP and full summary as metadata
-        return afhp, {"summary": summary, "threshold": threshold}
-
-    return eval_function
-
-
-def percentile_to_threshold(policy, percentile: float) -> float:
-    """Convert percentile to threshold."""
-    if percentile == 0:
-        return float("inf")
-    elif percentile == 100:
-        return float("-inf")
-    else:
-        return policy.train_percentile(100 - percentile)
+    
 
 
 if __name__ == "__main__":

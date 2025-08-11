@@ -1,14 +1,14 @@
 """
-YRC-specific wrappers for the ABCS (Adaptive Binary Coverage Search) library.
+YRC-specific wrappers for the ABCS (Adaptive Coverage Sampling) library.
 
 This module provides YRC-specific convenience functions that wrap the generic
-ABCS library for threshold evaluation use cases.
+ABCS library for the specific use case of threshold evaluation in YRC.
 """
 
-from typing import List, Tuple, Callable, Optional, Any, Dict
+from typing import Tuple, Any, Dict, Callable
 
-# Import from the external ABCS library
-from abcs import BinarySearchSampler, SamplePoint
+# Import the joint-coverage sampler from the external ABCS library
+from abcs import JointCoverageSampler
 
 
 def create_threshold_sampler(
@@ -16,57 +16,92 @@ def create_threshold_sampler(
     evaluator,
     envs,
     split: str,
-    num_bins: int,
+    *,
+    coverage_fraction: float = 0.10,
+    max_total_evals: int = 200,
     logger=None,
-) -> BinarySearchSampler:
+):
     """
-    Create a sampler specifically for threshold evaluation.
+    Create the joint-coverage sampler for threshold evaluation.
 
-    This is a convenience function that wraps the generic ABCS sampler
-    for the specific use case of threshold evaluation in YRC.
-    
+    This wrapper adapts YRC evaluation to the ABCS JointCoverageSampler API by
+    providing evaluation callables for percentiles and extremes, and also
+    records the latest summaries and thresholds used per percentile.
+
     Args:
         policy: Policy object with threshold evaluation capabilities
         evaluator: Evaluator object for running policy evaluations
         envs: Environment(s) to evaluate on
         split: Data split to use for evaluation ("train", "val", "test")
-        num_bins: Number of AFHP bins for coverage
+        coverage_fraction: Maximum allowed normalized neighbor gap on both axes
+        max_total_evals: Global evaluation budget (includes re-runs)
         logger: Optional logger for tracking evaluations
-    
+
     Returns:
-        BinarySearchSampler configured for threshold evaluation
+        An adapter exposing `.run() -> SamplingResult` and `.get_metadata()`.
     """
 
-    def eval_function(threshold: float) -> Tuple[float, Dict[str, Any]]:
-        """Evaluate policy at given threshold."""
-        # Update policy with threshold
+    # Stores the most recent summary/threshold per percentile (keyed by float p in [0,1])
+    last_summaries: Dict[float, Any] = {}
+    last_thresholds: Dict[float, float] = {}
+
+    def percentile_to_threshold(p: float) -> float:
+        # p in [0,1]
+        if p <= 0.0:
+            return float("inf")
+        if p >= 1.0:
+            return float("-inf")
+        return policy.train_percentile(100.0 - (p * 100.0))
+
+    def _eval_with_threshold(threshold: float) -> Tuple[float, Dict[str, Any]]:
         if hasattr(policy, "update_params"):
             policy.update_params({"threshold": threshold})
-
-        # Run evaluation
         summary = evaluator.eval(
             policy, envs, [split], logger=logger, threshold=threshold
         )
+        afhp = summary[split]["action_1_frac"] * 100.0
+        performance = float(summary[split]["env_reward_mean"])  # Y-axis
+        return afhp, {"summary": summary, "threshold": threshold, "performance": performance}
 
-        # Extract AFHP as output value
-        afhp = summary[split]["action_1_frac"]
+    def eval_at_percentile(p: float) -> Tuple[float, float]:
+        thr = percentile_to_threshold(p)
+        afhp, meta = _eval_with_threshold(thr)
+        last_summaries[p] = meta["summary"]
+        last_thresholds[p] = thr
+        return afhp, meta["performance"]
 
-        # Return AFHP and full summary as metadata
-        return afhp * 100, {"summary": summary, "threshold": threshold}
+    def eval_at_lower_extreme() -> Tuple[float, float]:
+        thr = float("inf")
+        afhp, meta = _eval_with_threshold(thr)
+        last_summaries[0.0] = meta["summary"]
+        last_thresholds[0.0] = thr
+        return afhp, meta["performance"]
 
-    def percentile_to_threshold(percentile: float) -> float:
-        """Convert percentile to threshold."""
-        if percentile == 0:
-            return float("inf")
-        elif percentile == 100:
-            return float("-inf")
-        else:
-            return policy.train_percentile(100 - percentile)
+    def eval_at_upper_extreme() -> Tuple[float, float]:
+        thr = float("-inf")
+        afhp, meta = _eval_with_threshold(thr)
+        last_summaries[1.0] = meta["summary"]
+        last_thresholds[1.0] = thr
+        return afhp, meta["performance"]
 
-    return BinarySearchSampler(
-        eval_function=eval_function,
-        num_bins=num_bins,
-        input_range=(0.0, 100.0),  # Percentiles
-        output_range=(0.0, 100.0),  # AFHP percentage
-        input_to_threshold=percentile_to_threshold,
+    sampler = JointCoverageSampler(
+        eval_at_percentile=eval_at_percentile,
+        eval_at_lower_extreme=eval_at_lower_extreme,
+        eval_at_upper_extreme=eval_at_upper_extreme,
+        coverage_fraction=coverage_fraction,
+        max_total_evals=max_total_evals,
     )
+
+    class ThresholdSamplerAdapter:
+        def __init__(self, inner, summaries, thresholds):
+            self._inner = inner
+            self._summaries = summaries
+            self._thresholds = thresholds
+
+        def run(self):
+            return self._inner.run()
+
+        def get_metadata(self) -> Tuple[Dict[float, Any], Dict[float, float]]:
+            return self._summaries, self._thresholds
+
+    return ThresholdSamplerAdapter(sampler, last_summaries, last_thresholds)

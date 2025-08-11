@@ -4,14 +4,15 @@ YRC-specific coverage algorithms for efficient sampling of monotonic curves.
 This module provides YRC-specific wrappers around the ABCS library.
 """
 
-# Import generic ABCS classes
-from abcs import BinarySearchSampler, SamplePoint
+# Re-export the ABCS joint sampler types for convenience
+from abcs import JointCoverageSampler, CurvePoint, SamplingResult
 
 # Import YRC-specific wrapper functions
 from .binary_search import create_threshold_sampler
 
 __all__ = [
-    'BinarySearchSampler',
-    'SamplePoint', 
+    'JointCoverageSampler',
+    'CurvePoint',
+    'SamplingResult',
     'create_threshold_sampler',
 ]
