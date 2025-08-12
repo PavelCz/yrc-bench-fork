@@ -14,7 +14,7 @@ from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
 from YRC.policies.ood import OODPolicy
 from YRC.policies.base import RandomPolicy
 
-from YRC.coverage import create_threshold_sampler
+from YRC.coverage.coverage_search import create_threshold_sampler
 
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger

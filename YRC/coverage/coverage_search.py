@@ -8,7 +8,7 @@ ACS library for the specific use case of threshold evaluation in YRC.
 from typing import Tuple, Any, Dict
 
 # Import the joint-coverage sampler from the external ACS library
-from abcs import JointCoverageSampler
+from acs import JointCoverageSampler
 
 
 def create_threshold_sampler(
