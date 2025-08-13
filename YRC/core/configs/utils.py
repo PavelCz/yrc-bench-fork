@@ -1,4 +1,5 @@
 import os
+from re import A
 import sys
 import logging
 import time
@@ -63,9 +64,9 @@ def load(yaml_file_or_str, flags=None) -> ConfigDict:
         config = ConfigDict(**config_dict)
 
     # Only copy env_name_suffix for environments that use it (e.g., minigrid)
-    if hasattr(config.environment.train, 'env_name_suffix'):
+    if hasattr(config.environment.train, 'env_name_suffix') and config.environment.train is not None:
         config.environment.val_sim.env_name_suffix = config.environment.train.env_name_suffix
-    if hasattr(config.environment.test, 'env_name_suffix'):
+    if hasattr(config.environment.test, 'env_name_suffix') and config.environment.test is not None:
         config.environment.val_true.env_name_suffix = config.environment.test.env_name_suffix
 
     config.data_dir = os.getenv("SM_DATA_DIR", config.data_dir)
