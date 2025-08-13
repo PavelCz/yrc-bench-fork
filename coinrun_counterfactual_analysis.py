@@ -62,28 +62,33 @@ def check_and_import_dependencies():
     except ImportError as e:
         missing.append(f"procgen environment ({e})")
     
-    if missing:
-        print("❌ Missing required dependencies:")
-        for dep in missing:
-            print(f"  - {dep}")
-        print("\n📋 Installation instructions:")
-        print("pip install numpy torch opencv-python gym3")
-        print("pip install -e lib/procgenAISC")
-        print("\n📖 See README_coinrun_analysis.md for detailed setup instructions")
-        sys.exit(1)
-    
-    return imports
+    return missing, imports
 
-# Import dependencies
-deps = check_and_import_dependencies()
-np = deps['numpy']
-torch = deps['torch'] 
-cv2 = deps['cv2']
+# Check dependencies first
+missing_deps, deps = check_and_import_dependencies()
 
-from YRC.core.configs.global_configs import set_global_variable
-from YRC.envs.procgen import load_policy
-from lib.procgenAISC.procgen import ProcgenEnv
-from YRC.envs.procgen.wrappers import VecExtractDictObs, TransposeFrame, ScaledFloatFrame, HardResetWrapper
+# Only proceed with imports if we're not just asking for help
+if len(sys.argv) > 1 and sys.argv[1] not in ['-h', '--help'] and missing_deps:
+    print("❌ Missing required dependencies:")
+    for dep in missing_deps:
+        print(f"  - {dep}")
+    print("\n📋 Installation instructions:")
+    print("pip install numpy torch opencv-python gym3")
+    print("pip install -e lib/procgenAISC")
+    print("\n📖 See README_coinrun_analysis.md for detailed setup instructions")
+    print("\n💡 Use --check_deps_only to test dependency installation")
+    sys.exit(1)
+
+# Import dependencies if available
+if not missing_deps:
+    np = deps['numpy']
+    torch = deps['torch'] 
+    cv2 = deps['cv2']
+
+    from YRC.core.configs.global_configs import set_global_variable
+    from YRC.envs.procgen import load_policy
+    from lib.procgenAISC.procgen import ProcgenEnv
+    from YRC.envs.procgen.wrappers import VecExtractDictObs, TransposeFrame, ScaledFloatFrame, HardResetWrapper
 
 
 class CoinrunCounterfactualAnalyzer:
@@ -135,7 +140,7 @@ class CoinrunCounterfactualAnalyzer:
         )
         self.logger = logging.getLogger(__name__)
     
-    def create_env(self, random_percent: int = 100, start_level: int = 0, num_levels: int = 1) -> ProcgenEnv:
+    def create_env(self, random_percent: int = 100, start_level: int = 0, num_levels: int = 1):
         """
         Create a coinrun environment with specified parameters.
         
@@ -184,7 +189,7 @@ class CoinrunCounterfactualAnalyzer:
             raise
     
     def rollout_episode(self, agent, env, max_steps: int = 1000, 
-                       record_video: bool = True) -> Tuple[float, int, List[np.ndarray], bool]:
+                       record_video: bool = True):
         """
         Roll out a single episode with the agent.
         
@@ -234,7 +239,7 @@ class CoinrunCounterfactualAnalyzer:
         
         return total_reward, episode_length, frames, success
     
-    def get_rgb_frame(self, env) -> Optional[np.ndarray]:
+    def get_rgb_frame(self, env):
         """Extract RGB frame from environment for video recording."""
         try:
             # Try to get RGB observation from the base environment
@@ -257,7 +262,7 @@ class CoinrunCounterfactualAnalyzer:
             # Don't log every frame error to avoid spam
             return None
     
-    def save_video(self, frames: List[np.ndarray], filename: str, fps: int = 30):
+    def save_video(self, frames, filename: str, fps: int = 30):
         """Save frames as a video file."""
         if not frames:
             self.logger.warning(f"No frames to save for {filename}")
@@ -284,7 +289,7 @@ class CoinrunCounterfactualAnalyzer:
         except Exception as e:
             self.logger.error(f"Failed to save video {filename}: {e}")
     
-    def find_failure_seed(self, max_attempts: int = 100, start_seed: int = 0) -> Optional[int]:
+    def find_failure_seed(self, max_attempts: int = 100, start_seed: int = 0):
         """
         Find a level seed where the weak agent fails (gets 0 reward) with random coin placement.
         
@@ -320,7 +325,7 @@ class CoinrunCounterfactualAnalyzer:
         self.logger.warning(f"No failure seed found in {max_attempts} attempts")
         return None
     
-    def run_counterfactual_analysis(self, failure_seed: int) -> Dict:
+    def run_counterfactual_analysis(self, failure_seed: int):
         """
         Run counterfactual analysis on a specific seed.
         
@@ -389,7 +394,7 @@ class CoinrunCounterfactualAnalyzer:
         
         return results
     
-    def run_analysis(self, max_seed_attempts: int = 100, start_seed: int = 0) -> Dict:
+    def run_analysis(self, max_seed_attempts: int = 100, start_seed: int = 0):
         """
         Run the complete counterfactual analysis pipeline.
         
@@ -452,8 +457,18 @@ def main():
         default=0,
         help="Starting seed value for search"
     )
+    parser.add_argument(
+        "--check_deps_only",
+        action="store_true",
+        help="Only check dependencies and exit"
+    )
     
     args = parser.parse_args()
+    
+    # If only checking dependencies, exit after the check above
+    if args.check_deps_only:
+        print("✅ All dependencies are available!")
+        sys.exit(0)
     
     # Check if weak agent checkpoint exists
     if not os.path.exists(args.weak_agent_path):
