@@ -62,8 +62,11 @@ def load(yaml_file_or_str, flags=None) -> ConfigDict:
         update_config(flags_dict, config_dict)
         config = ConfigDict(**config_dict)
 
-    config.environment.val_sim.env_name_suffix = config.environment.train.env_name_suffix
-    config.environment.val_true.env_name_suffix = config.environment.test.env_name_suffix
+    # Only copy env_name_suffix for environments that use it (e.g., minigrid)
+    if hasattr(config.environment.train, 'env_name_suffix'):
+        config.environment.val_sim.env_name_suffix = config.environment.train.env_name_suffix
+    if hasattr(config.environment.test, 'env_name_suffix'):
+        config.environment.val_true.env_name_suffix = config.environment.test.env_name_suffix
 
     config.data_dir = os.getenv("SM_DATA_DIR", config.data_dir)
     output_dir = os.getenv("SM_OUTPUT_DIR", "experiments")
