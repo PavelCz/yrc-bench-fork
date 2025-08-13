@@ -1,0 +1,16 @@
+{
+  "seed": 1,
+  "timestamp": "2025-08-13T22:50:28.086554",
+  "random_placement": {
+    "reward": 0.0,
+    "episode_length": 99,
+    "success": false,
+    "num_frames": 99
+  },
+  "deterministic_placement": {
+    "reward": 10.0,
+    "episode_length": 66,
+    "success": true,
+    "num_frames": 66
+  }
+}
