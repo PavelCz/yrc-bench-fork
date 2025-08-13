@@ -1,0 +1,40 @@
+# General settings
+general:
+    benchmark: 'procgen'
+    algorithm: 'lightning_ae'
+    seed: 1
+
+# Wandb settings
+wandb:
+    project: 'yrc-01'
+
+# Coordination policy settings
+coord_policy:
+    cls: LightningAEPolicy
+    method: 'Autoencoder'
+    feature_type: 'obs'
+    collect_data_agent: 'weak'
+
+# Coordination environment settings
+coord_env:
+    procgen:
+        strong_query_cost_ratio: 0.0
+        switch_agent_cost_ratio: 0.0
+        act_greedy: false
+
+# Evaluation settings
+evaluation:
+    procgen:
+        test_episodes: 5000
+
+eval:
+    coverage_fraction: 0.05
+
+# Environment settings
+environment:
+    procgen:
+        common:
+            env_name: 'coinrun_aisc'
+            
+# File settings
+file_name: 'trained.pt'
