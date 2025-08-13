@@ -175,6 +175,15 @@ def make():
     )
 
     parser.add_argument(
+        "-experiment_group",
+        "--experiment_group",
+        type=str,
+        help=(
+            "experiment group name - used for wandb group and as prefix for eval names"
+        ),
+    )
+
+    parser.add_argument(
         "-rollout_dir",
         "--training.rollout_dir",
         type=str,

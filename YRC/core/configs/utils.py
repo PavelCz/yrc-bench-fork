@@ -43,7 +43,23 @@ def load(yaml_file_or_str, flags=None) -> ConfigDict:
 
     if flags is not None:
         config_dict = config.as_dict()
-        update_config(flags.as_dict(), config_dict)
+        flags_dict = flags.as_dict()
+        
+        # Handle experiment_group special logic
+        if "experiment_group" in flags_dict and flags_dict["experiment_group"] is not None:
+            experiment_group = flags_dict["experiment_group"]
+            
+            # Set wandb group if not already set
+            if "wandb" not in flags_dict:
+                flags_dict["wandb"] = {}
+            if "group" not in flags_dict["wandb"] or flags_dict["wandb"]["group"] is None:
+                flags_dict["wandb"]["group"] = experiment_group
+            
+            # Set eval_run_name as prefix if not already set
+            if "eval_run_name" not in flags_dict or flags_dict["eval_run_name"] is None:
+                flags_dict["eval_run_name"] = experiment_group
+        
+        update_config(flags_dict, config_dict)
         config = ConfigDict(**config_dict)
 
     config.environment.val_sim.env_name_suffix = config.environment.train.env_name_suffix
