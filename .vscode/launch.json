@@ -108,7 +108,7 @@
                 "-cp_feature", "obs",
                 "-f_n", "trained.joblib",
                 "-query_cost", "0",
-                "-threshold_bins", "5",
+                "-coverage_fraction", "0.2",
                 "-over",
                 "-seed", "1",
                 "-test_episodes", "64"
@@ -224,6 +224,17 @@
                 "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
             }
         },
-        
+        {
+            "name": "Coverage Example Usage",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/YRC/coverage/example_usage.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        }
     ]
 } 

@@ -71,7 +71,7 @@ environment:
             distribution_mode: 'hard'
             seed: 300000
             start_level: 300000
-            num_levels: 1024
+            num_levels: 5120
     cliport:
         common:
             env_name: 'stack-block-pyramid-seq'

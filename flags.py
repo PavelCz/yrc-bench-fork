@@ -146,11 +146,14 @@ def make():
     
     # Additional flags for evaluation.
     parser.add_argument(
-        "-threshold_bins", 
-        "--eval.threshold_bins", 
-        type=int,
-        help="number of threshold bins to evaluate. Choose at least 5", 
-        default=10
+        "-coverage_fraction", 
+        "--eval.coverage_fraction", 
+        type=float,
+        help=(
+            "The maximum gap allowed between consecutive points, as a fraction of the "
+            "total range. Choose at least 0.01"
+        ),
+        default=0.1
     )
 
     parser.add_argument(
@@ -165,7 +168,19 @@ def make():
         "-eval_run_name",
         "--eval_run_name",
         type=str,
-        help="custom name for the evaluation run (timestamp will be appended automatically)",
+        help=(
+            "custom name for the evaluation run (timestamp will be appended "
+            "automatically)"
+        ),
+    )
+
+    parser.add_argument(
+        "-experiment_group",
+        "--experiment_group",
+        type=str,
+        help=(
+            "experiment group name - used for wandb group and as prefix for eval names"
+        ),
     )
 
     parser.add_argument(

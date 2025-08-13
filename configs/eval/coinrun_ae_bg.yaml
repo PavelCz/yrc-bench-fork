@@ -1,0 +1,27 @@
+# General settings
+general:
+    benchmark: 'procgen'
+    algorithm: 'lightning_ae'
+    seed: 1
+
+# Wandb settings
+wandb:
+    project: 'yrc-01'
+
+
+# Evaluation settings
+evaluation:
+    procgen:
+        test_episodes: 5000
+
+eval:
+    coverage_fraction: 0.05
+
+# Inherit all settings from common.yaml
+environment: null
+coord_env: null
+coord_policy: null
+algorithm: null
+            
+# File settings
+file_name: 'trained.pt'
