@@ -41,7 +41,7 @@ from YRC.envs.procgen.wrappers import (
 class CoinrunCounterfactualAnalyzer:
     """Performs counterfactual analysis for coinrun environment."""
 
-    def __init__(self, weak_agent_path: str, output_dir: str, device: str = "cpu"):
+    def __init__(self, weak_agent_path: str, output_dir: str, device: str = "cpu", scale: int = 1):
         """
         Initialize the analyzer.
 
@@ -59,6 +59,7 @@ class CoinrunCounterfactualAnalyzer:
         self.weak_agent_path = weak_agent_path
         self.output_dir = output_dir
         self.device = device
+        self.scale = int(scale) if isinstance(scale, int) and scale >= 1 else 1
 
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
@@ -74,6 +75,7 @@ class CoinrunCounterfactualAnalyzer:
         self.logger.info(f"Weak agent: {weak_agent_path}")
         self.logger.info(f"Output directory: {output_dir}")
         self.logger.info(f"Device: {device}")
+        self.logger.info(f"Video scale: {self.scale}x (pixel-perfect)")
 
     def setup_logging(self):
         """Setup logging configuration."""
@@ -250,11 +252,20 @@ class CoinrunCounterfactualAnalyzer:
                 )
                 return
 
+            # Pixel-perfect integer upscaling via nearest-neighbor
+            scale = max(1, int(self.scale))
+            if scale > 1:
+                def upscale(img):
+                    if img.dtype != np.uint8:
+                        img = np.clip(img, 0, 255).astype(np.uint8)
+                    return np.repeat(np.repeat(img, scale, axis=0), scale, axis=1)
+                frames_to_write = [upscale(f) for f in frames]
+            else:
+                frames_to_write = [f if f.dtype == np.uint8 else np.clip(f, 0, 255).astype(np.uint8) for f in frames]
+
             video_path = os.path.join(self.output_dir, filename)
             with imageio.get_writer(video_path, fps=fps, codec="libx264") as w:
-                for frame in frames:
-                    if frame.dtype != np.uint8:
-                        frame = np.clip(frame, 0, 255).astype(np.uint8)
+                for frame in frames_to_write:
                     w.append_data(frame)
             self.logger.info(f"Video saved: {video_path}")
 
@@ -446,6 +457,12 @@ def main():
         help="Maximum number of seeds to try when finding failure case",
     )
     parser.add_argument(
+        "--scale",
+        type=int,
+        default=1,
+        help="Integer pixel-perfect upscaling factor for saved videos",
+    )
+    parser.add_argument(
         "--start_seed", type=int, default=0, help="Starting seed value for search"
     )
     args = parser.parse_args()
@@ -467,6 +484,7 @@ def main():
             weak_agent_path=args.weak_agent_path,
             output_dir=args.output_dir,
             device=device,
+            scale=args.scale,
         )
 
         results = analyzer.run_analysis(
