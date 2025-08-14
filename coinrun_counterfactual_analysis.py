@@ -27,6 +27,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 import numpy as np
 import torch
 import cv2
+import imageio
 
 from YRC.core.configs.global_configs import set_global_variable
 from YRC.envs.procgen import load_policy
@@ -149,16 +150,15 @@ class CoinrunCounterfactualAnalyzer:
         total_reward = 0.0
         episode_length = 0
         frames = []
-        done = False
+        done_flag = False
         
         # Record initial frame
         if record_video:
-            # Get RGB frame for video - need to get it from the original environment
-            frame = self.get_rgb_frame(env)
+            frame = self.obs_to_frame(obs)
             if frame is not None:
                 frames.append(frame)
         
-        while not done and episode_length < max_steps:
+        while not done_flag and episode_length < max_steps:
             # Get action from agent
             action = agent.act(obs, greedy=True)
             
@@ -170,11 +170,12 @@ class CoinrunCounterfactualAnalyzer:
             
             # Record frame
             if record_video:
-                frame = self.get_rgb_frame(env)
+                frame = self.obs_to_frame(obs)
                 if frame is not None:
                     frames.append(frame)
             
-            if done:
+            done_flag = bool(done[0]) if isinstance(done, np.ndarray) else bool(done)
+            if done_flag:
                 break
         
         # Success is typically indicated by reaching the goal (positive reward)
@@ -185,24 +186,63 @@ class CoinrunCounterfactualAnalyzer:
     def get_rgb_frame(self, env):
         """Extract RGB frame from environment for video recording."""
         try:
-            # Try to get RGB observation from the base environment
-            if hasattr(env, 'venv') and hasattr(env.venv, 'venv'):
-                # Unwrap to get to base ProcgenEnv
-                base_env = env.venv.venv
-                if hasattr(base_env, 'get_images'):
-                    images = base_env.get_images()
-                    if images is not None and len(images) > 0:
-                        return images[0]  # Get first environment's image
-            
+            # Preferred: use VecEnv get_images() forwarded through wrappers
+            if hasattr(env, 'get_images'):
+                images = env.get_images()
+                if images is not None and len(images) > 0:
+                    frame = images[0]
+                    # Ensure uint8 RGB
+                    if frame.dtype != np.uint8:
+                        frame = np.clip(frame, 0, 255).astype(np.uint8)
+                    return frame
+
             # Fallback: try to render
             if hasattr(env, 'render'):
                 frame = env.render(mode='rgb_array')
                 if frame is not None:
+                    if frame.dtype != np.uint8:
+                        frame = np.clip(frame, 0, 255).astype(np.uint8)
                     return frame
-            
+
             return None
-        except Exception as e:
-            # Don't log every frame error to avoid spam
+        except Exception:
+            # Avoid spamming logs on per-frame failures
+            return None
+
+    def obs_to_frame(self, obs):
+        """Convert current observation to an RGB frame (H,W,3) uint8."""
+        try:
+            arr = obs
+            if isinstance(arr, dict):
+                if 'rgb' in arr:
+                    arr = arr['rgb']
+                elif 'image' in arr:
+                    arr = arr['image']
+                else:
+                    return None
+            if hasattr(arr, 'detach'):
+                arr = arr.detach().cpu().numpy()
+            elif hasattr(arr, 'numpy'):
+                arr = arr.numpy()
+
+            if arr.ndim == 4:
+                arr = arr[0]
+            if arr.ndim == 3:
+                # If channel-first, transpose to HWC
+                if arr.shape[0] in (1, 3):
+                    if arr.shape[0] == 1:
+                        arr = np.repeat(arr, 3, axis=0)
+                    arr = np.transpose(arr, (1, 2, 0))
+                # else assume already HWC
+            else:
+                return None
+
+            # Scale to uint8 if needed
+            if arr.dtype != np.uint8:
+                # Assume values in [0,1]
+                arr = (arr * 255.0).clip(0, 255).astype(np.uint8)
+            return arr
+        except Exception:
             return None
     
     def save_video(self, frames, filename: str, fps: int = 30):
@@ -210,25 +250,41 @@ class CoinrunCounterfactualAnalyzer:
         if not frames:
             self.logger.warning(f"No frames to save for {filename}")
             return
-        
+
         try:
             # Get dimensions from first frame
-            height, width = frames[0].shape[:2]
-            
+            first = frames[0]
+            if first.ndim != 3 or first.shape[2] != 3:
+                self.logger.error(f"Unexpected frame shape {first.shape} for {filename}")
+                return
+            height, width = first.shape[:2]
+
             # Create video writer
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             video_path = os.path.join(self.output_dir, filename)
             writer = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
-            
-            for frame in frames:
-                # Convert RGB to BGR for OpenCV
-                if len(frame.shape) == 3:
+            if writer.isOpened():
+                for frame in frames:
+                    # Ensure dtype and correct color ordering
+                    if frame.dtype != np.uint8:
+                        frame = np.clip(frame, 0, 255).astype(np.uint8)
                     frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                     writer.write(frame_bgr)
-            
-            writer.release()
-            self.logger.info(f"Video saved: {video_path}")
-            
+
+                writer.release()
+                self.logger.info(f"Video saved: {video_path}")
+            else:
+                # Fallback to imageio/ffmpeg
+                self.logger.warning(
+                    f"OpenCV VideoWriter failed to open {video_path}. Falling back to imageio-ffmpeg."
+                )
+                with imageio.get_writer(video_path, fps=fps, codec='libx264') as w:
+                    for frame in frames:
+                        if frame.dtype != np.uint8:
+                            frame = np.clip(frame, 0, 255).astype(np.uint8)
+                        w.append_data(frame)
+                self.logger.info(f"Video saved (imageio): {video_path}")
+
         except Exception as e:
             self.logger.error(f"Failed to save video {filename}: {e}")
     
@@ -379,7 +435,7 @@ def main():
     )
     parser.add_argument(
         "--output_dir",
-        default="coinrun_analysis_output",
+        default="experiments/coinrun_analysis_output",
         help="Directory to save results and videos"
     )
     parser.add_argument(
