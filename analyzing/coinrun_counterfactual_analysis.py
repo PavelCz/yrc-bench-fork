@@ -149,13 +149,14 @@ class CoinrunCounterfactualAnalyzer:
             record_video: Whether to record video frames
 
         Returns:
-            Tuple of (total_reward, episode_length, frames, success)
+            Tuple of (total_reward, episode_length, frames, success, invisible_coin_collected)
         """
         obs = env.reset()
         total_reward = 0.0
         episode_length = 0
         frames = []
         done_flag = False
+        invisible_coin_collected_any = False
 
         # Record initial frame
         if record_video:
@@ -173,6 +174,16 @@ class CoinrunCounterfactualAnalyzer:
             total_reward += reward[0] if isinstance(reward, np.ndarray) else reward
             episode_length += 1
 
+            info_item = info[0] if isinstance(info, list) and len(info) > 0 else {}
+
+            if "invisible_coin_collected" in info_item:
+                if info_item["invisible_coin_collected"] == 1:
+                    invisible_coin_collected_any = True
+            else:
+                raise ValueError(
+                    f"invisible_coin_collected not found in info: {info_item}"
+                )
+
             # Record frame
             if record_video:
                 frame = self.obs_to_frame(obs)
@@ -186,7 +197,7 @@ class CoinrunCounterfactualAnalyzer:
         # Success is typically indicated by reaching the goal (positive reward)
         success = total_reward > 0
 
-        return total_reward, episode_length, frames, success
+        return total_reward, episode_length, frames, success, invisible_coin_collected_any
 
     def obs_to_frame(self, obs):
         """Convert current observation to an RGB frame (H,W,3) uint8."""
@@ -271,19 +282,19 @@ class CoinrunCounterfactualAnalyzer:
             agent = self.load_weak_agent(env)
 
             # Test rollout
-            reward, length, _, success = self.rollout_episode(
+            reward, length, _, success, invisible_coin_collected = self.rollout_episode(
                 agent, env, record_video=False
             )
 
             self.logger.info(
-                f"Seed {seed}: reward={reward:.2f}, length={length}, success={success}"
+                f"Seed {seed}: reward={reward:.2f}, length={length}, success={success}, invisible_coin_collected={invisible_coin_collected}"
             )
 
             # Clean up
             env.close()
 
-            # If agent failed (no success), we found our seed
-            if not success:
+            # If agent failed (no success) and invisible coin was NOT collected, we found our seed
+            if (not success) and (not invisible_coin_collected):
                 self.logger.info(f"Found failure seed: {seed}")
                 return seed
 
@@ -316,7 +327,7 @@ class CoinrunCounterfactualAnalyzer:
         )
         agent_random = self.load_weak_agent(env_random)
 
-        reward_random, length_random, frames_random, success_random = (
+        reward_random, length_random, frames_random, success_random, invisible_random = (
             self.rollout_episode(agent_random, env_random, record_video=True)
         )
 
@@ -325,6 +336,7 @@ class CoinrunCounterfactualAnalyzer:
             "episode_length": int(length_random),
             "success": bool(success_random),
             "num_frames": len(frames_random),
+            "invisible_coin_collected": bool(invisible_random),
         }
 
         # Save video for random placement
@@ -345,6 +357,7 @@ class CoinrunCounterfactualAnalyzer:
             length_deterministic,
             frames_deterministic,
             success_deterministic,
+            invisible_deterministic,
         ) = self.rollout_episode(
             agent_deterministic, env_deterministic, record_video=True
         )
@@ -354,6 +367,7 @@ class CoinrunCounterfactualAnalyzer:
             "episode_length": int(length_deterministic),
             "success": bool(success_deterministic),
             "num_frames": len(frames_deterministic),
+            "invisible_coin_collected": bool(invisible_deterministic),
         }
 
         # Save video for deterministic placement
