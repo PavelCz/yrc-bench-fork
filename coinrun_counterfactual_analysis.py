@@ -24,71 +24,14 @@ from datetime import datetime
 # Add YRC to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 
-# Import dependencies with error handling
-def check_and_import_dependencies():
-    """Check and import required dependencies with helpful error messages."""
-    missing = []
-    imports = {}
-    
-    try:
-        import numpy as np
-        imports['numpy'] = np
-    except ImportError:
-        missing.append("numpy")
-    
-    try:
-        import torch
-        imports['torch'] = torch
-    except ImportError:
-        missing.append("torch")
-    
-    try:
-        import cv2
-        imports['cv2'] = cv2
-    except ImportError:
-        missing.append("opencv-python")
-    
-    try:
-        from YRC.core.configs.global_configs import set_global_variable
-        from YRC.envs.procgen import load_policy
-        imports['yrc'] = True
-    except ImportError as e:
-        missing.append(f"YRC framework ({e})")
-    
-    try:
-        from lib.procgenAISC.procgen import ProcgenEnv
-        from YRC.envs.procgen.wrappers import VecExtractDictObs, TransposeFrame, ScaledFloatFrame, HardResetWrapper
-        imports['procgen'] = True
-    except ImportError as e:
-        missing.append(f"procgen environment ({e})")
-    
-    return missing, imports
+import numpy as np
+import torch
+import cv2
 
-# Check dependencies first
-missing_deps, deps = check_and_import_dependencies()
-
-# Only proceed with imports if we're not just asking for help
-if len(sys.argv) > 1 and sys.argv[1] not in ['-h', '--help'] and missing_deps:
-    print("❌ Missing required dependencies:")
-    for dep in missing_deps:
-        print(f"  - {dep}")
-    print("\n📋 Installation instructions:")
-    print("pip install numpy torch opencv-python gym3")
-    print("pip install -e lib/procgenAISC")
-    print("\n📖 See README_coinrun_analysis.md for detailed setup instructions")
-    print("\n💡 Use --check_deps_only to test dependency installation")
-    sys.exit(1)
-
-# Import dependencies if available
-if not missing_deps:
-    np = deps['numpy']
-    torch = deps['torch'] 
-    cv2 = deps['cv2']
-
-    from YRC.core.configs.global_configs import set_global_variable
-    from YRC.envs.procgen import load_policy
-    from lib.procgenAISC.procgen import ProcgenEnv
-    from YRC.envs.procgen.wrappers import VecExtractDictObs, TransposeFrame, ScaledFloatFrame, HardResetWrapper
+from YRC.core.configs.global_configs import set_global_variable
+from YRC.envs.procgen import load_policy
+from lib.procgenAISC.procgen import ProcgenEnv
+from YRC.envs.procgen.wrappers import VecExtractDictObs, TransposeFrame, ScaledFloatFrame, HardResetWrapper
 
 
 class CoinrunCounterfactualAnalyzer:
@@ -440,12 +383,6 @@ def main():
         help="Directory to save results and videos"
     )
     parser.add_argument(
-        "--device",
-        default="cpu",
-        choices=["cpu", "cuda"],
-        help="Device to run on"
-    )
-    parser.add_argument(
         "--max_seed_attempts",
         type=int,
         default=100,
@@ -457,18 +394,7 @@ def main():
         default=0,
         help="Starting seed value for search"
     )
-    parser.add_argument(
-        "--check_deps_only",
-        action="store_true",
-        help="Only check dependencies and exit"
-    )
-    
     args = parser.parse_args()
-    
-    # If only checking dependencies, exit after the check above
-    if args.check_deps_only:
-        print("✅ All dependencies are available!")
-        sys.exit(0)
     
     # Check if weak agent checkpoint exists
     if not os.path.exists(args.weak_agent_path):
@@ -476,12 +402,16 @@ def main():
         print("Please ensure the checkpoint file exists or provide correct path with --weak_agent_path")
         sys.exit(1)
     
+    # Resolve device automatically if requested
+    device = "cuda" if ('torch' in globals() and torch.cuda.is_available()) else "cpu"
+    
+
     # Create analyzer and run analysis
     try:
         analyzer = CoinrunCounterfactualAnalyzer(
             weak_agent_path=args.weak_agent_path,
             output_dir=args.output_dir,
-            device=args.device
+            device=device
         )
         
         results = analyzer.run_analysis(
