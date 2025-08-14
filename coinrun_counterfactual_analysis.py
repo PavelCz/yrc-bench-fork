@@ -240,32 +240,7 @@ class CoinrunCounterfactualAnalyzer:
                 return
 
             video_path = os.path.join(self.output_dir, filename)
-            height, width = first.shape[:2]
-
-            # Try OpenCV first if available
-            try:
-                import cv2  # local optional import
-
-                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-                writer = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
-                if writer.isOpened():
-                    for frame in frames:
-                        if frame.dtype != np.uint8:
-                            frame = np.clip(frame, 0, 255).astype(np.uint8)
-                        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                        writer.write(frame_bgr)
-                    writer.release()
-                    self.logger.info(f"Video saved: {video_path}")
-                    return
-                else:
-                    self.logger.warning(
-                        "OpenCV VideoWriter could not open file; falling back to imageio."
-                    )
-            except Exception as cv_err:
-                self.logger.warning(f"OpenCV writer unavailable or failed ({cv_err}); falling back to imageio.")
-
-            # Fallback to imageio/ffmpeg
-            with imageio.get_writer(video_path, fps=fps, codec="libx264", format="FFMPEG") as w:
+            with imageio.get_writer(video_path, fps=fps, codec="libx264") as w:
                 for frame in frames:
                     if frame.dtype != np.uint8:
                         frame = np.clip(frame, 0, 255).astype(np.uint8)
