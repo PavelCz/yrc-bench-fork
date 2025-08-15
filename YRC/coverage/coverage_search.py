@@ -8,7 +8,7 @@ ACS library for the specific use case of threshold evaluation in YRC.
 from typing import Tuple, Any, Dict
 
 # Import the joint-coverage sampler from the external ACS library
-from acs import JointCoverageSampler
+from acs import BinarySearchSampler
 
 
 def create_threshold_sampler(
@@ -73,11 +73,14 @@ def create_threshold_sampler(
         thr = float("-inf")
         afhp, meta = _eval_with_threshold(thr)
         return afhp, meta["performance"]
+    
+    # Convert coverate fraction to num_bins
+    num_bins = int(1.0 / coverage_fraction)
 
-    return JointCoverageSampler(
+    return BinarySearchSampler(
         eval_at_percentile=eval_at_percentile,
         eval_at_lower_extreme=eval_at_lower_extreme,
         eval_at_upper_extreme=eval_at_upper_extreme,
-        coverage_fraction=coverage_fraction,
-        max_total_evals=max_total_evals,
+        num_bins=num_bins,
+        # max_total_evals=max_total_evals,
     )
