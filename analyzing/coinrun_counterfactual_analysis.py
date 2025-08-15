@@ -272,21 +272,29 @@ class CoinrunCounterfactualAnalyzer:
         except Exception as e:
             self.logger.error(f"Failed to save video {filename}: {e}")
 
-    def find_failure_seed(self, max_attempts: int = 100, start_seed: int = 0):
+    def find_failure_seeds(self, desired_count: int, max_attempts: int = 100, start_seed: int = 0):
         """
-        Find a level seed where the weak agent fails (gets 0 reward) with random coin placement.
+        Find multiple level seeds where the weak agent fails (gets 0 reward) with random coin placement
+        and the invisible coin was not collected.
 
         Args:
-            max_attempts: Maximum number of seeds to try
+            desired_count: Target number of failure seeds to find
+            max_attempts: Maximum number of seeds to try (upper bound on seeds tested)
             start_seed: Starting seed value
 
         Returns:
-            Level seed where agent fails, or None if not found
+            List of level seeds (length <= desired_count)
         """
-        self.logger.info(f"Searching for failure seed (max {max_attempts} attempts)...")
+        self.logger.info(
+            f"Searching for up to {desired_count} failure seeds (max {max_attempts} attempts)..."
+        )
 
-        for attempt in range(max_attempts):
+        found: list[int] = []
+        attempt = 0
+
+        while attempt < max_attempts and len(found) < desired_count:
             seed = start_seed + attempt
+            attempt += 1
 
             # Create environment with random coin placement
             env = self.create_env(random_percent=100, start_level=seed, num_levels=1)
@@ -304,13 +312,17 @@ class CoinrunCounterfactualAnalyzer:
             # Clean up
             env.close()
 
-            # If agent failed (no success) and invisible coin was NOT collected, we found our seed
+            # If agent failed (no success) and invisible coin was NOT collected, record the seed
             if (not success) and (not invisible_coin_collected):
                 self.logger.info(f"Found failure seed: {seed}")
-                return seed
+                found.append(seed)
 
-        self.logger.warning(f"No failure seed found in {max_attempts} attempts")
-        return None
+        if len(found) == 0:
+            self.logger.warning(f"No failure seed found in {max_attempts} attempts")
+        else:
+            self.logger.info(f"Found {len(found)} failure seeds: {found}")
+
+        return found
 
     def run_counterfactual_analysis(self, failure_seed: int):
         """
@@ -401,7 +413,7 @@ class CoinrunCounterfactualAnalyzer:
 
         return results
 
-    def run_analysis(self, max_seed_attempts: int = 100, start_seed: int = 0):
+    def run_analysis(self, max_seed_attempts: int = 100, start_seed: int = 0, num_failures: int = 1):
         """
         Run the complete counterfactual analysis pipeline.
 
@@ -414,27 +426,37 @@ class CoinrunCounterfactualAnalyzer:
         """
         self.logger.info("Starting coinrun counterfactual analysis")
 
-        # Step 1: Find a level seed where weak agent fails with random placement
-        failure_seed = self.find_failure_seed(max_seed_attempts, start_seed)
+        # Step 1: Find failure seeds as requested
+        seeds = self.find_failure_seeds(num_failures, max_seed_attempts, start_seed)
 
-        if failure_seed is None:
+        if len(seeds) == 0:
             self.logger.error(
-                "Could not find a failure seed. Analysis cannot continue."
+                "Could not find any failure seed. Analysis cannot continue."
             )
-            return {"error": "No failure seed found"}
+            return {"error": "No failure seed found", "seeds": []}
 
-        # Step 2: Run counterfactual analysis on the failure seed
-        results = self.run_counterfactual_analysis(failure_seed)
+        # Step 2: Run counterfactual analysis on each seed
+        all_results = {}
+        for seed in seeds:
+            res = self.run_counterfactual_analysis(seed)
+            all_results[seed] = res
 
-        # Step 3: Save results
-        results_file = os.path.join(
-            self.output_dir, f"analysis_results_seed_{failure_seed}.json"
+            # Save per-seed results
+            results_file = os.path.join(
+                self.output_dir, f"analysis_results_seed_{seed}.json"
+            )
+            with open(results_file, "w") as f:
+                json.dump(res, f, indent=2)
+
+        # Step 3: Save summary
+        summary_file = os.path.join(self.output_dir, "analysis_results_summary.json")
+        with open(summary_file, "w") as f:
+            json.dump({"seeds": seeds, "results": all_results}, f, indent=2)
+
+        self.logger.info(
+            f"Analysis complete. Results saved for seeds {seeds}. Summary: {summary_file}"
         )
-        with open(results_file, "w") as f:
-            json.dump(results, f, indent=2)
-
-        self.logger.info(f"Analysis complete. Results saved to {results_file}")
-        return results
+        return {"seeds": seeds, "results": all_results}
 
 
 def main():
@@ -455,6 +477,12 @@ def main():
         type=int,
         default=100,
         help="Maximum number of seeds to try when finding failure case",
+    )
+    parser.add_argument(
+        "--num_failures",
+        type=int,
+        default=1,
+        help="Number of failure seeds to find before stopping",
     )
     parser.add_argument(
         "--scale",
@@ -488,14 +516,16 @@ def main():
         )
 
         results = analyzer.run_analysis(
-            max_seed_attempts=args.max_seed_attempts, start_seed=args.start_seed
+            max_seed_attempts=args.max_seed_attempts,
+            start_seed=args.start_seed,
+            num_failures=args.num_failures,
         )
 
         if "error" not in results:
             print("\n=== Analysis Complete ===")
             print(f"Results saved in: {args.output_dir}")
-            print(f"Failure seed found: {results['seed']}")
-            print("Videos saved for both random and deterministic coin placement")
+            print(f"Failure seeds found: {results['seeds']}")
+            print("Videos saved for both random and deterministic coin placement for each seed")
         else:
             print(f"Analysis failed: {results['error']}")
             sys.exit(1)
