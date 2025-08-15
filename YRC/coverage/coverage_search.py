@@ -49,7 +49,7 @@ def create_threshold_sampler(
             return float("-inf")
         return policy.train_percentile(100.0 - (p * 100.0))
 
-    def _eval_with_threshold(threshold: float) -> Tuple[float, Dict[str, Any]]:
+    def _eval_with_threshold(threshold: float) -> Tuple[float, float, Dict[str, Any]]:
         if hasattr(policy, "update_params"):
             policy.update_params({"threshold": threshold})
         summary = evaluator.eval(
@@ -57,22 +57,22 @@ def create_threshold_sampler(
         )
         afhp = summary[split]["action_1_frac"] * 100.0
         performance = float(summary[split]["env_reward_mean"])  # Y-axis
-        return afhp, {"summary": summary, "threshold": threshold, "performance": performance}
+        return afhp, performance, {"summary": summary, "threshold": threshold}
 
-    def eval_at_percentile(p: float) -> Tuple[float, float]:
+    def eval_at_percentile(p: float) -> Tuple[float, float, Dict[str, Any]]:
         thr = percentile_to_threshold(p)
-        afhp, meta = _eval_with_threshold(thr)
-        return afhp, meta["performance"]
+        afhp, performance, meta = _eval_with_threshold(thr)
+        return afhp, performance, meta
 
-    def eval_at_lower_extreme() -> Tuple[float, float]:
+    def eval_at_lower_extreme() -> Tuple[float, float, Dict[str, Any]]:
         thr = float("inf")
-        afhp, meta = _eval_with_threshold(thr)
-        return afhp, meta["performance"]
+        afhp, performance, meta = _eval_with_threshold(thr)
+        return afhp, performance, meta
 
-    def eval_at_upper_extreme() -> Tuple[float, float]:
+    def eval_at_upper_extreme() -> Tuple[float, float, Dict[str, Any]]:
         thr = float("-inf")
-        afhp, meta = _eval_with_threshold(thr)
-        return afhp, meta["performance"]
+        afhp, performance, meta = _eval_with_threshold(thr)
+        return afhp, performance, meta
     
     # Convert coverate fraction to num_bins
     num_bins = int(1.0 / coverage_fraction)

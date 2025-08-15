@@ -199,12 +199,12 @@
                 "-query_cost",
                 "0",
                 "-coverage_fraction",
-                "0.2",
+                "0.5",
                 "-over",
                 "-seed",
                 "1",
                 "-test_episodes",
-                "64"
+                "8"
             ],
             "console": "integratedTerminal",
             "justMyCode": true,
