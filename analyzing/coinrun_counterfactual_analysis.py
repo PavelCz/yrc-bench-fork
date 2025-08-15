@@ -41,7 +41,9 @@ from YRC.envs.procgen.wrappers import (
 class CoinrunCounterfactualAnalyzer:
     """Performs counterfactual analysis for coinrun environment."""
 
-    def __init__(self, weak_agent_path: str, output_dir: str, device: str = "cpu", scale: int = 1):
+    def __init__(
+        self, weak_agent_path: str, output_dir: str, device: str = "cpu", scale: int = 1
+    ):
         """
         Initialize the analyzer.
 
@@ -199,7 +201,13 @@ class CoinrunCounterfactualAnalyzer:
         # Success is typically indicated by reaching the goal (positive reward)
         success = total_reward > 0
 
-        return total_reward, episode_length, frames, success, invisible_coin_collected_any
+        return (
+            total_reward,
+            episode_length,
+            frames,
+            success,
+            invisible_coin_collected_any,
+        )
 
     def obs_to_frame(self, obs):
         """Convert current observation to an RGB frame (H,W,3) uint8."""
@@ -255,13 +263,18 @@ class CoinrunCounterfactualAnalyzer:
             # Pixel-perfect integer upscaling via nearest-neighbor
             scale = max(1, int(self.scale))
             if scale > 1:
+
                 def upscale(img):
                     if img.dtype != np.uint8:
                         img = np.clip(img, 0, 255).astype(np.uint8)
                     return np.repeat(np.repeat(img, scale, axis=0), scale, axis=1)
+
                 frames_to_write = [upscale(f) for f in frames]
             else:
-                frames_to_write = [f if f.dtype == np.uint8 else np.clip(f, 0, 255).astype(np.uint8) for f in frames]
+                frames_to_write = [
+                    f if f.dtype == np.uint8 else np.clip(f, 0, 255).astype(np.uint8)
+                    for f in frames
+                ]
 
             video_path = os.path.join(self.output_dir, filename)
             with imageio.get_writer(video_path, fps=fps, codec="libx264") as w:
@@ -272,7 +285,9 @@ class CoinrunCounterfactualAnalyzer:
         except Exception as e:
             self.logger.error(f"Failed to save video {filename}: {e}")
 
-    def find_failure_seeds(self, desired_count: int, max_attempts: int = 100, start_seed: int = 0):
+    def find_failure_seeds(
+        self, desired_count: int, max_attempts: int = 100, start_seed: int = 0
+    ):
         """
         Find multiple level seeds where the weak agent fails (gets 0 reward) with random coin placement
         and the invisible coin was not collected.
@@ -350,9 +365,13 @@ class CoinrunCounterfactualAnalyzer:
         )
         agent_random = self.load_weak_agent(env_random)
 
-        reward_random, length_random, frames_random, success_random, invisible_random = (
-            self.rollout_episode(agent_random, env_random, record_video=True)
-        )
+        (
+            reward_random,
+            length_random,
+            frames_random,
+            success_random,
+            invisible_random,
+        ) = self.rollout_episode(agent_random, env_random, record_video=True)
 
         results["random_placement"] = {
             "reward": float(reward_random),
@@ -413,7 +432,9 @@ class CoinrunCounterfactualAnalyzer:
 
         return results
 
-    def run_analysis(self, max_seed_attempts: int = 100, start_seed: int = 0, num_failures: int = 1):
+    def run_analysis(
+        self, max_seed_attempts: int = 100, start_seed: int = 0, num_failures: int = 1
+    ):
         """
         Run the complete counterfactual analysis pipeline.
 
@@ -525,7 +546,9 @@ def main():
             print("\n=== Analysis Complete ===")
             print(f"Results saved in: {args.output_dir}")
             print(f"Failure seeds found: {results['seeds']}")
-            print("Videos saved for both random and deterministic coin placement for each seed")
+            print(
+                "Videos saved for both random and deterministic coin placement for each seed"
+            )
         else:
             print(f"Analysis failed: {results['error']}")
             sys.exit(1)
