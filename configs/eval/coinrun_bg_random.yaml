@@ -11,8 +11,7 @@ wandb:
 
 # Evaluation settings
 evaluation:
-    procgen:
-        test_episodes: 5120
+    test_episodes: 5120
 
 eval:
     coverage_fraction: 0.05
