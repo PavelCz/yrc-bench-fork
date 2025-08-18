@@ -40,7 +40,7 @@ def main():
 
     evaluator = Evaluator(config.evaluation)
 
-    coverage_fraction = args.eval.coverage_fraction
+    coverage_fraction = config.evaluation.coverage_fraction
 
     if coverage_fraction < 0.01:
         raise ValueError("Coverage fraction must be at least 0.01")
