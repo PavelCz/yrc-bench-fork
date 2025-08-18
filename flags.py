@@ -153,7 +153,6 @@ def make():
             "The maximum gap allowed between consecutive points, as a fraction of the "
             "total range. Choose at least 0.01"
         ),
-        default=0.1
     )
 
     parser.add_argument(
@@ -161,7 +160,6 @@ def make():
         "--evaluation.test_episodes",
         type=int,
         help="number of test episodes for procgen",
-        default=256
     )
 
     parser.add_argument(
