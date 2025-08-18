@@ -12,13 +12,16 @@ coord_policy:
         cls: PPOPolicy
     ood:
         cls: OODPolicy
+        method: 'DeepSVDD'
+        feature_type: 'obs'
+        collect_data_agent: 'weak'
     lightning_ae:
         cls: LightningAEPolicy
     mahalanobis_ae:
         cls: MahalanobisAEPolicy
 coord_env:
     procgen:
-        strong_query_cost_ratio: 0.4
+        strong_query_cost_ratio: 0.0
         switch_agent_cost_ratio: 0.0
         act_greedy: False
     cliport:
