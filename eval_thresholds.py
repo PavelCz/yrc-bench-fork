@@ -9,10 +9,7 @@ import YRC.core.policy as policy_factory
 from YRC.core import Evaluator
 from YRC.core.configs.global_configs import get_global_variable
 
-from YRC.policies.lightning_ae import LightningAEPolicy
 from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
-from YRC.policies.ood import OODPolicy
-from YRC.policies.base import RandomPolicy
 
 from YRC.coverage.coverage_search import create_threshold_sampler
 
@@ -123,26 +120,6 @@ def main():
     end_time = time.time()
     print(f"Time taken: {end_time - start_time} seconds")
     print(f"Total evals: {total_evals}")
-
-
-def update_policy_params(policy, threshold):
-    if isinstance(policy, LightningAEPolicy) or isinstance(policy, OODPolicy):
-        policy.update_params({"threshold": threshold})
-    elif isinstance(policy, RandomPolicy):
-        if threshold == float("inf"):
-            # An infinite threshold means that the policy will never ask for help.
-            # We need to set the probability to 0.
-            threshold = 0.0
-        elif threshold == float("-inf"):
-            # A negative infinite threshold means that the policy will always ask for help.
-            # We need to set the probability to 1.
-            threshold = 1.0
-        policy.update_params(threshold)
-
-    else:
-        raise ValueError(
-            f"Policy type {type(policy)} currently not supported for threshold search"
-        )
 
 
 if __name__ == "__main__":

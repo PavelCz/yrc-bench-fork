@@ -9,7 +9,9 @@ from typing import Tuple, Any, Dict
 
 # Import the joint-coverage sampler from the external ACS library
 from acs import BinarySearchSampler
-
+from YRC.policies.ood import OODPolicy
+from YRC.policies.lightning_ae import LightningAEPolicy
+from YRC.policies.base import RandomPolicy
 
 def create_threshold_sampler(
     policy,
@@ -50,8 +52,7 @@ def create_threshold_sampler(
         return policy.train_percentile(100.0 - (p * 100.0))
 
     def _eval_with_threshold(threshold: float) -> Tuple[float, float, Dict[str, Any]]:
-        if hasattr(policy, "update_params"):
-            policy.update_params({"threshold": threshold})
+        update_policy_params(policy, threshold)
         summary = evaluator.eval(
             policy, envs, [split], logger=logger, threshold=threshold
         )
@@ -84,3 +85,23 @@ def create_threshold_sampler(
         num_bins=num_bins,
         # max_total_evals=max_total_evals,
     )
+
+
+def update_policy_params(policy, threshold):
+    if isinstance(policy, LightningAEPolicy) or isinstance(policy, OODPolicy):
+        policy.update_params({"threshold": threshold})
+    elif isinstance(policy, RandomPolicy):
+        if threshold == float("inf"):
+            # An infinite threshold means that the policy will never ask for help.
+            # We need to set the probability to 0.
+            threshold = 0.0
+        elif threshold == float("-inf"):
+            # A negative infinite threshold means that the policy will always ask for help.
+            # We need to set the probability to 1.
+            threshold = 1.0
+        policy.update_params(threshold)
+
+    else:
+        raise ValueError(
+            f"Policy type {type(policy)} currently not supported for threshold search"
+        )

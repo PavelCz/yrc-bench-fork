@@ -117,6 +117,36 @@
             }
         },
         {
+            "name": "Eval random",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/eval_thresholds.py",
+            "args": [
+                "-wandb_project",
+                "yrc-debug",
+                "-c",
+                "configs/eval/coinrun_bg_random.yaml",
+                "-n",
+                "debug_random_bg",
+                "-sim",
+                "YRC/checkpoints/procgen/coinrun/sim_weak/model_40009728.pth",
+                "-weak",
+                "YRC/checkpoints/procgen/coinrun/weak/model_80019456.pth",
+                "-strong",
+                "YRC/checkpoints/procgen/coinrun/strong/model_200015872.pth",
+                "-coverage_fraction",
+                "0.2",
+                "-test_episodes",
+                "64"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+            }
+        },
+        {
             "name": "Eval deep svdd",
             "type": "debugpy",
             "request": "launch",
