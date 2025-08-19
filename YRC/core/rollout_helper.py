@@ -24,22 +24,6 @@ class RolloutHelper:
         return_list=False,
     ) -> Union[torch.Tensor, List[torch.Tensor]]:
         """
-        Gather rollouts from the environment. Returns a tuple of a list of observations
-        and a list of hidden features.
-        """
-        pass
-
-
-    # For reference. Might be useful to look into, if we want to support other feature
-    # types.
-    def old_gather_rollouts(
-        self,
-        env,
-        num_rollouts: int,
-        gather_all=False,
-        return_list=False,
-    ) -> Union[torch.Tensor, List[torch.Tensor]]:
-        """
         Gathers rollouts from the environment.
 
         Args:
