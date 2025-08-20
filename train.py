@@ -10,6 +10,8 @@ from pytorch_lightning.loggers import WandbLogger
 from YRC.core.configs.global_configs import get_global_variable
 from pathlib import Path
 from YRC.core.configs import ConfigDict
+from typing import List
+import torch
 
 # Algorithms that support training without threshold search.
 ALGORITHMS = ["ood", "lightning_ae"]
@@ -29,6 +31,23 @@ def main():
         output_dir = experiment_dir.parent
         rollout_dir = output_dir / config.training.rollout_dir
         rollout_obs = load_rollouts_from_file(rollout_dir, config)
+
+    ae_inputs: List[torch.Tensor]
+    if config.coord_policy.feature_type == "obs":
+        ae_inputs = rollout_obs
+    elif config.coord_policy.feature_type == "hidden":
+        ae_inputs = []
+        # Query weak agent to get hidden features from observations.
+        weak_agent = envs["train"].weak_agent
+        weak_agent.eval()
+        for obs in rollout_obs:
+            obs = obs.to(weak_agent.model.device).unsqueeze(0)
+            hidden_features = weak_agent.get_hidden(obs).detach().cpu()
+            ae_inputs.append(hidden_features)
+    else:
+        raise ValueError(
+            f"Feature type {config.coord_policy.feature_type} currently not supported"
+        )
 
     if hasattr(policy, "logger"):
 
@@ -64,7 +83,7 @@ def main():
     algorithm.train(
         policy=policy,
         envs=envs,
-        rollout_obs=rollout_obs,
+        rollout_obs=ae_inputs,
         evaluator=evaluator,
         train_split="train",
         eval_splits=["val_sim", "val_true"],

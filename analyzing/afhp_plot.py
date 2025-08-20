@@ -10,8 +10,7 @@ base_path = Path("/home/pavel/data/goal-misgen/tmp")
 
 eval_path = base_path / "26-5000" 
 
-evals = []
-names = []
+evals = {} 
 
 for child in eval_path.iterdir():
     if child.is_dir():
@@ -20,16 +19,28 @@ for child in eval_path.iterdir():
             for grandchild in (child / "eval_runs").iterdir():
                 for grandgrandchild in grandchild.iterdir():
                     if grandgrandchild.is_file() and grandgrandchild.suffix == ".npz":
-                        evals.append(grandgrandchild)
-                        names.append(method_name)
+                        evals[method_name] = grandgrandchild
 
 # Collect first and last performance values for all curves
 first_performances = []
 last_performances = []
 
-for name, eval in zip(names, evals):
+name_map = {
+    "latent-svdd": "Latent SVDD",
+    "random": "Random",
+    "patient-ae": "Autoencoder",
+    "center-focused": "Center-focused AE",
+    "deep-svdd": "DeepSVDD",
+}
 
-    data_path = eval
+all = False
+if all:
+    name_order = list(evals.keys())
+else:
+    name_order = ["random", "deep-svdd", "patient-ae", "center-focused", "latent-svdd"]
+
+for name in name_order:
+    data_path = evals[name]
 
     eval_data = np.load(data_path, allow_pickle=True)
 
@@ -40,8 +51,13 @@ for name, eval in zip(names, evals):
     # Store first and last performance values
     first_performances.append(performances[0])
     last_performances.append(performances[-1])
+
+    if name in name_map:
+        label = name_map[name]
+    else:
+        label = name
     
-    sns.lineplot(x=afhps, y=performances, label=name, marker="o")
+    sns.lineplot(x=afhps, y=performances, label=label, marker="o")
 
 # Calculate means
 mean_first_performance = np.mean(first_performances)
