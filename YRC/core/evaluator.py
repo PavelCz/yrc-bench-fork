@@ -293,14 +293,17 @@ class Evaluator:
                     episode_log["episode_length"][i] = 0
                     episode_log[f"action_{self.LOGGED_ACTION}"][i] = 0
 
-                if not has_done[i]:
+                # Since has done is changed below, we also need to check done here.
+                # Since done will not stay True, because the env is reset at the end,
+                # we can't just only check done.
+                if not has_done[i] and not done[i]:
                     self.collected_states[i].append({
                         "obs": prev_obs["env_obs"][i],
                         "scores": scores[i],
                         "recons": recons[i],
                         "action": action[i],
                     })
-                prev_obs = obs
+            prev_obs = obs
 
             has_done |= done
 
