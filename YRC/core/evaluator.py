@@ -103,6 +103,11 @@ class Evaluator:
         combined_vid = combined_vid * 255
         combined_vid = combined_vid.astype(np.uint8)
 
+        # Repeat the final frame for 1 second (10 frames at 10 fps)
+        final_frame = combined_vid[-1:].copy()  # Get the last frame
+        repeated_frames = np.repeat(final_frame, 10, axis=0)  # Repeat 10 times
+        combined_vid = np.concatenate([combined_vid, repeated_frames], axis=0)
+
         use_score_bars = scores[0] is not None
 
         if use_score_bars:
