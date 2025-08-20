@@ -130,81 +130,87 @@ class Evaluator:
             
             # Add score bars for each frame
             for t in range(time_steps):
+                # Get current score and action, handling repeated frames
                 if t < len(scores):
                     current_score = scores[t]
-                    
-                    # Normalize score to 0-1 range
-                    if score_max > score_min:
-                        normalized_score = (current_score - score_min) / (score_max - score_min)
-                    else:
-                        normalized_score = 0.5
-                    
-                    # Calculate bar width (as fraction of total width)
-                    bar_width = int(normalized_score * width)
-                    
-                    # Create score bar (green by default, red if action is 1)
-                    if t < len(actions) and actions[t] == 1:
-                        # Red for action = 1 (OOD detected)
-                        bar_color = [255, 0, 0]  # Red
-                    else:
-                        # Green for action = 0 (normal)
-                        bar_color = [0, 255, 0]  # Green
-                    
-                    # Fill the bar area
-                    if bar_width > 0:
-                        vid_with_bars[t, :, :bar_height, :bar_width] = np.array(bar_color)[:, np.newaxis, np.newaxis]
-                    
-                    # Add background for remaining part of bar (dark gray)
-                    if bar_width < width:
-                        vid_with_bars[t, :, :bar_height, bar_width:] = 64  # Dark gray
-                    
-                    # Add text overlay with score value
-                    # Convert the current frame to PIL Image for text rendering
-                    frame = vid_with_bars[t].transpose(1, 2, 0)  # Convert from (C, H, W) to (H, W, C)
-                    pil_image = Image.fromarray(frame, mode="RGB")
-                    draw = ImageDraw.Draw(pil_image)
-                    
-                    # Try to use a small font, fall back to default if not available
+                    current_action = actions[t] if t < len(actions) else 0
+                else:
+                    # For repeated frames, use the last values
+                    current_score = scores[-1] if scores else 0.0
+                    current_action = actions[-1] if actions else 0
+                
+                # Normalize score to 0-1 range
+                if score_max > score_min:
+                    normalized_score = (current_score - score_min) / (score_max - score_min)
+                else:
+                    normalized_score = 0.5
+                
+                # Calculate bar width (as fraction of total width)
+                bar_width = int(normalized_score * width)
+                
+                # Create score bar (green by default, red if action is 1)
+                if current_action == 1:
+                    # Red for action = 1 (OOD detected)
+                    bar_color = [255, 0, 0]  # Red
+                else:
+                    # Green for action = 0 (normal)
+                    bar_color = [0, 255, 0]  # Green
+                
+                # Fill the bar area
+                if bar_width > 0:
+                    vid_with_bars[t, :, :bar_height, :bar_width] = np.array(bar_color)[:, np.newaxis, np.newaxis]
+                
+                # Add background for remaining part of bar (dark gray)
+                if bar_width < width:
+                    vid_with_bars[t, :, :bar_height, bar_width:] = 64  # Dark gray
+                
+                # Add text overlay with score value
+                # Convert the current frame to PIL Image for text rendering
+                frame = vid_with_bars[t].transpose(1, 2, 0)  # Convert from (C, H, W) to (H, W, C)
+                pil_image = Image.fromarray(frame, mode="RGB")
+                draw = ImageDraw.Draw(pil_image)
+                
+                # Try to use a small font, fall back to default if not available
+                try:
+                    font = ImageFont.truetype("arial.ttf", 12)
+                except:
                     try:
-                        font = ImageFont.truetype("arial.ttf", 12)
+                        font = ImageFont.load_default()
                     except:
-                        try:
-                            font = ImageFont.load_default()
-                        except:
-                            font = None
-                    
-                    # Format score text
-                    score_text = f"{current_score:.3f}"
-                    
-                    # Calculate text position (fixed location)
-                    if font:
-                        text_bbox = draw.textbbox((0, 0), score_text, font=font)
-                        text_width = text_bbox[2] - text_bbox[0]
-                        text_height = text_bbox[3] - text_bbox[1]
-                    else:
-                        text_width = len(score_text) * 6  # Rough estimate
-                        text_height = 11
-                    
-                    # Fixed position: left side of the bar with small padding
-                    text_x = 5
-                    text_y = (bar_height - text_height) // 2
-                    
-                    # Draw text with white color and black outline for better visibility
-                    if font:
-                        # Black outline
-                        for dx in [-1, 0, 1]:
-                            for dy in [-1, 0, 1]:
-                                if dx != 0 or dy != 0:
-                                    draw.text((text_x + dx, text_y + dy), score_text, fill=(0, 0, 0), font=font)
-                        # White text
-                        draw.text((text_x, text_y), score_text, fill=(255, 255, 255), font=font)
-                    else:
-                        # Fallback without font
-                        draw.text((text_x, text_y), score_text, fill=(255, 255, 255))
-                    
-                    # Convert back to numpy array
-                    frame_with_text = np.array(pil_image).transpose(2, 0, 1)  # Convert back to (C, H, W)
-                    vid_with_bars[t] = frame_with_text
+                        font = None
+                
+                # Format score text
+                score_text = f"{current_score:.3f}"
+                
+                # Calculate text position (fixed location)
+                if font:
+                    text_bbox = draw.textbbox((0, 0), score_text, font=font)
+                    text_width = text_bbox[2] - text_bbox[0]
+                    text_height = text_bbox[3] - text_bbox[1]
+                else:
+                    text_width = len(score_text) * 6  # Rough estimate
+                    text_height = 11
+                
+                # Fixed position: left side of the bar with small padding
+                text_x = 5
+                text_y = (bar_height - text_height) // 2
+                
+                # Draw text with white color and black outline for better visibility
+                if font:
+                    # Black outline
+                    for dx in [-1, 0, 1]:
+                        for dy in [-1, 0, 1]:
+                            if dx != 0 or dy != 0:
+                                draw.text((text_x + dx, text_y + dy), score_text, fill=(0, 0, 0), font=font)
+                    # White text
+                    draw.text((text_x, text_y), score_text, fill=(255, 255, 255), font=font)
+                else:
+                    # Fallback without font
+                    draw.text((text_x, text_y), score_text, fill=(255, 255, 255))
+                
+                # Convert back to numpy array
+                frame_with_text = np.array(pil_image).transpose(2, 0, 1)  # Convert back to (C, H, W)
+                vid_with_bars[t] = frame_with_text
             
             combined_vid = vid_with_bars
 
