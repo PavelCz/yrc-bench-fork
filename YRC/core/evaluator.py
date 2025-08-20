@@ -71,7 +71,7 @@ class Evaluator:
         obs = [x["obs"] for x in self.collected_states[i]]
         scores = [x["scores"] for x in self.collected_states[i]]
         recons = [x["recons"] for x in self.collected_states[i]]
-        action = [x["action"] for x in self.collected_states[i]]
+        actions = [x["action"] for x in self.collected_states[i]]
 
         # We determine whether our OOD detector uses reconstructions by checking
         # whether the first element of the first reconstruction is None.
@@ -143,7 +143,7 @@ class Evaluator:
                     bar_width = int(normalized_score * width)
                     
                     # Create score bar (green by default, red if action is 1)
-                    if t < len(action) and action[t] == 1:
+                    if t < len(actions) and actions[t] == 1:
                         # Red for action = 1 (OOD detected)
                         bar_color = [255, 0, 0]  # Red
                     else:
