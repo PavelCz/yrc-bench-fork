@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-from typing import Optional
+from typing import Optional, List, Dict
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 from PIL import Image, ImageDraw, ImageFont
@@ -26,7 +26,7 @@ class Evaluator:
         policy.eval()
 
         self.collected_actions_done = False
-        self.collected_states = []
+        self.collected_states: List[List[Dict]] = []
 
         summary = {}
         for split in eval_splits:
@@ -37,6 +37,10 @@ class Evaluator:
                     assert "test" in split
                     num_episodes = args.test_episodes
                 assert num_episodes % envs[split].num_envs == 0
+            
+            self.collected_states = []
+            for i in range(envs[split].num_envs):
+                self.collected_states.append([])
 
             logging.info(f"Evaluation on {split} for {num_episodes} episodes")
 
@@ -47,13 +51,14 @@ class Evaluator:
 
             envs[split].close()
 
-        if logger is not None:
-            afhp = summary[split]["action_1_frac"]
-            self._log_evaluation_video(logger, threshold, afhp)
+            if logger is not None:
+                afhp = summary[split]["action_1_frac"]
+                for i in range(len(self.collected_states)):
+                    self._log_evaluation_video(logger, threshold, afhp, i)
 
         return summary
 
-    def _log_evaluation_video(self, logger: WandbLogger, threshold: float, afhp: float) -> None:
+    def _log_evaluation_video(self, logger: WandbLogger, threshold: float, afhp: float, i: int) -> None:
         """
         Generate and log evaluation video with score bars to wandb.
         
@@ -61,10 +66,10 @@ class Evaluator:
             logger: WandbLogger instance for logging
             threshold: Threshold value for the video caption
         """
-        obs = [x["obs"] for x in self.collected_states]
-        scores = [x["scores"] for x in self.collected_states]
-        recons = [x["recons"] for x in self.collected_states]
-        action = [x["action"] for x in self.collected_states]
+        obs = [x["obs"] for x in self.collected_states[i]]
+        scores = [x["scores"] for x in self.collected_states[i]]
+        recons = [x["recons"] for x in self.collected_states[i]]
+        action = [x["action"] for x in self.collected_states[i]]
 
         # We determine whether our OOD detector uses reconstructions by checking
         # whether the first element of the first reconstruction is None.
@@ -207,20 +212,20 @@ class Evaluator:
         if use_score_bars:
             caption += f" - Top bar: Score with values (Green=Normal, Red=OOD, Range: {score_min:.3f}-{score_max:.3f})"
             
-        # We want to log separate videos and not in a batch.
-        for i in range(combined_vid.shape[0]):
+        # # We want to log separate videos and not in a batch.
+        # for i in range(combined_vid.shape[0]):
 
-            logger.experiment.log(
-                {
-                    f"eval_episode_{afhp:.2f}": wandb.Video(
-                        # (batch dim, time dim, c, h, w)
-                        combined_vid[i],
-                        fps=10,
-                        format="gif",
-                        caption=caption,
-                    ),
-                }
-            )
+        logger.experiment.log(
+            {
+                f"eval_episode_{afhp:.2f}": wandb.Video(
+                    # (batch dim, time dim, c, h, w)
+                    combined_vid[i],
+                    fps=10,
+                    format="gif",
+                    caption=caption,
+                ),
+            }
+        )
 
     def _eval_loop(self, policy, env, max_episodes: int) -> dict:
         args = self.args
@@ -255,13 +260,13 @@ class Evaluator:
                 obs, greedy=args.act_greedy, return_scores_and_recons=True
             )
 
-            if not all(has_done):
-                self.collected_states.append({
-                    "obs": obs["env_obs"],
-                    "scores": scores,
-                    "recons": recons,
-                    "action": action,
-                })
+            # if not all(has_done):
+            #     self.collected_states.append({
+            #         "obs": obs["env_obs"],
+            #         "scores": scores,
+            #         "recons": recons,
+            #         "action": action,
+            #     })
 
             obs, reward, done, info = env.step(action)
 
@@ -285,6 +290,14 @@ class Evaluator:
                     episode_log["env_reward"][i] = 0
                     episode_log["episode_length"][i] = 0
                     episode_log[f"action_{self.LOGGED_ACTION}"][i] = 0
+
+                if not has_done[i]:
+                    self.collected_states[i].append({
+                        "obs": obs["env_obs"],
+                        "scores": scores,
+                        "recons": recons,
+                        "action": action,
+                    })
 
             has_done |= done
 
