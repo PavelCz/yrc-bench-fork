@@ -147,7 +147,7 @@ def make():
     # Additional flags for evaluation.
     parser.add_argument(
         "-coverage_fraction", 
-        "--eval.coverage_fraction", 
+        "--evaluation.coverage_fraction", 
         type=float,
         help=(
             "The maximum gap allowed between consecutive points, as a fraction of the "
