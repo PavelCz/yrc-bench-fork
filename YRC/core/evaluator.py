@@ -207,17 +207,20 @@ class Evaluator:
         if use_score_bars:
             caption += f" - Top bar: Score with values (Green=Normal, Red=OOD, Range: {score_min:.3f}-{score_max:.3f})"
             
-        logger.experiment.log(
-            {
-                f"eval_episode_{afhp:.2f}": wandb.Video(
-                    # (batch dim, time dim, c, h, w)
-                    combined_vid,
-                    fps=10,
-                    format="gif",
-                    caption=caption,
-                ),
-            }
-        )
+        # We want to log separate videos and not in a batch.
+        for i in range(combined_vid.shape[0]):
+
+            logger.experiment.log(
+                {
+                    f"eval_episode_{afhp:.2f}": wandb.Video(
+                        # (batch dim, time dim, c, h, w)
+                        combined_vid[i],
+                        fps=10,
+                        format="gif",
+                        caption=caption,
+                    ),
+                }
+            )
 
     def _eval_loop(self, policy, env, max_episodes: int) -> dict:
         args = self.args

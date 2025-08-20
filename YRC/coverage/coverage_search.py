@@ -12,10 +12,12 @@ from acs import BinarySearchSampler
 from YRC.policies.ood import OODPolicy
 from YRC.policies.lightning_ae import LightningAEPolicy
 from YRC.policies.base import RandomPolicy
+from YRC.core import Evaluator
+
 
 def create_threshold_sampler(
     policy,
-    evaluator,
+    evaluator: Evaluator,
     envs,
     split: str,
     *,
