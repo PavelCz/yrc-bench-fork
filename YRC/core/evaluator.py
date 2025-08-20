@@ -296,7 +296,7 @@ class Evaluator:
                 # Since has done is changed below, we also need to check done here.
                 # Since done will not stay True, because the env is reset at the end,
                 # we can't just only check done.
-                if not has_done[i] and not done[i]:
+                if not has_done[i] and not done[i] and not self.collected_actions_done:
                     self.collected_states[i].append({
                         "obs": prev_obs["env_obs"][i],
                         "scores": scores[i],
@@ -306,6 +306,9 @@ class Evaluator:
             prev_obs = obs
 
             has_done |= done
+
+            if all(has_done):
+                self.collected_actions_done = True
 
         return log
 
