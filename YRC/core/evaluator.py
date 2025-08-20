@@ -246,6 +246,7 @@ class Evaluator:
         }
 
         obs = env.reset()
+        prev_obs = obs
 
         # This tracks the very first done and is only used to determine whether to keep
         # collecting observations that are later used to generate the video.
@@ -293,11 +294,12 @@ class Evaluator:
 
                 if not has_done[i]:
                     self.collected_states[i].append({
-                        "obs": obs["env_obs"],
+                        "obs": prev_obs["env_obs"],
                         "scores": scores,
                         "recons": recons,
                         "action": action,
                     })
+                prev_obs = obs
 
             has_done |= done
 
