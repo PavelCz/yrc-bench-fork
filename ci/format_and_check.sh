@@ -10,6 +10,7 @@ SRC_FILES=(
     "eval_thresholds.py"
     "YRC/policies/mahalanobis_ae.py"
     "analyzing/coinrun_counterfactual_analysis.py"
+    "analyzing/plot_policy_training_curves.py"
 )
 EXCLUDED_FILES=("")
 
