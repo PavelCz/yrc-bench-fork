@@ -308,10 +308,15 @@ class Evaluator:
                 # Since done will not stay True, because the env is reset at the end,
                 # we can't just only check done.
                 if not has_done[i] and not done[i] and not self.collected_actions_done:
+
+                    # Recons is None for non reconstruction-based OOD detectors like 
+                    # Deep-SVDD.
+                    recons_i = recons[i] if recons is not None else None
+
                     self.collected_states[i].append({
                         "obs": prev_obs["env_obs"][i],
                         "scores": scores[i],
-                        "recons": recons[i],
+                        "recons": recons_i,
                         "action": action[i],
                     })
             prev_obs = obs
