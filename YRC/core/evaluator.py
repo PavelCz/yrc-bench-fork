@@ -312,10 +312,13 @@ class Evaluator:
                     # Recons is None for non reconstruction-based OOD detectors like 
                     # Deep-SVDD.
                     recons_i = recons[i] if recons is not None else None
+                    
+                    # Some OOD detectors, like the random one, don't assign scores.
+                    scores_i = scores[i] if scores is not None else None
 
                     self.collected_states[i].append({
                         "obs": prev_obs["env_obs"][i],
-                        "scores": scores[i],
+                        "scores": scores_i,
                         "recons": recons_i,
                         "action": action[i],
                     })

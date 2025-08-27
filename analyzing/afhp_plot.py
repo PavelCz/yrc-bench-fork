@@ -14,7 +14,9 @@ def plot_afhp(name_order=None):
         name_order: List of method names to plot in order. If None, uses all available names.
     """
     base_path = Path("/home/pavel/data/goal-misgen/tmp")
-    eval_path = base_path / "26-5000" 
+    eval_path = base_path / "27-easy-policy" 
+
+    prefix_filter = "24-easy-policy"
 
     evals = {} 
 
@@ -24,7 +26,11 @@ def plot_afhp(name_order=None):
             if (child / "eval_runs").exists():
                 for grandchild in (child / "eval_runs").iterdir():
                     for grandgrandchild in grandchild.iterdir():
-                        if grandgrandchild.is_file() and grandgrandchild.suffix == ".npz":
+                        if (
+                            grandgrandchild.is_file() and 
+                            grandgrandchild.suffix == ".npz" and 
+                            grandchild.stem.startswith(f"eval-{prefix_filter}")
+                        ):
                             evals[method_name] = grandgrandchild
 
     # Collect first and last performance values for all curves
@@ -84,7 +90,10 @@ def plot_afhp(name_order=None):
     plt.ylabel("Mean return")
     plt.title("Mean return vs. ask for help percentage")
     plt.legend()
+    plt.savefig("afhp_plot.png", dpi=300, bbox_inches="tight")
     plt.show()
+
+
 
 def main():
     parser = argparse.ArgumentParser(description='Plot AFHP (Ask for Help Percentage) vs performance')
