@@ -3,7 +3,7 @@ import json
 import numpy as np
 from collections import defaultdict
 from metric import compute_metric
-from constants import ENVS, METHODS
+from analyzing.yrc_bench.constants import ENVS, METHODS
 
 
 with open("./raw_results.json") as f:

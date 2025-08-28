@@ -1,7 +1,7 @@
 import os
 import json
 from collections import defaultdict
-from constants import METHODS, ENVS, METHOD_NAME_MAP
+from analyzing.yrc_bench.constants import METHODS, ENVS, METHOD_NAME_MAP
 from pprint import pprint
 
 import matplotlib.pyplot as plt
