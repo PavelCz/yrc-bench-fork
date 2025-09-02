@@ -59,7 +59,7 @@ def create_threshold_sampler(
             policy, envs, [split], logger=logger, threshold=threshold
         )
         afhp = summary[split]["action_1_frac"] * 100.0
-        performance = float(summary[split]["env_reward_mean"])  # Y-axis
+        performance = float(summary[split]["env_return_mean"])  # Y-axis
         return afhp, performance, {"summary": summary, "threshold": threshold}
 
     def eval_at_percentile(p: float) -> Tuple[float, float, Dict[str, Any]]:
