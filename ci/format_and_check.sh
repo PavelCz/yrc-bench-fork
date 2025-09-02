@@ -25,4 +25,4 @@ ruff format "${SRC_FILES[@]}" --exclude "${EXCLUDED_FILES[@]}"
 # Run ruff as linter (flake8-ish).
 ruff check "${SRC_FILES[@]}" --exclude "${EXCLUDED_FILES[@]}"
 # Run pytype with suppressed debug logging
-pytype "${SRC_FILES[@]}" --exclude "${EXCLUDED_FILES[@]}" --verbosity=0 2>/dev/null
+pytype "${SRC_FILES[@]}" --exclude "${EXCLUDED_FILES[@]}"

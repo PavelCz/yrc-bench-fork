@@ -206,6 +206,8 @@ webencodings==0.5.1
 werkzeug==3.0.3
 wrapt==1.11.2
 zipp==3.18.1
+seaborn==0.13.2
+types-seaborn==0.13.2.20250809
 
 --index-url https://download.pytorch.org/whl/cu121
 torch==2.1.2

@@ -2,7 +2,7 @@ from pathlib import Path
 import argparse
 
 import numpy as np
-import seaborn as sns
+import seaborn as sns  # type: ignore
 import matplotlib.pyplot as plt
 
 
