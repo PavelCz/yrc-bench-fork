@@ -163,6 +163,13 @@ def make():
     )
 
     parser.add_argument(
+        "-defer_to_oracle",
+        "--evaluation.defer_to_oracle",
+        action="store_true",
+        help="defer to oracle for evaluation",
+    )
+
+    parser.add_argument(
         "-eval_run_name",
         "--eval_run_name",
         type=str,
