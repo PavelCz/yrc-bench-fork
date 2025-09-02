@@ -2,7 +2,6 @@ from pathlib import Path
 import argparse
 
 import numpy as np
-import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
@@ -68,14 +67,14 @@ def plot_afhp(name_order=None):
         color="red",
         linestyle="--",
         alpha=0.7,
-        label=f"Weak Agent",
+        label="Weak Agent",
     )
     plt.axhline(
         y=mean_last_performance,
         color="blue",
         linestyle="--",
         alpha=0.7,
-        label=f"Oracle",
+        label="Oracle",
     )
 
     plt.xlabel("Ask for help percentage")
