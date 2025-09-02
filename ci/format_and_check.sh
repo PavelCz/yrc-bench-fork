@@ -8,7 +8,7 @@ SRC_FILES=(
     "YRC/core/dataset.py"
     "YRC/core/rollout_helper.py"
     "YRC/core/evaluator.py"
-    "eval.py"
+    "eval_afhp.py"
     "YRC/policies/mahalanobis_ae.py"
     "analyzing/coinrun_counterfactual_analysis.py"
     "analyzing/plot_policy_training_curves.py"
