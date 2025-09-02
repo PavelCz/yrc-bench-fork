@@ -13,6 +13,7 @@ SRC_FILES=(
     "analyzing/coinrun_counterfactual_analysis.py"
     "analyzing/plot_policy_training_curves.py"
     "analyzing/afhp_plot.py"
+    "analyzing/utils.py"
     "flags.py"
 )
 EXCLUDED_FILES=("")
