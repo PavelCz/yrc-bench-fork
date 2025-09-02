@@ -84,8 +84,6 @@ class CoinrunCounterfactualAnalyzer:
         )
         self.logger = logging.getLogger(__name__)
 
-
-
     def load_weak_agent(self, env):
         """Load the weak agent policy."""
         self.logger.info(f"Loading weak agent from {self.weak_agent_path}")
