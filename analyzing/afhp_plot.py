@@ -87,9 +87,10 @@ def plot_afhp(name_order=None):
 
 def extract_results():
     base_path = Path("/home/pavel/data/goal-misgen/tmp")
-    eval_path = base_path / "27-easy-policy"
+    eval_path = base_path / "28-defer-to-oracle"
 
-    prefix_filter = "24-easy-policy"
+    # prefix_filter = "24-easy-policy"
+    prefix_filter = None
 
     evals = {}
 
@@ -102,9 +103,10 @@ def extract_results():
                         if (
                             grandgrandchild.is_file()
                             and grandgrandchild.suffix == ".npz"
-                            and grandchild.stem.startswith(f"eval-{prefix_filter}")
                         ):
-                            evals[method_name] = grandgrandchild
+                            if prefix_filter is None or grandchild.stem.startswith(f"eval-{prefix_filter}"):
+
+                                evals[method_name] = grandgrandchild
     return evals
 
 
