@@ -389,6 +389,8 @@ class Evaluator:
 
     def summarize(self, log):
         total_steps = int(sum(log["episode_length"]))
+        ood_pred_percentage = float(np.mean(log["level_ood_pred"]))
+        ood_accuracy = float(np.mean(log["level_ood_pred"] == log["level_ood_gt"]))
         return {
             "steps": total_steps,
             "episode_length_mean": float(np.mean(log["episode_length"])),
@@ -402,6 +404,8 @@ class Evaluator:
             f"action_{self.LOGGED_ACTION}_frac": float(
                 sum(log[f"action_{self.LOGGED_ACTION}"]) / total_steps
             ),
+            "ood_pred_percentage": ood_pred_percentage,
+            "ood_accuracy": ood_accuracy,
         }
 
     def write_summary(self, split, summary):
@@ -417,6 +421,8 @@ class Evaluator:
         log_str += f"mean {summary['env_return_mean']:.2f} "
         log_str += f"± {(1.96 * summary['env_return_std']) / (len(summary['raw_returns']) ** 0.5):.2f}\n"
         log_str += f"   Action {self.LOGGED_ACTION} fraction: {summary[f'action_{self.LOGGED_ACTION}_frac']:7.2f}\n"
+        log_str += f"   OOD Pred Percentage: {summary['ood_pred_percentage']:7.2f}\n"
+        log_str += f"   OOD Accuracy: {summary['ood_accuracy']:7.2f}\n"
         log_str += "   Raw Rewards: "
         for r in summary["raw_returns"]:
             log_str += f"{r:.2f},"
