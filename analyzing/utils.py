@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 import os
 from pathlib import Path
-from typing import Callable, List, Optional, Dict, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -70,8 +70,9 @@ def create_env(random_percent: int = 100, start_level: int = 0, num_levels: int 
 
 def plot_afhp(
     name_order: Optional[List[str]],
-    extract_results_fn: Callable[[], Dict[str, Path]],
     extract_x_and_y_values_fn: Callable[[np.ndarray], Tuple[np.ndarray, np.ndarray]],
+    eval_file_dir: Path,
+    prefix_filter: Optional[str],
 ):
     """
     Plot AFHP (Ask for Help Percentage) vs performance.
@@ -80,7 +81,7 @@ def plot_afhp(
         name_order: List of method names to plot in order. If None, uses all available
         names.
     """
-    results = extract_results_fn()
+    results = extract_results(eval_file_dir, prefix_filter)
 
     # Collect first and last performance values for all curves
     first_performances = []
@@ -153,7 +154,6 @@ def plot_afhp(
 
 
 def eval_result_plotter(
-    extract_results_fn: Callable[[], Dict[str, Path]],
     extract_x_and_y_values_fn: Callable[[np.ndarray], Tuple[np.ndarray, np.ndarray]],
 ):
     parser = argparse.ArgumentParser(
@@ -170,7 +170,23 @@ def eval_result_plotter(
         ),
     )  # type: ignore[arg-type]
 
+    parser.add_argument(
+        "--eval_file_dir",
+        type=str,
+        help="Directory containing the evaluation files.",
+    )
+
+    parser.add_argument(
+        "--prefix_filter",
+        default=None,
+        type=str,
+        help="Prefix filter for the evaluation files.",
+    )
+
     args = parser.parse_args()
+
+    eval_file_dir = Path(args.eval_file_dir)
+    prefix_filter = args.prefix_filter
 
     # Parse name_order if provided
     name_order = None
@@ -180,4 +196,31 @@ def eval_result_plotter(
     else:
         print("Using all available method names")
 
-    plot_afhp(name_order, extract_results_fn, extract_x_and_y_values_fn)
+    plot_afhp(
+        name_order,
+        extract_x_and_y_values_fn,
+        eval_file_dir,
+        prefix_filter,
+    )
+
+
+def extract_results(
+    eval_file_dir: Path, prefix_filter: Optional[str]
+) -> dict[str, Path]:
+    evals = {}
+
+    for child in eval_file_dir.iterdir():
+        if child.is_dir():
+            method_name = child.name
+            if (child / "eval_runs").exists():
+                for grandchild in (child / "eval_runs").iterdir():
+                    for grandgrandchild in grandchild.iterdir():
+                        if (
+                            grandgrandchild.is_file()
+                            and grandgrandchild.suffix == ".npz"
+                        ):
+                            if prefix_filter is None or grandchild.stem.startswith(
+                                f"{prefix_filter}"
+                            ):
+                                evals[method_name] = grandgrandchild
+    return evals
