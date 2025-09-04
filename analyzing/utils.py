@@ -73,6 +73,7 @@ def plot_afhp(
     extract_x_and_y_values_fn: Callable[[np.ndarray], Tuple[np.ndarray, np.ndarray]],
     eval_file_dir: Path,
     prefix_filter: Optional[str],
+    x_label: str,
 ):
     """
     Plot AFHP (Ask for Help Percentage) vs performance.
@@ -145,7 +146,7 @@ def plot_afhp(
         label="Oracle",
     )
 
-    plt.xlabel("Ask for help percentage")
+    plt.xlabel(x_label)
     plt.ylabel("Mean return")
     plt.title("Mean return vs. ask for help percentage")
     plt.legend()
@@ -155,6 +156,7 @@ def plot_afhp(
 
 def eval_result_plotter(
     extract_x_and_y_values_fn: Callable[[np.ndarray], Tuple[np.ndarray, np.ndarray]],
+    x_label: str,
 ):
     parser = argparse.ArgumentParser(
         description="Plot AFHP (Ask for Help Percentage) vs performance"
@@ -201,6 +203,7 @@ def eval_result_plotter(
         extract_x_and_y_values_fn,
         eval_file_dir,
         prefix_filter,
+        x_label,
     )
 
 

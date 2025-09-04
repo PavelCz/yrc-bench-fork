@@ -13,4 +13,4 @@ def extract_x_and_y_values(data) -> tuple[np.ndarray, np.ndarray]:
 
 
 if __name__ == "__main__":
-    eval_result_plotter(extract_x_and_y_values)
+    eval_result_plotter(extract_x_and_y_values, "Ask for Help Percentage")
