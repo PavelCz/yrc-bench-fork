@@ -74,6 +74,8 @@ def plot_afhp(
     eval_file_dir: Path,
     prefix_filter: Optional[str],
     x_label: str,
+    x_data_key: str,
+    y_data_key: str,
 ):
     """
     Plot AFHP (Ask for Help Percentage) vs performance.
@@ -111,7 +113,7 @@ def plot_afhp(
         data_path = results[name]
 
         eval_data = np.load(data_path, allow_pickle=True)
-        x, y = extract_x_and_y_values_fn(eval_data)
+        x, y = extract_x_and_y_values_fn(eval_data, x_data_key, y_data_key)
 
         # desired_percentiles = eval_data["desired_percentiles"]
 
@@ -146,8 +148,8 @@ def plot_afhp(
         label="Oracle",
     )
 
-    plt.xlabel(x_label)
-    plt.ylabel("Mean return")
+    plt.xlabel(x_data_key)
+    plt.ylabel(y_data_key)
     plt.title("Mean return vs. ask for help percentage")
     plt.legend()
     # plt.savefig("afhp_plot.png", dpi=300, bbox_inches="tight")
@@ -185,10 +187,24 @@ def eval_result_plotter(
         help="Prefix filter for the evaluation files.",
     )
 
+    parser.add_argument(
+        "--x_data_key",
+        type=str,
+        help="Key for the x data.",
+    )
+
+    parser.add_argument(
+        "--y_data_key",
+        type=str,
+        help="Key for the y data.",
+    )
+
     args = parser.parse_args()
 
     eval_file_dir = Path(args.eval_file_dir)
     prefix_filter = args.prefix_filter
+    x_data_key = args.x_data_key
+    y_data_key = args.y_data_key
 
     # Parse name_order if provided
     name_order = None
@@ -204,6 +220,8 @@ def eval_result_plotter(
         eval_file_dir,
         prefix_filter,
         x_label,
+        x_data_key,
+        y_data_key,
     )
 
 
