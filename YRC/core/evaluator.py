@@ -406,6 +406,8 @@ class Evaluator:
             ),
             "ood_pred_percentage": ood_pred_percentage,
             "ood_accuracy": ood_accuracy,
+            "level_ood_gt": log["level_ood_gt"],
+            "level_ood_pred": log["level_ood_pred"],
         }
 
     def write_summary(self, split, summary):
