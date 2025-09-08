@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 import os
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -70,10 +70,8 @@ def create_env(random_percent: int = 100, start_level: int = 0, num_levels: int 
 
 def plot_afhp(
     name_order: Optional[List[str]],
-    extract_x_and_y_values_fn: Callable[[np.ndarray], Tuple[np.ndarray, np.ndarray]],
     eval_file_dir: Path,
     prefix_filter: Optional[str],
-    x_label: str,
     x_data_key: str,
     y_data_key: str,
 ):
@@ -113,7 +111,7 @@ def plot_afhp(
         data_path = results[name]
 
         eval_data = np.load(data_path, allow_pickle=True)
-        x, y = extract_x_and_y_values_fn(eval_data, x_data_key, y_data_key)
+        x, y = extract_x_and_y_values(eval_data, x_data_key, y_data_key)
 
         # desired_percentiles = eval_data["desired_percentiles"]
 
@@ -156,10 +154,7 @@ def plot_afhp(
     plt.show()
 
 
-def eval_result_plotter(
-    extract_x_and_y_values_fn: Callable[[np.ndarray], Tuple[np.ndarray, np.ndarray]],
-    x_label: str,
-):
+def eval_result_plotter():
     parser = argparse.ArgumentParser(
         description="Plot AFHP (Ask for Help Percentage) vs performance"
     )
@@ -216,13 +211,40 @@ def eval_result_plotter(
 
     plot_afhp(
         name_order,
-        extract_x_and_y_values_fn,
         eval_file_dir,
         prefix_filter,
-        x_label,
         x_data_key,
         y_data_key,
     )
+
+
+def extract_from_data(data, key: str) -> np.ndarray:
+    if key == "ood_pred_percentage":
+        return np.array(
+            [
+                element["summary"]["test"]["ood_pred_percentage"]
+                for element in data["meta"]
+            ]
+        )
+    elif key == "ood_accuracy":
+        return np.array(
+            [element["summary"]["test"]["ood_accuracy"] for element in data["meta"]]
+        )
+    elif key == "performance":
+        return data["performances"]
+    elif key == "afhp":
+        return data["afhps"]
+    else:
+        raise ValueError(f"Invalid key: {key}")
+
+
+def extract_x_and_y_values(
+    data, x_data_key: str, y_data_key: str
+) -> tuple[np.ndarray, np.ndarray]:
+    # x = data["afhps"]
+    x = extract_from_data(data, x_data_key)
+    y = extract_from_data(data, y_data_key)
+    return x, y
 
 
 def extract_results(
