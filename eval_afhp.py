@@ -12,7 +12,7 @@ from YRC.core.configs.global_configs import get_global_variable
 
 from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
 
-from YRC.coverage.coverage_search import create_threshold_sampler
+from YRC.coverage.coverage_search import create_afhp_threshold_sampler
 
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger
@@ -75,7 +75,7 @@ def main():
     # Create the joint-coverage sampler via YRC wrapper (adapts to new abcs API)
     max_total_evals = 200
 
-    sampler = create_threshold_sampler(
+    sampler = create_afhp_threshold_sampler(
         policy=policy,
         evaluator=evaluator,
         envs=envs,

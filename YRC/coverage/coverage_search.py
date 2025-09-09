@@ -15,7 +15,7 @@ from YRC.policies.base import RandomPolicy
 from YRC.core import Evaluator
 
 
-def create_threshold_sampler(
+def create_afhp_threshold_sampler(
     policy,
     evaluator: Evaluator,
     envs,
