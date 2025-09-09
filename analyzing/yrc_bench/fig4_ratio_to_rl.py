@@ -7,7 +7,7 @@ import matplotlib.image as mpimg
 import matplotlib.ticker as mticker
 
 
-from constants import METHODS, ENVS
+from analyzing.yrc_bench.constants import METHODS, ENVS
 
 
 def create_grouped_bar_chart_with_legends_side_by_side(data, output_filename):

@@ -1,6 +1,7 @@
 from pathlib import Path
 import os
 import time
+from typing import List
 
 import flags
 import YRC.core.configs.utils as config_utils
@@ -16,6 +17,7 @@ from YRC.coverage.coverage_search import create_threshold_sampler
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger
 import wandb
+from acs.types import CurvePoint
 
 
 def main():
@@ -96,7 +98,9 @@ def main():
         f"y-gap: {sampling_result.coverage_y_max_gap:.3f}"
     )
 
-    sorted_points = sorted(sampling_result.points, key=lambda p: p.afhp)
+    sorted_points: List[CurvePoint] = sorted(
+        sampling_result.points, key=lambda p: p.afhp
+    )
 
     total_evals = sampling_result.total_evals
 
@@ -115,6 +119,7 @@ def main():
         afhps=np.array([pt.afhp for pt in sorted_points]),
         performances=np.array([pt.performance for pt in sorted_points]),
         desired_percentiles=np.array([pt.desired_percentile for pt in sorted_points]),
+        meta=np.array([pt.meta for pt in sorted_points]),
     )
 
     end_time = time.time()

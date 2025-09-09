@@ -29,13 +29,7 @@ import imageio
 
 from YRC.core.configs.global_configs import set_global_variable
 from YRC.envs.procgen import load_policy
-from lib.procgenAISC.procgen import ProcgenEnv
-from YRC.envs.procgen.wrappers import (
-    VecExtractDictObs,
-    TransposeFrame,
-    ScaledFloatFrame,
-    HardResetWrapper,
-)
+from analyzing.utils import create_env
 
 
 class CoinrunCounterfactualAnalyzer:
@@ -89,44 +83,6 @@ class CoinrunCounterfactualAnalyzer:
             handlers=[logging.FileHandler(log_file), logging.StreamHandler(sys.stdout)],
         )
         self.logger = logging.getLogger(__name__)
-
-    def create_env(
-        self, random_percent: int = 100, start_level: int = 0, num_levels: int = 1
-    ):
-        """
-        Create a coinrun environment with specified parameters.
-
-        Args:
-            random_percent: Percentage of coin randomization (0=deterministic, 100=fully random)
-            start_level: Starting level seed
-            num_levels: Number of levels to include
-
-        Returns:
-            Wrapped procgen environment
-        """
-        # Create base environment
-        env = ProcgenEnv(
-            env_name="coinrun",
-            num_envs=1,
-            num_threads=1,
-            num_levels=num_levels,
-            start_level=start_level,
-            distribution_mode="hard",
-            rand_seed=start_level,  # Use level as seed for consistency
-            use_backgrounds=True,
-            use_monochrome_assets=False,
-            restrict_themes=False,
-            random_percent=random_percent,  # Key parameter for counterfactual analysis
-        )
-
-        # Apply wrappers (same as in YRC framework)
-        env = VecExtractDictObs(env, "rgb")
-        env = TransposeFrame(env)
-        env = ScaledFloatFrame(env)
-        env = HardResetWrapper(env)
-        env.obs_shape = env.observation_space.shape
-
-        return env
 
     def load_weak_agent(self, env):
         """Load the weak agent policy."""
@@ -312,7 +268,7 @@ class CoinrunCounterfactualAnalyzer:
             attempt += 1
 
             # Create environment with random coin placement
-            env = self.create_env(random_percent=100, start_level=seed, num_levels=1)
+            env = create_env(random_percent=100, start_level=seed, num_levels=1)
             agent = self.load_weak_agent(env)
 
             # Test rollout
@@ -360,7 +316,7 @@ class CoinrunCounterfactualAnalyzer:
 
         # Test 1: Random coin placement (random_percent=100)
         self.logger.info("Testing with random coin placement (random_percent=100)...")
-        env_random = self.create_env(
+        env_random = create_env(
             random_percent=100, start_level=failure_seed, num_levels=1
         )
         agent_random = self.load_weak_agent(env_random)
@@ -389,7 +345,7 @@ class CoinrunCounterfactualAnalyzer:
         self.logger.info(
             "Testing with deterministic coin placement (random_percent=0)..."
         )
-        env_deterministic = self.create_env(
+        env_deterministic = create_env(
             random_percent=0, start_level=failure_seed, num_levels=1
         )
         agent_deterministic = self.load_weak_agent(env_deterministic)

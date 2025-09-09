@@ -7,10 +7,14 @@ SRC_FILES=(
     "YRC/policies/lightning_ae.py" 
     "YRC/core/dataset.py"
     "YRC/core/rollout_helper.py"
-    "eval_thresholds.py"
+    "YRC/core/evaluator.py"
+    "eval_afhp.py"
     "YRC/policies/mahalanobis_ae.py"
     "analyzing/coinrun_counterfactual_analysis.py"
     "analyzing/plot_policy_training_curves.py"
+    "analyzing/utils.py"
+    "analyzing/plot_ood.py"
+    "flags.py"
 )
 EXCLUDED_FILES=("")
 
@@ -22,4 +26,4 @@ ruff format "${SRC_FILES[@]}" --exclude "${EXCLUDED_FILES[@]}"
 # Run ruff as linter (flake8-ish).
 ruff check "${SRC_FILES[@]}" --exclude "${EXCLUDED_FILES[@]}"
 # Run pytype with suppressed debug logging
-pytype "${SRC_FILES[@]}" --exclude "${EXCLUDED_FILES[@]}" --verbosity=0 2>/dev/null
+pytype "${SRC_FILES[@]}" --exclude "${EXCLUDED_FILES[@]}"

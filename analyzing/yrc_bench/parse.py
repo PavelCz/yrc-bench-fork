@@ -3,7 +3,7 @@ import re
 import json
 import numpy as np
 from collections import defaultdict
-from constants import ENVS, METHODS
+from analyzing.yrc_bench.constants import ENVS, METHODS
 
 def parse_file(key, file_path):
     # Open the file and loop through all lines
