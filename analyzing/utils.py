@@ -148,7 +148,7 @@ def plot_afhp(
 
     plt.xlabel(x_data_key)
     plt.ylabel(y_data_key)
-    plt.title("Mean return vs. ask for help percentage")
+    plt.title(f"{y_data_key} over {x_data_key}")
     plt.legend()
     # plt.savefig("afhp_plot.png", dpi=300, bbox_inches="tight")
     plt.show()
@@ -219,17 +219,54 @@ def eval_result_plotter():
 
 
 def extract_from_data(data, key: str) -> np.ndarray:
+    # Canonicalize these values by turning them into integers.
+    level_ood_gt = [
+        element["summary"]["test"]["level_ood_gt"] for element in data["meta"]
+    ]
+
+    level_ood_pred = [
+        element["summary"]["test"]["level_ood_pred"] for element in data["meta"]
+    ]
     if key == "ood_pred_percentage":
-        return np.array(
-            [
-                element["summary"]["test"]["ood_pred_percentage"]
-                for element in data["meta"]
-            ]
-        )
+        pred_percentages = []
+        for preds in level_ood_pred:
+            percentage = sum(preds) / len(preds)
+            pred_percentages.append(percentage)
+        return np.array(pred_percentages)
     elif key == "ood_accuracy":
-        return np.array(
-            [element["summary"]["test"]["ood_accuracy"] for element in data["meta"]]
-        )
+        accs = []
+        for preds, gts in zip(level_ood_pred, level_ood_gt):
+            acc = (np.array(preds) == np.array(gts)).mean()
+            accs.append(acc)
+        return np.array(accs)
+    elif key == "true_positive":
+        tps = []
+        for preds, gts in zip(level_ood_pred, level_ood_gt):
+            tp_count = ((np.array(preds) == 1)[np.array(gts) == 1]).sum()
+            pos_count = (np.array(gts) == 1).sum()
+            tps.append(tp_count / pos_count)
+        return np.array(tps)
+    elif key == "false_positive":
+        fps = []
+        for preds, gts in zip(level_ood_pred, level_ood_gt):
+            fp_count = ((np.array(preds) == 1)[np.array(gts) == 0]).sum()
+            neg_count = (np.array(gts) == 0).sum()
+            fps.append(fp_count / neg_count)
+        return np.array(fps)
+    elif key == "true_negative":
+        tns = []
+        for preds, gts in zip(level_ood_pred, level_ood_gt):
+            tn_count = ((np.array(preds) == 0)[np.array(gts) == 0]).sum()
+            neg_count = (np.array(gts) == 0).sum()
+            tns.append(tn_count / neg_count)
+        return np.array(tns)
+    elif key == "false_negative":
+        fns = []
+        for preds, gts in zip(level_ood_pred, level_ood_gt):
+            fn_count = ((np.array(preds) == 0)[np.array(gts) == 1]).sum()
+            pos_count = (np.array(gts) == 1).sum()
+            fns.append(fn_count / pos_count)
+        return np.array(fns)
     elif key == "performance":
         return data["performances"]
     elif key == "afhp":
