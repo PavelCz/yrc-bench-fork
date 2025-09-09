@@ -247,6 +247,13 @@ def make():
         help="number of environments to run in parallel",
     )
 
+    parser.add_argument(
+        "-random_percent",
+        "--environment.test.random_percent",
+        type=int,
+        help="random percent for the test environment",
+    )
+
     # Additional flags for evaluation.
     parser.add_argument(
         "-coverage_fraction",
