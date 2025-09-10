@@ -264,6 +264,13 @@ def make():
             "total range. Choose at least 0.01"
         ),
     )
+    parser.add_argument(
+        "-threshold_sampler",
+        "--evaluation.threshold_sampler",
+        type=str,
+        choices=["afhp", "ood_percentage"],
+        help="threshold sampler to use",
+    )
 
     parser.add_argument(
         "-test_episodes",

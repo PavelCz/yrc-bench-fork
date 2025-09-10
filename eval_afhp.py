@@ -12,7 +12,8 @@ from YRC.core.configs.global_configs import get_global_variable
 
 from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
 
-from YRC.coverage.coverage_search import create_threshold_sampler
+from YRC.coverage.coverage_search import create_afhp_threshold_sampler
+from YRC.coverage.coverage_search import create_ood_percentage_threshold_sampler
 
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger
@@ -43,6 +44,7 @@ def main():
     evaluator = Evaluator(config.evaluation)
 
     coverage_fraction = config.evaluation.coverage_fraction
+    threshold_sampler: str = config.evaluation.threshold_sampler
 
     if coverage_fraction < 0.01:
         raise ValueError("Coverage fraction must be at least 0.01")
@@ -75,15 +77,28 @@ def main():
     # Create the joint-coverage sampler via YRC wrapper (adapts to new abcs API)
     max_total_evals = 200
 
-    sampler = create_threshold_sampler(
-        policy=policy,
-        evaluator=evaluator,
-        envs=envs,
-        split=split,
-        coverage_fraction=coverage_fraction,
-        max_total_evals=max_total_evals,
-        logger=wandb_logger,
-    )
+    if threshold_sampler == "afhp":
+        sampler = create_afhp_threshold_sampler(
+            policy=policy,
+            evaluator=evaluator,
+            envs=envs,
+            split=split,
+            coverage_fraction=coverage_fraction,
+            max_total_evals=max_total_evals,
+            logger=wandb_logger,
+        )
+    elif threshold_sampler == "ood_percentage":
+        sampler = create_ood_percentage_threshold_sampler(
+            policy=policy,
+            evaluator=evaluator,
+            envs=envs,
+            split=split,
+            coverage_fraction=coverage_fraction,
+            max_total_evals=max_total_evals,
+            logger=wandb_logger,
+        )
+    else:
+        raise ValueError(f"Invalid threshold sampler: {threshold_sampler}")
 
     # Run the sampling
     print(
@@ -98,6 +113,9 @@ def main():
         f"y-gap: {sampling_result.coverage_y_max_gap:.3f}"
     )
 
+    # TODO: Rename
+    # The sort metric is called afhp for legacy reasons, sort metric or threshold metric
+    # would be more appropriate.
     sorted_points: List[CurvePoint] = sorted(
         sampling_result.points, key=lambda p: p.afhp
     )
