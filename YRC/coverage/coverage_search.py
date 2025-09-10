@@ -12,8 +12,10 @@ from acs import BinarySearchSampler
 from YRC.policies.ood import OODPolicy
 from YRC.policies.lightning_ae import LightningAEPolicy
 from YRC.policies.base import RandomPolicy
+from YRC.policies.threshold import ThresholdPolicy
 from YRC.core import Evaluator
 import numpy as np
+
 
 def create_ood_percentage_threshold_sampler(
     policy,
@@ -77,7 +79,7 @@ def create_ood_percentage_threshold_sampler(
         thr = float("-inf")
         target_metric, performance, meta = _eval_with_threshold(thr)
         return target_metric, performance, meta
-    
+
     # Convert coverate fraction to num_bins
     num_bins = int(1.0 / coverage_fraction)
 
@@ -90,6 +92,7 @@ def create_ood_percentage_threshold_sampler(
         output_range=(0.0, 1.0),
         # max_total_evals=max_total_evals,
     )
+
 
 def create_afhp_threshold_sampler(
     policy,
@@ -152,7 +155,7 @@ def create_afhp_threshold_sampler(
         thr = float("-inf")
         afhp, performance, meta = _eval_with_threshold(thr)
         return afhp, performance, meta
-    
+
     # Convert coverate fraction to num_bins
     num_bins = int(1.0 / coverage_fraction)
 
@@ -166,7 +169,11 @@ def create_afhp_threshold_sampler(
 
 
 def update_policy_params(policy, threshold):
-    if isinstance(policy, LightningAEPolicy) or isinstance(policy, OODPolicy):
+    if (
+        isinstance(policy, LightningAEPolicy)
+        or isinstance(policy, OODPolicy)
+        or isinstance(policy, ThresholdPolicy)
+    ):
         policy.update_params({"threshold": threshold})
     elif isinstance(policy, RandomPolicy):
         if threshold == float("inf"):
@@ -174,7 +181,8 @@ def update_policy_params(policy, threshold):
             # We need to set the probability to 0.
             threshold = 0.0
         elif threshold == float("-inf"):
-            # A negative infinite threshold means that the policy will always ask for help.
+            # A negative infinite threshold means that the policy will always ask for 
+            # help.
             # We need to set the probability to 1.
             threshold = 1.0
         policy.update_params(threshold)
