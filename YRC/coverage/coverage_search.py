@@ -86,6 +86,8 @@ def create_ood_percentage_threshold_sampler(
         eval_at_lower_extreme=eval_at_lower_extreme,
         eval_at_upper_extreme=eval_at_upper_extreme,
         num_bins=num_bins,
+        # AFHP uses [0, 100] interval, here we use [0, 1]
+        output_range=(0.0, 1.0),
         # max_total_evals=max_total_evals,
     )
 
