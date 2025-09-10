@@ -174,14 +174,17 @@ def update_policy_params(policy, threshold):
         or isinstance(policy, OODPolicy)
         or isinstance(policy, ThresholdPolicy)
     ):
-        policy.update_params({"threshold": threshold})
+        params = policy.params.copy()
+        params["threshold"] = threshold
+
+        policy.update_params(params)
     elif isinstance(policy, RandomPolicy):
         if threshold == float("inf"):
             # An infinite threshold means that the policy will never ask for help.
             # We need to set the probability to 0.
             threshold = 0.0
         elif threshold == float("-inf"):
-            # A negative infinite threshold means that the policy will always ask for 
+            # A negative infinite threshold means that the policy will always ask for
             # help.
             # We need to set the probability to 1.
             threshold = 1.0

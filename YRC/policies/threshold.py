@@ -16,7 +16,7 @@ class ThresholdPolicy(Policy):
         self.params = {"threshold": 0.0, "explore_temp": 1.0, "score_temp": 1.0}
         self.device = get_global_variable("device")
 
-    def act(self, obs, greedy=False):
+    def act(self, obs, greedy=False, return_scores_and_recons=False):
         if get_global_variable("benchmark") == "cliport":
             attention_size = 3  # todo: get this shape automatically
             attention_flat = obs["weak_logit"][:, :attention_size]
@@ -35,6 +35,10 @@ class ThresholdPolicy(Policy):
             score = self._compute_score(weak_logit)
         # NOTE: higher score = more certain
         action = (score < self.params["threshold"]).int()
+
+        if return_scores_and_recons:
+            return action.cpu().numpy(), score.cpu().numpy(), None
+
         return action.cpu().numpy()
 
     def generate_scores(self, env, num_rollouts):

@@ -32,9 +32,10 @@ def main():
     envs = env_factory.make(config)
     policy = policy_factory.make(config, envs["train"])
     if config.general.algorithm != "always" and not config.coord_policy.baseline:
-        # If we are doing threshold search, the random alg does not need to train
-        # anything. Thus, we do not need to load here.
-        if config.general.algorithm != "random":
+        # The following algorithms do not need to load a model, because they do not
+        # need the training step:
+        algorithms = ["random", "threshold"]
+        if config.general.algorithm not in algorithms:
             policy.load_model(os.path.join(config.experiment_dir, config.file_name))
 
         # For the Mahalanobis AE, we need some additional initialization.
