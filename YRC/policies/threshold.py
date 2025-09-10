@@ -33,8 +33,9 @@ class ThresholdPolicy(Policy):
             if not torch.is_tensor(weak_logit):
                 weak_logit = torch.from_numpy(weak_logit).float().to(self.device)
             score = self._compute_score(weak_logit)
-        # NOTE: higher score = more certain
-        action = (score < self.params["threshold"]).int()
+        # NOTE: Originally, higher score = more certain
+        # I inverted score, so it is in line with other OOD scores.
+        action = (score > self.params["threshold"]).int()
 
         if return_scores_and_recons:
             return action.cpu().numpy(), score.cpu().numpy(), None
@@ -82,9 +83,16 @@ class ThresholdPolicy(Policy):
         logit = logit / self.params["score_temp"]
         if metric == "max_logit":
             score = logit.max(dim=-1)[0]
+            raise NotImplementedError(
+                f"Max logit metric not implemented for threshold policy"
+            )
         elif metric == "max_prob":
             score = logit.softmax(dim=-1).max(dim=-1)[0]
+            score = 1.0 - score
         elif metric == "margin":
+            raise NotImplementedError(
+                f"Margin metric not implemented for threshold policy"
+            )
             if logit.size(-1) > 1:
                 # Original behavior for multi-class case
                 top2 = logit.softmax(dim=-1).topk(2, dim=-1)[0]
@@ -95,8 +103,14 @@ class ThresholdPolicy(Policy):
                 # Binary case when logit has shape (..., 1)
                 score = logit.sigmoid().squeeze(-1)
         elif metric == "neg_entropy":
+            raise NotImplementedError(
+                f"Neg entropy metric not implemented for threshold policy"
+            )
             score = -Categorical(logits=logit).entropy()
         elif metric == "neg_energy":
+            raise NotImplementedError(
+                f"Neg energy metric not implemented for threshold policy"
+            )
             score = logit.logsumexp(dim=-1)
         else:
             raise NotImplementedError(f"Unrecognized metric: {metric}")
@@ -113,3 +127,16 @@ class ThresholdPolicy(Policy):
 
     def load_model(self, load_path):
         self.params = torch.load(load_path)
+
+    def train_percentile(self, percentile: float) -> float:
+        metric = self.args.metric
+        if metric == "max_prob":
+            # Percentile means what percentile of the scores are below the threshold
+            # percentile 100 -> all are below, set threshold to max, which is 1 since
+            # we are working with probabilities. 
+            # percentile 0 -> vice versa
+            return percentile * 0.01
+        else:
+            raise NotImplementedError(
+                f"Getting training percentiles not implemented for {metric} metric"
+            )
