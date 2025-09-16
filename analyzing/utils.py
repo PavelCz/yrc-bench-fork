@@ -74,6 +74,8 @@ def plot_afhp(
     prefix_filter: Optional[str],
     x_data_key: str,
     y_data_key: str,
+    disable_horizontal_lines: bool = False,
+    key_filter: Optional[List[str]] = None,
 ):
     """
     Plot AFHP (Ask for Help Percentage) vs performance.
@@ -99,6 +101,9 @@ def plot_afhp(
     # If name_order is None, use all available names
     if name_order is None:
         name_order = list(results.keys())
+
+    if key_filter is not None:
+        name_order = [name for name in name_order if name not in key_filter]
 
     # Clear previous plot
     plt.clf()
@@ -131,20 +136,21 @@ def plot_afhp(
     mean_last_performance = np.mean(last_performances)
 
     # Add horizontal lines
-    plt.axhline(
-        y=mean_first_performance,
-        color="red",
-        linestyle="--",
-        alpha=0.7,
-        label="Weak Agent",
-    )
-    plt.axhline(
-        y=mean_last_performance,
-        color="blue",
-        linestyle="--",
-        alpha=0.7,
-        label="Oracle",
-    )
+    if not disable_horizontal_lines:
+        plt.axhline(
+            y=mean_first_performance,
+            color="red",
+            linestyle="--",
+            alpha=0.7,
+            label="Weak Agent",
+        )
+        plt.axhline(
+            y=mean_last_performance,
+            color="blue",
+            linestyle="--",
+            alpha=0.7,
+            label="Oracle",
+        )
 
     plt.xlabel(x_data_key)
     plt.ylabel(y_data_key)
@@ -194,6 +200,21 @@ def eval_result_plotter():
         help="Key for the y data.",
     )
 
+    parser.add_argument(
+        "--disable_horizontal_lines",
+        action="store_true",
+        help="Disable horizontal lines.",
+    )
+
+    parser.add_argument(
+        "--key_filter",
+        "-f",
+        default=None,
+        type=str,
+        nargs="+",
+        help="Filter out these keys.",
+    )
+
     args = parser.parse_args()
 
     eval_file_dir = Path(args.eval_file_dir)
@@ -215,6 +236,8 @@ def eval_result_plotter():
         prefix_filter,
         x_data_key,
         y_data_key,
+        args.disable_horizontal_lines,
+        args.key_filter,
     )
 
 
