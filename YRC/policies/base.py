@@ -112,7 +112,9 @@ class RandomPolicy(Policy):
 
         return action.cpu().numpy()
 
-    def update_params(self, prob):
+    def update_params(self, prob=None):
+        if prob is None:
+            raise ValueError("Probability cannot be None!")
         self.prob = prob
 
     def save_model(self, name, save_dir):
@@ -154,7 +156,9 @@ class OneCheckRandomPolicy(Policy):
 
         return np.array(self.current_action)
 
-    def update_params(self, prob):
+    def update_params(self, prob=None):
+        if prob is None:
+            raise ValueError("Probability cannot be None!")
         self.prob = prob
 
     def save_model(self, name, save_dir):
