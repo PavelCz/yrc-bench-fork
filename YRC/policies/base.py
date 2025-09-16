@@ -12,7 +12,6 @@ from YRC.core.policy import Policy
 import YRC.models as models
 from YRC.core.configs.global_configs import get_global_variable
 from YRC.core.configs.utils import config_logging
-from typing import Tuple, Optional
 
 
 class BasePolicy(Policy):
@@ -125,9 +124,48 @@ class RandomPolicy(Policy):
         ckpt = torch.load(load_path)
         self.prob = ckpt["prob"]
 
-    def train_percentile(
-        self, percentile: float
-    ) -> float:
+    def train_percentile(self, percentile: float) -> float:
         """Take a percentile and return the threshold for that percentile."""
         return (100 - percentile) * 0.01
-    
+
+
+class OneCheckRandomPolicy(Policy):
+    """A random policy that checks once at the beginning of the episode, whether it
+    should ask for help or not. It then sticks with that decision for the rest of the
+    episode.
+    """
+
+    def __init__(self, config, env):
+        self.prob = 0.5
+        self.device = get_global_variable("device")
+
+        self.current_action = [None] * env.num_envs
+
+    def act(self, obs, greedy=False, return_scores_and_recons=False):
+        for i, ep_timestep in enumerate(obs["episode_timestep"]):
+            if ep_timestep == 0:
+                # Randomly sample a new action at the beginning of the episode.
+                action = torch.rand(1).item() < self.prob
+                action = int(action)
+                self.current_action[i] = action
+
+        if return_scores_and_recons:
+            return np.array(self.current_action), None, None
+
+        return np.array(self.current_action)
+
+    def update_params(self, prob):
+        self.prob = prob
+
+    def save_model(self, name, save_dir):
+        save_path = os.path.join(save_dir, f"{name}.ckpt")
+        torch.save({"prob": self.prob}, save_path)
+        logging.info(f"Saved model to {save_path}")
+
+    def load_model(self, load_path):
+        ckpt = torch.load(load_path)
+        self.prob = ckpt["prob"]
+
+    def train_percentile(self, percentile: float) -> float:
+        """Take a percentile and return the threshold for that percentile."""
+        return (100 - percentile) * 0.01

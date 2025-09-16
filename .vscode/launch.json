@@ -210,6 +210,43 @@
             }
         },
         {
+            "name": "Eval ocrandom",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/eval_afhp.py",
+            "args": [
+                "-wandb_project",
+                "yrc-debug",
+                "-c",
+                "configs/eval/coinrun_bg_ocrandom.yaml",
+                "-n",
+                "debug_random_bg_defer",
+                "-sim",
+                "YRC/checkpoints/procgen/coinrun/sim_weak/model_40009728.pth",
+                "-weak",
+                "YRC/checkpoints/procgen/coinrun/weak/model_80019456.pth",
+                "-strong",
+                "YRC/checkpoints/procgen/coinrun/strong/model_200015872.pth",
+                "-coverage_fraction",
+                "0.3",
+                "-test_episodes",
+                "16",
+                "-defer_to_oracle",
+                "-experiment_group",
+                "debug_random_bg_defer",
+                "-random_percent",
+                "25",
+                "-threshold_sampler",
+                "ood_percentage",
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+            }
+        },
+        {
             "name": "Eval threshold",
             "type": "debugpy",
             "request": "launch",

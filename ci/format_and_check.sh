@@ -5,6 +5,7 @@
 SRC_FILES=(
     "YRC/algorithms/lightning_ae.py" 
     "YRC/policies/lightning_ae.py" 
+    "YRC/policies/base.py"
     "YRC/core/dataset.py"
     "YRC/core/rollout_helper.py"
     "YRC/core/evaluator.py"
