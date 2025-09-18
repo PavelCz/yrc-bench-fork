@@ -92,10 +92,11 @@ def plot_afhp(
 
     name_map = {
         "latent-svdd": "Latent SVDD",
-        "random": "Random",
+        "random": "Timestep Random",
         "patient-ae": "Autoencoder",
         "center-focused": "Center-focused AE",
         "deep-svdd": "DeepSVDD",
+        "oc-random": "Level-Based Random",
     }
 
     # If name_order is None, use all available names
