@@ -46,7 +46,7 @@ environment:
         distribution_mode: 'hard'
         seed: 300000
         start_level: 300000
-        num_levels: 512
+        num_levels: 5120
         random_percent: 50
 coord_env: null
 coord_policy:
