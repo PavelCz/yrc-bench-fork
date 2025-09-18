@@ -1,5 +1,4 @@
 import logging
-
 import torch
 
 from lib.procgenAISC.procgen import ProcgenEnv

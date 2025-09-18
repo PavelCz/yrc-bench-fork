@@ -192,7 +192,7 @@
                 "YRC/checkpoints/procgen/coinrun/strong/model_200015872.pth",
                 "-coverage_fraction",
                 "0.3",
-                "-test_episodes",
+                "-num_levels",
                 "16",
                 "-defer_to_oracle",
                 "-experiment_group",

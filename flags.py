@@ -272,11 +272,20 @@ def make():
         help="threshold sampler to use",
     )
 
+    # parser.add_argument(
+    #     "-test_episodes",
+    #     "--evaluation.test_episodes",
+    #     type=int,
+    #     help="number of test episodes for procgen",
+    # )
     parser.add_argument(
-        "-test_episodes",
-        "--evaluation.test_episodes",
+        "-num_levels",
+        "--environment.test.num_levels",
         type=int,
-        help="number of test episodes for procgen",
+        help=(
+            "number of test levels for procgen. The same number is used to determine "
+            "the number of episodes for evaluation."
+        )
     )
 
     parser.add_argument(

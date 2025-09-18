@@ -9,12 +9,14 @@ from PIL import Image, ImageDraw, ImageFont
 class Evaluator:
     LOGGED_ACTION = 1
 
-    def __init__(self, config):
+    def __init__(self, config, env_config: dict):
         self.args = config
         self.collected_states = []
         self.collected_actions_done = False
 
         self.defer_to_oracle: Optional[bool] = None
+
+        self.env_config = env_config
 
     def eval(
         self,
@@ -28,7 +30,7 @@ class Evaluator:
         args = self.args
         policy.eval()
 
-        self.defer_to_oracle = self.args.defer_to_oracle
+        self.defer_to_oracle = args.defer_to_oracle
 
         self.collected_actions_done = False
         self.collected_states: List[List[Dict]] = []
@@ -37,10 +39,12 @@ class Evaluator:
         for split in eval_splits:
             if num_episodes is None:
                 if "val" in split:
-                    num_episodes = args.validation_episodes
+                    num_episodes = self.env_config["val"].num_levels
+                    # num_episodes = args.validation_episodes
                 else:
                     assert "test" in split
-                    num_episodes = args.test_episodes
+                    num_episodes = self.env_config["test"].num_levels
+                    # num_episodes = args.test_episodes
                 assert num_episodes % envs[split].num_envs == 0
 
             self.collected_states = []
