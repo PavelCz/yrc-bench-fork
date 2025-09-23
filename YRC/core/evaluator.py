@@ -372,6 +372,10 @@ class Evaluator:
                     episode_log["episode_length"][i] = 0
                     episode_log[f"action_{self.LOGGED_ACTION}"][i] = 0
 
+                    # In case we are using a rolling average for the score, we need to
+                    # reset the buffer for the next episode.
+                    policy.reset_rolling_average_buffer(i)
+
                 # We update this after we (potentially) save this to log. This is
                 # because gym3 automatically resets the environment at the end of an
                 # episode, so the info dict might be of the next episode.

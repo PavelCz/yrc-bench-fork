@@ -26,7 +26,7 @@ class ThresholdPolicy(Policy):
         ):
             raise ValueError(f"Rolling average {self.rolling_average} not supported")
 
-        rolling_average_size: int = self.args.rolling_average_size
+        self.rolling_average_size: int = self.args.rolling_average_size
 
         self.rolling_average_buffers = []
 
@@ -34,7 +34,7 @@ class ThresholdPolicy(Policy):
             for _ in range(env.num_envs):
                 self.rolling_average_buffers.append(
                     collections.deque(
-                        rolling_average_size*[float("-inf")], rolling_average_size
+                        self.rolling_average_size*[float("-inf")], self.rolling_average_size
                     )
                 )
 
@@ -151,6 +151,15 @@ class ThresholdPolicy(Policy):
                     raise NotImplementedError(f"Unrecognized rolling average: {self.rolling_average}")
 
         return score
+
+    def reset_rolling_average_buffer(self, index: int) -> None:
+        """Reset the rolling average buffer for a given index. The index corresponds 
+        to the environment index.
+        """
+        if self.rolling_average is not None:
+            self.rolling_average_buffers[index] = collections.deque(
+                self.rolling_average_size*[float("-inf")], self.rolling_average_size
+            )
 
     def update_params(self, params):
         self.params = dc(params)
