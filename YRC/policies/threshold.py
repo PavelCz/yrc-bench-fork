@@ -1,12 +1,14 @@
 import os
 import numpy as np
 from copy import deepcopy as dc
+import collections
 
 import torch
 import logging
 from torch.distributions.categorical import Categorical
 from YRC.core import Policy
 from YRC.core.configs.global_configs import get_global_variable
+from typing import Optional
 
 
 class ThresholdPolicy(Policy):
@@ -15,6 +17,26 @@ class ThresholdPolicy(Policy):
         self.agent = env.weak_agent
         self.params = {"threshold": 0.0, "explore_temp": 1.0, "score_temp": 1.0}
         self.device = get_global_variable("device")
+        self.rolling_average: Optional[str] = self.args.rolling_average
+
+        if (
+            self.rolling_average is not None
+            and self.rolling_average != "mean"
+            and self.rolling_average != "median"
+        ):
+            raise ValueError(f"Rolling average {self.rolling_average} not supported")
+
+        rolling_average_size: int = self.args.rolling_average_size
+
+        self.rolling_average_buffers = []
+
+        if self.rolling_average is not None:
+            for _ in range(env.num_envs):
+                self.rolling_average_buffers.append(
+                    collections.deque(
+                        rolling_average_size*[float("-inf")], rolling_average_size
+                    )
+                )
 
     def act(self, obs, greedy=False, return_scores_and_recons=False):
         if get_global_variable("benchmark") == "cliport":
@@ -78,7 +100,7 @@ class ThresholdPolicy(Policy):
         return scores
 
     def _compute_score(self, logit):
-        # NOTE: higher score = more certain
+        # NOTE: higher score = more certain for some of the metrics, but not all.
         metric = self.args.metric
         logit = logit / self.params["score_temp"]
         if metric == "max_logit":
@@ -87,7 +109,9 @@ class ThresholdPolicy(Policy):
                 f"Max logit metric not implemented for threshold policy"
             )
         elif metric == "max_prob":
+            # Softmax probability -> how certain are we about that action?
             score = logit.softmax(dim=-1).max(dim=-1)[0]
+            # Invert the score such that higher score = more ood.
             score = 1.0 - score
         elif metric == "margin":
             raise NotImplementedError(
@@ -114,6 +138,17 @@ class ThresholdPolicy(Policy):
             score = logit.logsumexp(dim=-1)
         else:
             raise NotImplementedError(f"Unrecognized metric: {metric}")
+
+        if self.rolling_average is not None:
+            for i in range(len(self.rolling_average_buffers)):
+                self.rolling_average_buffers[i].append(score[i].item())
+
+                if self.rolling_average == "mean":
+                    score[i] = torch.mean(torch.tensor(self.rolling_average_buffers[i])).item()
+                elif self.rolling_average == "median":
+                    score[i] = torch.median(torch.tensor(self.rolling_average_buffers[i])).item()
+                else:
+                    raise NotImplementedError(f"Unrecognized rolling average: {self.rolling_average}")
 
         return score
 

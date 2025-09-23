@@ -124,7 +124,12 @@ class Evaluator:
             # Add score bars at the top of each frame
             # Find global min and max scores across all frames
             all_scores = np.array(scores)
-            score_min = np.min(all_scores)
+
+            # If we are using a floating window average for the score, some scores might
+            # be set to -inf. We don't want to consider these when computing the min.
+            all_rational_scores = all_scores[all_scores != float("-inf")]
+            score_min = np.min(all_rational_scores)
+
             score_max = np.max(all_scores)
 
             # Create score bar visualization
@@ -155,6 +160,12 @@ class Evaluator:
                     normalized_score = (current_score - score_min) / (
                         score_max - score_min
                     )
+                    # Clamp edge cases. This should only happen if there are values
+                    # set to -inf.
+                    if normalized_score < 0:
+                        normalized_score = 0
+                    if normalized_score > 1:
+                        normalized_score = 1
                 else:
                     normalized_score = 0.5
 
