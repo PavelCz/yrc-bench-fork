@@ -156,6 +156,20 @@ def make():
     )
 
     parser.add_argument(
+        "-cp_rolling_average",
+        "--coord_policy.rolling_average",
+        type=str,
+        help="rolling average for the threshold policy",
+        choices=["mean", "median"],
+    )
+    parser.add_argument(
+        "-cp_rolling_average_size",
+        "--coord_policy.rolling_average_size",
+        type=int,
+        help="size of the rolling average for the threshold policy",
+    )
+
+    parser.add_argument(
         "-model_config_path",
         "--algorithm.model_config_path",
         type=str,
@@ -285,7 +299,7 @@ def make():
         help=(
             "number of test levels for procgen. The same number is used to determine "
             "the number of episodes for evaluation."
-        )
+        ),
     )
 
     parser.add_argument(

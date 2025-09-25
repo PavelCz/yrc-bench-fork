@@ -48,3 +48,6 @@ class Policy:
 
     def load_model(self, load_path):
         pass
+
+    def reset_rolling_average_buffer(self, index: int) -> None:
+        pass

@@ -6,6 +6,7 @@ import torch
 from typing import Dict, List, Optional, Any, Tuple, Union
 from pathlib import Path
 import sys
+import collections
 
 
 from YRC.policies.ood import OODPolicy
@@ -65,6 +66,17 @@ class LightningAEPolicy(OODPolicy):
         self.logger = None
 
         self.disable_test: bool = False
+
+        self.rolling_average: Optional[str] = config.coord_policy.rolling_average
+        self.rolling_average_size: int = config.coord_policy.rolling_average_size
+        self.rolling_average_buffers: List[collections.deque] = []
+        if self.rolling_average is not None:
+            for _ in range(env.num_envs):
+                self.rolling_average_buffers.append(
+                    collections.deque(
+                        self.rolling_average_size*[float("-inf")], self.rolling_average_size
+                    )
+                )
 
     def initialize_ood_detector(self, args: Any, env: Any) -> None:
         """Initialize the Lightning autoencoder model."""
@@ -354,6 +366,16 @@ class LightningAEPolicy(OODPolicy):
         else:
             scores = self._compute_decision_scores(observation)
 
+        if self.rolling_average is not None:
+            for i in range(len(self.rolling_average_buffers)):
+                self.rolling_average_buffers[i].append(scores[i].item())
+                if self.rolling_average == "mean":
+                    scores[i] = torch.mean(torch.tensor(self.rolling_average_buffers[i])).item()
+                elif self.rolling_average == "median":
+                    scores[i] = torch.median(torch.tensor(self.rolling_average_buffers[i])).item()
+                else:
+                    raise NotImplementedError(f"Unrecognized rolling average: {self.rolling_average}")
+
         # Use our own threshold instead of self.clf.threshold_
         action: np.ndarray = (scores > self.threshold_).astype(int)
 
@@ -364,6 +386,15 @@ class LightningAEPolicy(OODPolicy):
             return action, scores, recons
 
         return action
+
+    def reset_rolling_average_buffer(self, index: int) -> None:
+        """Reset the rolling average buffer for a given index. The index corresponds 
+        to the environment index.
+        """
+        if self.rolling_average is not None:
+            self.rolling_average_buffers[index] = collections.deque(
+                self.rolling_average_size*[float("-inf")], self.rolling_average_size
+            )
 
     def update_params(self, params: Dict[str, Any]) -> None:
         """Override to update our threshold instead of params dict."""
