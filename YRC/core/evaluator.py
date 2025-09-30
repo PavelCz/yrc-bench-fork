@@ -84,10 +84,16 @@ class Evaluator:
             if logger is not None:
                 afhp = summary[split]["action_1_frac"]
                 # Determine output folder for video logging
-                output_folder = getattr(self.args, 'video_output_folder', None)
+                raw_output_folder = getattr(self.args, 'video_output_folder', None)
                 logging_mode = getattr(self.args, 'video_logging_mode', 'none')
-                if output_folder is None and logging_mode in ['folder', 'both']:
+
+                if raw_output_folder is None and logging_mode in ['folder', 'both']:
                     output_folder = self._get_default_video_folder()
+                elif raw_output_folder is not None and logging_mode in ['folder', 'both']:
+                    output_folder = self._resolve_video_output_folder(raw_output_folder, create_folder=True)
+                else:
+                    # For wandb/none modes, don't create folders even if specified
+                    output_folder = None
 
                 for i in range(len(self.collected_states)):
                     process_and_log_video(
@@ -97,6 +103,23 @@ class Evaluator:
                     )
 
         return summary
+
+    def _resolve_video_output_folder(self, output_folder: Optional[str], create_folder: bool = True) -> Optional[str]:
+        """Resolve the video output folder path relative to eval_run_dir."""
+        if output_folder is None:
+            return None
+
+        # If it's an absolute path, use it as-is
+        if os.path.isabs(output_folder):
+            resolved_path = output_folder
+        else:
+            # If it's a relative path, make it relative to eval_run_dir
+            resolved_path = os.path.join(self.eval_run_dir, output_folder)
+
+        # Only create the folder if requested
+        if create_folder:
+            os.makedirs(resolved_path, exist_ok=True)
+        return resolved_path
 
     def _get_default_video_folder(self) -> str:
         """Get or create the default video folder in the eval_run_dir or experiment directory."""

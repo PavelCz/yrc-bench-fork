@@ -332,7 +332,7 @@ def make():
         "-video_output_folder",
         "--evaluation.video_output_folder",
         type=str,
-        help="folder path for saving videos when using folder or both logging modes (defaults to experiment_dir/videos if not specified)",
+        help="folder path for saving videos when using folder or both logging modes (relative to eval_run_dir, defaults to eval_run_dir/videos if not specified)",
     )
 
     parser.add_argument(
