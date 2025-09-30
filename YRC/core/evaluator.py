@@ -82,7 +82,6 @@ class Evaluator:
             envs[split].close()
 
             if logger is not None:
-                afhp = summary[split]["action_1_frac"]
                 # Determine output folder for video logging
                 raw_output_folder = getattr(self.args, 'video_output_folder', None)
                 logging_mode = getattr(self.args, 'video_logging_mode', 'none')
@@ -94,6 +93,12 @@ class Evaluator:
                 else:
                     # For wandb/none modes, don't create folders even if specified
                     output_folder = None
+
+                # Choose correct AFHP for video logging
+                if self.defer_to_oracle:
+                    afhp = summary[split]["ood_pred_percentage"]
+                else:
+                    afhp = summary[split]["action_1_frac"]
 
                 for i in range(len(self.collected_states)):
                     process_and_log_video(
