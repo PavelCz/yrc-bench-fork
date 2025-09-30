@@ -323,7 +323,7 @@ def make():
         "-video_logging_mode",
         "--evaluation.video_logging_mode",
         type=str,
-        choices=["wandb", "folder", "both"],
+        choices=["wandb", "folder", "both", "none"],
         default="wandb",
         help="video logging mode: wandb (Weights & Biases), folder (local files), or both",
     )
