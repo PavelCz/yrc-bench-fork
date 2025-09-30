@@ -107,11 +107,11 @@ class Evaluator:
                     process_and_log_video(
                         self.collected_states,
                         i,
-                        logger,
                         threshold,
                         afhp,
                         self.VIDEO_CONFIG,
                         output_folder=output_folder,
+                        logger=logger,
                         logging_mode=logging_mode,
                     )
 

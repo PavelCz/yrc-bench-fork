@@ -10,7 +10,7 @@ This module contains classes and functions for:
 import logging
 from pathlib import Path
 import numpy as np
-from typing import List, Tuple, Optional, Dict, Any, Literal
+from typing import List, Tuple, Optional, Dict, Any, Literal, Union
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 from PIL import Image, ImageDraw, ImageFont
@@ -173,14 +173,11 @@ class TextRenderer:
         self.config = config
         self.font = self._load_font()
 
-    def _load_font(self) -> Optional[ImageFont.FreeTypeFont]:
+    def _load_font(self) -> Union[ImageFont.FreeTypeFont, ImageFont.ImageFont]:
         try:
             return ImageFont.truetype("arial.ttf", self.config["font_size"])
         except OSError:
-            try:
-                return ImageFont.load_default()
-            except OSError:
-                return None
+            return ImageFont.load_default()
 
     def calculate_text_dimensions(self, text: str) -> Tuple[int, int]:
         if self.font:
@@ -436,11 +433,11 @@ def save_video_to_folder(
 def process_and_log_video(
     collected_states: List[List[Dict]],
     episode_idx: int,
-    logger: Optional[WandbLogger] = None,
-    threshold: float = 0.0,
-    afhp: float = 0.0,
-    video_config: dict = None,
+    threshold: float,
+    afhp: float,
+    video_config: dict,
     output_folder: Optional[Path] = None,
+    logger: Optional[WandbLogger] = None,
     logging_mode: Literal["wandb", "folder", "both"] = "wandb",
 ) -> None:
     """
@@ -456,8 +453,6 @@ def process_and_log_video(
         output_folder: Folder path for saving videos (required for folder and both modes)
         logging_mode: Logging mode - "wandb", "folder", "both", or "none"
     """
-    if video_config is None:
-        raise ValueError("video_config is required")
 
     # Skip video logging entirely if mode is "none"
     if logging_mode == "none":

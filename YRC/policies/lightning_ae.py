@@ -361,11 +361,17 @@ class LightningAEPolicy(OODPolicy):
 
         # Get decision score for the observation.
         if return_scores_and_recons:
+            scores: np.ndarray
+            recons: List[np.ndarray]
             scores, recons = self._compute_decision_scores(
                 observation, return_recons=return_scores_and_recons
             )
         else:
-            scores = self._compute_decision_scores(observation)
+            # we know that the return type is np.ndarray (default case if return_scores
+            # arg is not set)
+            scores: np.ndarray = cast(
+                np.ndarray, self._compute_decision_scores(observation)
+            )
 
         if self.rolling_average is not None:
             for i in range(len(self.rolling_average_buffers)):
