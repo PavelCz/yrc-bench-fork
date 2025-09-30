@@ -1,10 +1,12 @@
 import logging
 import numpy as np
+import os
 from typing import Optional, List, Dict, Tuple, Any
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 
 from .video_utils import process_and_log_video
+from .configs.global_configs import get_global_variable
 
 
 class Evaluator:
@@ -78,15 +80,31 @@ class Evaluator:
 
             if logger is not None:
                 afhp = summary[split]["action_1_frac"]
+                # Determine output folder for video logging
+                output_folder = getattr(self.args, 'video_output_folder', None)
+                logging_mode = getattr(self.args, 'video_logging_mode', 'none')
+                if output_folder is None and logging_mode in ['folder', 'both']:
+                    output_folder = self._get_default_video_folder()
+
                 for i in range(len(self.collected_states)):
                     process_and_log_video(
                         self.collected_states, i, logger, threshold, afhp, self.VIDEO_CONFIG,
-                        output_folder=getattr(self.args, 'video_output_folder', None),
-                        logging_mode=getattr(self.args, 'video_logging_mode', 'wandb')
+                        output_folder=output_folder,
+                        logging_mode=logging_mode
                     )
 
         return summary
 
+    def _get_default_video_folder(self) -> str:
+        """Get or create the default video folder in the experiment directory."""
+        experiment_dir = get_global_variable("experiment_dir")
+        if experiment_dir is None:
+            # Fallback to current directory if experiment_dir is not set
+            experiment_dir = "."
+
+        video_folder = os.path.join(experiment_dir, "videos")
+        os.makedirs(video_folder, exist_ok=True)
+        return video_folder
 
     def _eval_loop(self, policy, env, max_episodes: int) -> dict:
         args = self.args

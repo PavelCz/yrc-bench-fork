@@ -389,11 +389,15 @@ def process_and_log_video(
         threshold: Threshold value for the video caption
         afhp: Ask for help percentage
         video_config: Video configuration dictionary
-        output_folder: Folder path for saving videos (required for folder mode)
-        logging_mode: Logging mode - "wandb", "folder", or "both"
+        output_folder: Folder path for saving videos (required for folder and both modes)
+        logging_mode: Logging mode - "wandb", "folder", "both", or "none"
     """
     if video_config is None:
         raise ValueError("video_config is required")
+
+    # Skip video logging entirely if mode is "none"
+    if logging_mode == "none":
+        return
 
     # Extract and validate data
     video_data = extract_video_data(collected_states, episode_idx)
@@ -437,6 +441,6 @@ def process_and_log_video(
 
     if logging_mode in ["folder", "both"]:
         if output_folder is None:
-            raise ValueError("output_folder is required for folder logging mode")
+            raise ValueError("output_folder is required for folder and both logging modes")
         save_video_to_folder(combined_video, output_folder, filename, video_config, caption)
 
