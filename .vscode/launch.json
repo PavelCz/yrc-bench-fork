@@ -378,6 +378,8 @@
                 "mean",
                 "-cp_rolling_average_size",
                 "5",
+                "-video_logging_mode",
+                "folder",
             ],
             "console": "integratedTerminal",
             "justMyCode": true,

@@ -42,7 +42,7 @@ def main():
         if isinstance(policy, MahalanobisAEPolicy):
             policy.initialize_mahalanobis_detector(config)
 
-    evaluator = Evaluator(config.evaluation, config.environment)
+    evaluator = Evaluator(config, config.environment)
 
     coverage_fraction = config.evaluation.coverage_fraction
     threshold_sampler: str = config.evaluation.threshold_sampler

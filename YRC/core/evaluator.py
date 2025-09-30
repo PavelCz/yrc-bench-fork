@@ -27,8 +27,11 @@ class Evaluator:
         'outline_color': [0, 0, 0],    # Black
     }
 
-    def __init__(self, config, env_config: dict):
-        self.args = config
+    def __init__(self, config, env_config: Optional[dict] = None):
+        self.args = config.evaluation
+
+        self.eval_run_dir = config.eval_run_dir
+
         self.collected_states = []
         self.collected_actions_done = False
 
@@ -96,13 +99,11 @@ class Evaluator:
         return summary
 
     def _get_default_video_folder(self) -> str:
-        """Get or create the default video folder in the experiment directory."""
-        experiment_dir = get_global_variable("experiment_dir")
-        if experiment_dir is None:
-            # Fallback to current directory if experiment_dir is not set
-            experiment_dir = "."
+        """Get or create the default video folder in the eval_run_dir or experiment directory."""
+        # Try to get eval_run_dir from config first
+        base_dir = self.eval_run_dir
 
-        video_folder = os.path.join(experiment_dir, "videos")
+        video_folder = os.path.join(base_dir, "videos")
         os.makedirs(video_folder, exist_ok=True)
         return video_folder
 
