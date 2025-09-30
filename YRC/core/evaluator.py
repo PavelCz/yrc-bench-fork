@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-import os
+from pathlib import Path
 from typing import Optional, List, Dict, Tuple, Any
 from pytorch_lightning.loggers import WandbLogger
 import wandb
@@ -30,7 +30,7 @@ class Evaluator:
     def __init__(self, config, env_config: Optional[dict] = None):
         self.args = config.evaluation
 
-        self.eval_run_dir = config.eval_run_dir
+        self.eval_run_dir = Path(config.eval_run_dir)
 
         self.collected_states = []
         self.collected_actions_done = False
@@ -104,30 +104,32 @@ class Evaluator:
 
         return summary
 
-    def _resolve_video_output_folder(self, output_folder: Optional[str], create_folder: bool = True) -> Optional[str]:
+    def _resolve_video_output_folder(self, output_folder: Optional[str], create_folder: bool = True) -> Optional[Path]:
         """Resolve the video output folder path relative to eval_run_dir."""
         if output_folder is None:
             return None
 
+        output_path = Path(output_folder)
+
         # If it's an absolute path, use it as-is
-        if os.path.isabs(output_folder):
-            resolved_path = output_folder
+        if output_path.is_absolute():
+            resolved_path = output_path
         else:
             # If it's a relative path, make it relative to eval_run_dir
-            resolved_path = os.path.join(self.eval_run_dir, output_folder)
+            resolved_path = self.eval_run_dir / output_folder
 
         # Only create the folder if requested
         if create_folder:
-            os.makedirs(resolved_path, exist_ok=True)
+            resolved_path.mkdir(parents=True, exist_ok=True)
         return resolved_path
 
-    def _get_default_video_folder(self) -> str:
+    def _get_default_video_folder(self) -> Path:
         """Get or create the default video folder in the eval_run_dir or experiment directory."""
         # Try to get eval_run_dir from config first
         base_dir = self.eval_run_dir
 
-        video_folder = os.path.join(base_dir, "videos")
-        os.makedirs(video_folder, exist_ok=True)
+        video_folder = base_dir / "videos"
+        video_folder.mkdir(parents=True, exist_ok=True)
         return video_folder
 
     def _eval_loop(self, policy, env, max_episodes: int) -> dict:

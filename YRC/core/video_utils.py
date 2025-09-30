@@ -8,7 +8,7 @@ This module contains classes and functions for:
 """
 
 import logging
-import os
+from pathlib import Path
 import numpy as np
 from typing import List, Tuple, Optional, Dict, Any, Literal
 from pytorch_lightning.loggers import WandbLogger
@@ -321,7 +321,7 @@ def log_to_wandb(logger: WandbLogger, video: np.ndarray, caption: str, afhp: flo
 
 def save_video_to_folder(
     video: np.ndarray,
-    folder_path: str,
+    folder_path: Path,
     filename: str,
     video_config: dict,
     caption: str = ""
@@ -337,7 +337,7 @@ def save_video_to_folder(
         caption: Optional caption for the video
     """
     # Ensure folder exists
-    os.makedirs(folder_path, exist_ok=True)
+    folder_path.mkdir(parents=True, exist_ok=True)
 
     # Convert video from (T, C, H, W) to list of PIL Images
     frames = []
@@ -352,7 +352,7 @@ def save_video_to_folder(
 
     # Save as GIF
     if frames:
-        output_path = os.path.join(folder_path, f"{filename}.gif")
+        output_path = folder_path / f"{filename}.gif"
         frames[0].save(
             output_path,
             save_all=True,
@@ -364,9 +364,8 @@ def save_video_to_folder(
 
         # Save caption as text file if provided
         if caption:
-            caption_path = os.path.join(folder_path, f"{filename}_caption.txt")
-            with open(caption_path, 'w') as f:
-                f.write(caption)
+            caption_path = folder_path / f"{filename}_caption.txt"
+            caption_path.write_text(caption)
 
 
 def process_and_log_video(
@@ -376,7 +375,7 @@ def process_and_log_video(
     threshold: float = 0.0,
     afhp: float = 0.0,
     video_config: dict = None,
-    output_folder: Optional[str] = None,
+    output_folder: Optional[Path] = None,
     logging_mode: Literal["wandb", "folder", "both"] = "wandb",
 ) -> None:
     """
