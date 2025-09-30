@@ -5,8 +5,8 @@ from typing import Optional, List, Dict, Tuple, Any
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 
-from .video_utils import process_and_log_video, resolve_video_output_folder
-from .configs.global_configs import get_global_variable
+from YRC.core.video_utils import process_and_log_video, resolve_video_output_folder
+from YRC.core.configs.global_configs import get_global_variable
 
 
 class Evaluator:
