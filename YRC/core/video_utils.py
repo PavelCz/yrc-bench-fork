@@ -22,7 +22,7 @@ class VideoProcessor:
     def __init__(self, config: dict):
         """
         Initialize VideoProcessor with configuration.
-        
+
         Args:
             config: Dictionary containing video processing configuration
         """
@@ -33,11 +33,11 @@ class VideoProcessor:
     ) -> np.ndarray:
         """
         Combine observations and reconstructions side by side.
-        
+
         Args:
             observations: List of observation frames
             reconstructions: List of reconstruction frames
-            
+
         Returns:
             Combined video array with observations and reconstructions side by side
         """
@@ -67,43 +67,47 @@ class VideoProcessor:
     def add_repeated_frames(self, video: np.ndarray) -> np.ndarray:
         """
         Add repeated frames at the end for smoother video ending.
-        
+
         Args:
             video: Input video array
-            
+
         Returns:
             Video with repeated final frames appended
         """
         final_frame = video[-1:].copy()
-        repeated_frames = np.repeat(final_frame, self.config['final_frame_repetitions'], axis=0)
+        repeated_frames = np.repeat(
+            final_frame, self.config["final_frame_repetitions"], axis=0
+        )
         return np.concatenate([video, repeated_frames], axis=0)
 
     def create_video_with_bars(self, video: np.ndarray) -> np.ndarray:
         """
         Create a new video array with space for score bars.
-        
+
         Args:
             video: Input video array
-            
+
         Returns:
             New video array with extra height for score bars
         """
         time_steps, channels, height, width = video.shape
-        bar_height = self.config['score_bar_height']
+        bar_height = self.config["score_bar_height"]
 
         return np.zeros(
             (time_steps, channels, height + bar_height, width), dtype=np.uint8
         )
 
-    def add_base_video_content(self, video_with_bars: np.ndarray, original_video: np.ndarray) -> None:
+    def add_base_video_content(
+        self, video_with_bars: np.ndarray, original_video: np.ndarray
+    ) -> None:
         """
         Copy original video content below the bar area.
-        
+
         Args:
             video_with_bars: Video array with space for bars
             original_video: Original video content to copy
         """
-        bar_height = self.config['score_bar_height']
+        bar_height = self.config["score_bar_height"]
         video_with_bars[:, :, bar_height:, :] = original_video
 
 
@@ -125,7 +129,9 @@ class ScoreBarRenderer:
         score_max = np.max(all_scores)
         return score_min, score_max
 
-    def normalize_score(self, score: float, score_min: float, score_max: float) -> float:
+    def normalize_score(
+        self, score: float, score_min: float, score_max: float
+    ) -> float:
         """Normalize a score to 0-1 range."""
         if score_max > score_min:
             normalized_score = (score - score_min) / (score_max - score_min)
@@ -135,10 +141,12 @@ class ScoreBarRenderer:
     def get_bar_color(self, action: int) -> List[int]:
         """Get the appropriate color for the score bar based on action."""
         if action == 1:  # OOD detected
-            return self.config['ood_color']
-        return self.config['normal_color']
+            return self.config["ood_color"]
+        return self.config["normal_color"]
 
-    def calculate_bar_dimensions(self, normalized_score: float, width: int) -> Tuple[int, bool]:
+    def calculate_bar_dimensions(
+        self, normalized_score: float, width: int
+    ) -> Tuple[int, bool]:
         """Calculate bar width and determine if background should be filled."""
         bar_width = int(normalized_score * width)
         return bar_width, bar_width < width
@@ -167,7 +175,7 @@ class TextRenderer:
 
     def _load_font(self) -> Optional[ImageFont.FreeTypeFont]:
         try:
-            return ImageFont.truetype("arial.ttf", self.config['font_size'])
+            return ImageFont.truetype("arial.ttf", self.config["font_size"])
         except OSError:
             try:
                 return ImageFont.load_default()
@@ -178,14 +186,20 @@ class TextRenderer:
         if self.font:
             bbox = self.font.getbbox(text)
             return bbox[2] - bbox[0], bbox[3] - bbox[1]
-        return len(text) * self.config['char_width_estimate'], self.config['font_size'] + 2
+        return len(text) * self.config["char_width_estimate"], self.config[
+            "font_size"
+        ] + 2
 
-    def calculate_text_position(self, bar_height: int, text_height: int) -> Tuple[int, int]:
-        text_x = self.config['text_padding']
+    def calculate_text_position(
+        self, bar_height: int, text_height: int
+    ) -> Tuple[int, int]:
+        text_x = self.config["text_padding"]
         text_y = (bar_height - text_height) // 2
         return text_x, text_y
 
-    def add_text_to_frame(self, frame: np.ndarray, text: str, position: Tuple[int, int]) -> np.ndarray:
+    def add_text_to_frame(
+        self, frame: np.ndarray, text: str, position: Tuple[int, int]
+    ) -> np.ndarray:
         # Convert from (C, H, W) to (H, W, C)
         rgb_frame = frame.transpose(1, 2, 0)
         pil_image = Image.fromarray(rgb_frame, mode="RGB")
@@ -201,19 +215,26 @@ class TextRenderer:
                         draw.text(
                             (text_x + dx, text_y + dy),
                             text,
-                            fill=tuple(self.config['outline_color']),
+                            fill=tuple(self.config["outline_color"]),
                             font=self.font,
                         )
             # Draw main text
-            draw.text((text_x, text_y), text, fill=tuple(self.config['text_color']), font=self.font)
+            draw.text(
+                (text_x, text_y),
+                text,
+                fill=tuple(self.config["text_color"]),
+                font=self.font,
+            )
         else:
-            draw.text((text_x, text_y), text, fill=tuple(self.config['text_color']))
+            draw.text((text_x, text_y), text, fill=tuple(self.config["text_color"]))
 
         # Convert back to (C, H, W)
         return np.array(pil_image).transpose(2, 0, 1)
 
 
-def extract_video_data(collected_states: List[List[Dict]], episode_idx: int) -> Optional[Dict[str, Any]]:
+def extract_video_data(
+    collected_states: List[List[Dict]], episode_idx: int
+) -> Optional[Dict[str, Any]]:
     """Extract and validate video data from collected states."""
     if episode_idx >= len(collected_states) or not collected_states[episode_idx]:
         logging.warning(f"No data available for episode {episode_idx}")
@@ -226,10 +247,10 @@ def extract_video_data(collected_states: List[List[Dict]], episode_idx: int) -> 
     actions = [x["action"] for x in episode_data]
 
     return {
-        'observations': obs,
-        'scores': scores,
-        'reconstructions': recons,
-        'actions': actions,
+        "observations": obs,
+        "scores": scores,
+        "reconstructions": recons,
+        "actions": actions,
     }
 
 
@@ -243,7 +264,7 @@ def add_score_bars(
 ) -> np.ndarray:
     """Add score bars to video frames."""
     score_min, score_max = score_renderer.calculate_score_bounds(scores)
-    bar_height = video_config['score_bar_height']
+    bar_height = video_config["score_bar_height"]
     time_steps, channels, _, width = video.shape
 
     # Create new video with extra height for score bar
@@ -263,26 +284,36 @@ def add_score_bars(
             current_action = actions[-1] if actions else 0
 
         # Normalize score to 0-1 range
-        normalized_score = score_renderer.normalize_score(current_score, score_min, score_max)
+        normalized_score = score_renderer.normalize_score(
+            current_score, score_min, score_max
+        )
 
         # Calculate bar width
-        bar_width, needs_bg = score_renderer.calculate_bar_dimensions(normalized_score, width)
+        bar_width, needs_bg = score_renderer.calculate_bar_dimensions(
+            normalized_score, width
+        )
         bar_color = score_renderer.get_bar_color(current_action)
 
         # Fill the bar area
         if bar_width > 0:
-            vid_with_bars[t, :, :bar_height, :bar_width] = np.array(bar_color)[:, np.newaxis, np.newaxis]
+            vid_with_bars[t, :, :bar_height, :bar_width] = np.array(bar_color)[
+                :, np.newaxis, np.newaxis
+            ]
 
         # Add background for remaining part of bar (dark gray)
         if needs_bg:
-            vid_with_bars[t, :, :bar_height, bar_width:] = video_config['score_bar_bg_color']
+            vid_with_bars[t, :, :bar_height, bar_width:] = video_config[
+                "score_bar_bg_color"
+            ]
 
         # Add text overlay with score value
         score_text = f"{current_score:.3f}"
         _text_width, text_height = text_renderer.calculate_text_dimensions(score_text)
         text_x, text_y = text_renderer.calculate_text_position(bar_height, text_height)
 
-        vid_with_bars[t] = text_renderer.add_text_to_frame(vid_with_bars[t], score_text, (text_x, text_y))
+        vid_with_bars[t] = text_renderer.add_text_to_frame(
+            vid_with_bars[t], score_text, (text_x, text_y)
+        )
 
     return vid_with_bars
 
@@ -291,14 +322,16 @@ def generate_caption(threshold: float, afhp: float, video_data: Dict[str, Any]) 
     """Generate video caption with relevant information."""
     caption = f"Threshold: {threshold:.2E} - AFHP: {afhp:.2f}"
 
-    use_recons = video_data['reconstructions'][0] is not None
+    use_recons = video_data["reconstructions"][0] is not None
     if use_recons:
         caption += " - Left: Original, Right: Reconstruction"
     else:
         caption += " - Original observations"
 
-    if video_data['scores'] is not None:
-        score_min, score_max = ScoreBarRenderer.calculate_score_bounds_static(video_data['scores'])
+    if video_data["scores"] is not None:
+        score_min, score_max = ScoreBarRenderer.calculate_score_bounds_static(
+            video_data["scores"]
+        )
         caption += (
             " - Top bar: Score with values (Green=Normal, Red=OOD, Range: "
             f"{score_min:.3f}-{score_max:.3f})"
@@ -307,22 +340,28 @@ def generate_caption(threshold: float, afhp: float, video_data: Dict[str, Any]) 
     return caption
 
 
-def log_to_wandb(logger: WandbLogger, video: np.ndarray, caption: str, afhp: float, video_config: dict) -> None:
+def log_to_wandb(
+    logger: WandbLogger,
+    video: np.ndarray,
+    caption: str,
+    afhp: float,
+    video_config: dict,
+) -> None:
     """Log video to WandB."""
-    logger.experiment.log({
-        f"eval_episode_{afhp:.2f}": wandb.Video(
-            video,
-            fps=video_config['fps'],
-            format="gif",
-            caption=caption,
-        ),
-    })
+    logger.experiment.log(
+        {
+            f"eval_episode_{afhp:.2f}": wandb.Video(
+                video,
+                fps=video_config["fps"],
+                format="gif",
+                caption=caption,
+            ),
+        }
+    )
 
 
 def resolve_video_output_folder(
-    output_folder: Optional[str],
-    eval_run_dir: Path,
-    create_folder: bool = True
+    output_folder: Optional[str], eval_run_dir: Path, create_folder: bool = True
 ) -> Optional[Path]:
     """Resolve the video output folder path relative to eval_run_dir."""
     if output_folder is None:
@@ -348,7 +387,7 @@ def save_video_to_folder(
     folder_path: Path,
     filename: str,
     video_config: dict,
-    caption: str = ""
+    caption: str = "",
 ) -> None:
     """
     Save video to a local folder as GIF.
@@ -381,9 +420,11 @@ def save_video_to_folder(
             output_path,
             save_all=True,
             append_images=frames[1:],
-            duration=int(1000 / video_config['fps']),  # Convert fps to milliseconds per frame
+            duration=int(
+                1000 / video_config["fps"]
+            ),  # Convert fps to milliseconds per frame
             loop=0,  # Infinite loop
-            optimize=False  # Keep quality high for debugging
+            optimize=False,  # Keep quality high for debugging
         )
 
         # Save caption as text file if provided
@@ -432,21 +473,21 @@ def process_and_log_video(
 
     # Process video frames
     combined_video = processor.combine_observations_and_reconstructions(
-        video_data['observations'],
-        video_data['reconstructions'],
+        video_data["observations"],
+        video_data["reconstructions"],
     )
 
     combined_video = processor.add_repeated_frames(combined_video)
 
     # Add score bars if available
-    if video_data['scores'] is not None:
+    if video_data["scores"] is not None:
         score_renderer = ScoreBarRenderer(video_config)
         text_renderer = TextRenderer(video_config)
 
         combined_video = add_score_bars(
             combined_video,
-            video_data['scores'],
-            video_data['actions'],
+            video_data["scores"],
+            video_data["actions"],
             score_renderer,
             text_renderer,
             video_config,
@@ -464,6 +505,9 @@ def process_and_log_video(
 
     if logging_mode in ["folder", "both"]:
         if output_folder is None:
-            raise ValueError("output_folder is required for folder and both logging modes")
-        save_video_to_folder(combined_video, output_folder, filename, video_config, caption)
-
+            raise ValueError(
+                "output_folder is required for folder and both logging modes"
+            )
+        save_video_to_folder(
+            combined_video, output_folder, filename, video_config, caption
+        )

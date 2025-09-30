@@ -1,12 +1,10 @@
 import logging
 import numpy as np
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple, Any
+from typing import Optional, List, Dict
 from pytorch_lightning.loggers import WandbLogger
-import wandb
 
 from YRC.core.video_utils import process_and_log_video, resolve_video_output_folder
-from YRC.core.configs.global_configs import get_global_variable
 
 
 class Evaluator:
@@ -14,17 +12,17 @@ class Evaluator:
 
     # Video logging configuration constants
     VIDEO_CONFIG = {
-        'fps': 10,
-        'final_frame_repetitions': 10,
-        'score_bar_height': 15,
-        'score_bar_bg_color': 64,  # Dark gray
-        'font_size': 12,
-        'text_padding': 5,
-        'char_width_estimate': 6,
-        'normal_color': [0, 255, 0],   # Green
-        'ood_color': [255, 0, 0],      # Red
-        'text_color': [255, 255, 255], # White
-        'outline_color': [0, 0, 0],    # Black
+        "fps": 10,
+        "final_frame_repetitions": 10,
+        "score_bar_height": 15,
+        "score_bar_bg_color": 64,  # Dark gray
+        "font_size": 12,
+        "text_padding": 5,
+        "char_width_estimate": 6,
+        "normal_color": [0, 255, 0],  # Green
+        "ood_color": [255, 0, 0],  # Red
+        "text_color": [255, 255, 255],  # White
+        "outline_color": [0, 0, 0],  # Black
     }
 
     def __init__(self, config, env_config: Optional[dict] = None):
@@ -83,13 +81,18 @@ class Evaluator:
 
             if logger is not None:
                 # Determine output folder for video logging
-                raw_output_folder = getattr(self.args, 'video_output_folder', None)
-                logging_mode = getattr(self.args, 'video_logging_mode', 'none')
+                raw_output_folder = getattr(self.args, "video_output_folder", None)
+                logging_mode = getattr(self.args, "video_logging_mode", "none")
 
-                if raw_output_folder is None and logging_mode in ['folder', 'both']:
+                if raw_output_folder is None and logging_mode in ["folder", "both"]:
                     output_folder = self._get_default_video_folder()
-                elif raw_output_folder is not None and logging_mode in ['folder', 'both']:
-                    output_folder = resolve_video_output_folder(raw_output_folder, self.eval_run_dir, create_folder=True)
+                elif raw_output_folder is not None and logging_mode in [
+                    "folder",
+                    "both",
+                ]:
+                    output_folder = resolve_video_output_folder(
+                        raw_output_folder, self.eval_run_dir, create_folder=True
+                    )
                 else:
                     # For wandb/none modes, don't create folders even if specified
                     output_folder = None
@@ -102,9 +105,14 @@ class Evaluator:
 
                 for i in range(len(self.collected_states)):
                     process_and_log_video(
-                        self.collected_states, i, logger, threshold, afhp, self.VIDEO_CONFIG,
+                        self.collected_states,
+                        i,
+                        logger,
+                        threshold,
+                        afhp,
+                        self.VIDEO_CONFIG,
                         output_folder=output_folder,
-                        logging_mode=logging_mode
+                        logging_mode=logging_mode,
                     )
 
         return summary

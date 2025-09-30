@@ -74,7 +74,8 @@ class LightningAEPolicy(OODPolicy):
             for _ in range(env.num_envs):
                 self.rolling_average_buffers.append(
                     collections.deque(
-                        self.rolling_average_size*[float("-inf")], self.rolling_average_size
+                        self.rolling_average_size * [float("-inf")],
+                        self.rolling_average_size,
                     )
                 )
 
@@ -370,11 +371,17 @@ class LightningAEPolicy(OODPolicy):
             for i in range(len(self.rolling_average_buffers)):
                 self.rolling_average_buffers[i].append(scores[i].item())
                 if self.rolling_average == "mean":
-                    scores[i] = torch.mean(torch.tensor(self.rolling_average_buffers[i])).item()
+                    scores[i] = torch.mean(
+                        torch.tensor(self.rolling_average_buffers[i])
+                    ).item()
                 elif self.rolling_average == "median":
-                    scores[i] = torch.median(torch.tensor(self.rolling_average_buffers[i])).item()
+                    scores[i] = torch.median(
+                        torch.tensor(self.rolling_average_buffers[i])
+                    ).item()
                 else:
-                    raise NotImplementedError(f"Unrecognized rolling average: {self.rolling_average}")
+                    raise NotImplementedError(
+                        f"Unrecognized rolling average: {self.rolling_average}"
+                    )
 
         # Use our own threshold instead of self.clf.threshold_
         action: np.ndarray = (scores > self.threshold_).astype(int)
@@ -388,12 +395,12 @@ class LightningAEPolicy(OODPolicy):
         return action
 
     def reset_rolling_average_buffer(self, index: int) -> None:
-        """Reset the rolling average buffer for a given index. The index corresponds 
+        """Reset the rolling average buffer for a given index. The index corresponds
         to the environment index.
         """
         if self.rolling_average is not None:
             self.rolling_average_buffers[index] = collections.deque(
-                self.rolling_average_size*[float("-inf")], self.rolling_average_size
+                self.rolling_average_size * [float("-inf")], self.rolling_average_size
             )
 
     def update_params(self, params: Dict[str, Any]) -> None:
