@@ -5,7 +5,7 @@ from typing import Optional, List, Dict, Tuple, Any
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 
-from .video_utils import process_and_log_video
+from .video_utils import process_and_log_video, resolve_video_output_folder
 from .configs.global_configs import get_global_variable
 
 
@@ -90,7 +90,7 @@ class Evaluator:
                 if raw_output_folder is None and logging_mode in ['folder', 'both']:
                     output_folder = self._get_default_video_folder()
                 elif raw_output_folder is not None and logging_mode in ['folder', 'both']:
-                    output_folder = self._resolve_video_output_folder(raw_output_folder, create_folder=True)
+                    output_folder = resolve_video_output_folder(raw_output_folder, self.eval_run_dir, create_folder=True)
                 else:
                     # For wandb/none modes, don't create folders even if specified
                     output_folder = None
@@ -103,25 +103,6 @@ class Evaluator:
                     )
 
         return summary
-
-    def _resolve_video_output_folder(self, output_folder: Optional[str], create_folder: bool = True) -> Optional[Path]:
-        """Resolve the video output folder path relative to eval_run_dir."""
-        if output_folder is None:
-            return None
-
-        output_path = Path(output_folder)
-
-        # If it's an absolute path, use it as-is
-        if output_path.is_absolute():
-            resolved_path = output_path
-        else:
-            # If it's a relative path, make it relative to eval_run_dir
-            resolved_path = self.eval_run_dir / output_folder
-
-        # Only create the folder if requested
-        if create_folder:
-            resolved_path.mkdir(parents=True, exist_ok=True)
-        return resolved_path
 
     def _get_default_video_folder(self) -> Path:
         """Get or create the default video folder in the eval_run_dir or experiment directory."""

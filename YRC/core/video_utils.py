@@ -319,6 +319,30 @@ def log_to_wandb(logger: WandbLogger, video: np.ndarray, caption: str, afhp: flo
     })
 
 
+def resolve_video_output_folder(
+    output_folder: Optional[str],
+    eval_run_dir: Path,
+    create_folder: bool = True
+) -> Optional[Path]:
+    """Resolve the video output folder path relative to eval_run_dir."""
+    if output_folder is None:
+        return None
+
+    output_path = Path(output_folder)
+
+    # If it's an absolute path, use it as-is
+    if output_path.is_absolute():
+        resolved_path = output_path
+    else:
+        # If it's a relative path, make it relative to eval_run_dir
+        resolved_path = eval_run_dir / output_folder
+
+    # Only create the folder if requested
+    if create_folder:
+        resolved_path.mkdir(parents=True, exist_ok=True)
+    return resolved_path
+
+
 def save_video_to_folder(
     video: np.ndarray,
     folder_path: Path,
