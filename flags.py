@@ -320,6 +320,22 @@ def make():
     )
 
     parser.add_argument(
+        "-video_logging_mode",
+        "--evaluation.video_logging_mode",
+        type=str,
+        choices=["wandb", "folder", "both"],
+        default="wandb",
+        help="video logging mode: wandb (Weights & Biases), folder (local files), or both",
+    )
+
+    parser.add_argument(
+        "-video_output_folder",
+        "--evaluation.video_output_folder",
+        type=str,
+        help="folder path for saving videos when using folder or both logging modes",
+    )
+
+    parser.add_argument(
         "-experiment_group",
         "--experiment_group",
         type=str,

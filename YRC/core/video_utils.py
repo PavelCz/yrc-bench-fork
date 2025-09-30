@@ -8,8 +8,9 @@ This module contains classes and functions for:
 """
 
 import logging
+import os
 import numpy as np
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any, Literal
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 from PIL import Image, ImageDraw, ImageFont
@@ -309,15 +310,82 @@ def log_to_wandb(logger: WandbLogger, video: np.ndarray, caption: str, afhp: flo
     })
 
 
+def save_video_to_folder(
+    video: np.ndarray,
+    folder_path: str,
+    filename: str,
+    video_config: dict,
+    caption: str = ""
+) -> None:
+    """
+    Save video to a local folder as GIF.
+
+    Args:
+        video: Video array in (T, C, H, W) format
+        folder_path: Path to the folder where video should be saved
+        filename: Base filename (without extension)
+        video_config: Video configuration dictionary
+        caption: Optional caption for the video
+    """
+    # Ensure folder exists
+    os.makedirs(folder_path, exist_ok=True)
+
+    # Convert video from (T, C, H, W) to list of PIL Images
+    frames = []
+    for t in range(video.shape[0]):
+        # Convert from (C, H, W) to (H, W, C)
+        frame = video[t].transpose(1, 2, 0)
+        # Ensure values are in 0-255 range
+        frame = np.clip(frame, 0, 255).astype(np.uint8)
+        # Create PIL Image
+        pil_frame = Image.fromarray(frame, mode="RGB")
+        frames.append(pil_frame)
+
+    # Save as GIF
+    if frames:
+        output_path = os.path.join(folder_path, f"{filename}.gif")
+        frames[0].save(
+            output_path,
+            save_all=True,
+            append_images=frames[1:],
+            duration=int(1000 / video_config['fps']),  # Convert fps to milliseconds per frame
+            loop=0,  # Infinite loop
+            optimize=False  # Keep quality high for debugging
+        )
+
+        # Save caption as text file if provided
+        if caption:
+            caption_path = os.path.join(folder_path, f"{filename}_caption.txt")
+            with open(caption_path, 'w') as f:
+                f.write(caption)
+
+
 def process_and_log_video(
     collected_states: List[List[Dict]],
     episode_idx: int,
-    logger: WandbLogger,
-    threshold: float,
-    afhp: float,
-    video_config: dict,
+    logger: Optional[WandbLogger] = None,
+    threshold: float = 0.0,
+    afhp: float = 0.0,
+    video_config: dict = None,
+    output_folder: Optional[str] = None,
+    logging_mode: Literal["wandb", "folder", "both"] = "wandb",
 ) -> None:
-    """Complete video processing and logging pipeline."""
+    """
+    Complete video processing and logging pipeline.
+
+    Args:
+        collected_states: List of collected state data for all episodes
+        episode_idx: Index of the episode to process
+        logger: WandbLogger instance (required for wandb mode)
+        threshold: Threshold value for the video caption
+        afhp: Ask for help percentage
+        video_config: Video configuration dictionary
+        output_folder: Folder path for saving videos (required for folder mode)
+        logging_mode: Logging mode - "wandb", "folder", or "both"
+    """
+    if video_config is None:
+        raise ValueError("video_config is required")
+
     # Extract and validate data
     video_data = extract_video_data(collected_states, episode_idx)
     if not video_data:
@@ -348,7 +416,18 @@ def process_and_log_video(
             video_config,
         )
 
-    # Generate caption and log
+    # Generate caption
     caption = generate_caption(threshold, afhp, video_data)
-    log_to_wandb(logger, combined_video, caption, afhp, video_config)
+    filename = f"episode_{episode_idx}_afhp_{afhp:.2f}"
+
+    # Log based on mode
+    if logging_mode in ["wandb", "both"]:
+        if logger is None:
+            raise ValueError("logger is required for wandb logging mode")
+        log_to_wandb(logger, combined_video, caption, afhp, video_config)
+
+    if logging_mode in ["folder", "both"]:
+        if output_folder is None:
+            raise ValueError("output_folder is required for folder logging mode")
+        save_video_to_folder(combined_video, output_folder, filename, video_config, caption)
 

@@ -80,7 +80,9 @@ class Evaluator:
                 afhp = summary[split]["action_1_frac"]
                 for i in range(len(self.collected_states)):
                     process_and_log_video(
-                        self.collected_states, i, logger, threshold, afhp, self.VIDEO_CONFIG
+                        self.collected_states, i, logger, threshold, afhp, self.VIDEO_CONFIG,
+                        output_folder=getattr(self.args, 'video_output_folder', None),
+                        logging_mode=getattr(self.args, 'video_logging_mode', 'wandb')
                     )
 
         return summary
