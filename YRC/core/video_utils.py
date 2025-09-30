@@ -117,6 +117,10 @@ class ScoreBarRenderer:
         """Calculate min and max score bounds, handling -inf values."""
         all_scores = np.array(scores)
         all_rational_scores = all_scores[all_scores != float("-inf")]
+
+        # If all scores are -inf, return 0.0, 1.0
+        if len(all_rational_scores) == 0:
+            return 0.0, 1.0
         score_min = np.min(all_rational_scores)
         score_max = np.max(all_scores)
         return score_min, score_max
@@ -144,6 +148,11 @@ class ScoreBarRenderer:
         """Static method to calculate min and max score bounds, handling -inf values."""
         all_scores = np.array(scores)
         all_rational_scores = all_scores[all_scores != float("-inf")]
+
+        # If all scores are -inf, return 0.0, 1.0
+        if len(all_rational_scores) == 0:
+            return 0.0, 1.0
+
         score_min = np.min(all_rational_scores)
         score_max = np.max(all_scores)
         return score_min, score_max
