@@ -227,7 +227,7 @@ def extract_video_data(collected_states: List[List[Dict]], episode_idx: int) -> 
 
     return {
         'observations': obs,
-        'scores': scores[0] if scores and scores[0] is not None else None,
+        'scores': scores,
         'reconstructions': recons,
         'actions': actions,
     }
