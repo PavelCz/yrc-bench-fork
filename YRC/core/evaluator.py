@@ -3,6 +3,9 @@ import numpy as np
 from pathlib import Path
 from typing import Optional, List, Dict
 from pytorch_lightning.loggers import WandbLogger
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+import matplotlib.pyplot as plt
 
 from YRC.core.video_utils import process_and_log_video, resolve_video_output_folder
 
@@ -145,6 +148,14 @@ class Evaluator:
             summary[split] = self.summarize(log)
             self.write_summary(split, summary[split])
 
+            # Create and save OOD score histograms
+            self._save_score_histograms(
+                split,
+                log.get("scores_in_domain", []),
+                log.get("scores_out_of_domain", []),
+                logger=logger,
+            )
+
             envs[split].close()
 
             if logger is not None:
@@ -271,6 +282,59 @@ class Evaluator:
         video_folder.mkdir(parents=True, exist_ok=True)
         return video_folder
 
+    def _save_score_histograms(
+        self,
+        split: str,
+        scores_in_domain: List[float],
+        scores_out_of_domain: List[float],
+        logger: Optional[WandbLogger] = None,
+    ) -> None:
+        """Create and save histograms of OOD scores for in-domain and out-of-domain levels."""
+        if not scores_in_domain and not scores_out_of_domain:
+            logging.info("No scores available for histogram generation")
+            return
+
+        # Create figure with two subplots
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+        
+        # Histogram for in-domain levels (deterministic coin)
+        if scores_in_domain:
+            ax1.hist(scores_in_domain, bins=50, alpha=0.7, color='blue', edgecolor='black')
+            ax1.set_xlabel('OOD Score')
+            ax1.set_ylabel('Frequency')
+            ax1.set_title(f'OOD Scores - In-Domain Levels (Deterministic Coin)\n{split} - {len(scores_in_domain)} samples')
+            ax1.grid(True, alpha=0.3)
+        else:
+            ax1.text(0.5, 0.5, 'No in-domain scores', ha='center', va='center')
+            ax1.set_title(f'OOD Scores - In-Domain Levels\n{split} - No data')
+
+        # Histogram for out-of-domain levels (random coin)
+        if scores_out_of_domain:
+            ax2.hist(scores_out_of_domain, bins=50, alpha=0.7, color='red', edgecolor='black')
+            ax2.set_xlabel('OOD Score')
+            ax2.set_ylabel('Frequency')
+            ax2.set_title(f'OOD Scores - Out-of-Domain Levels (Random Coin)\n{split} - {len(scores_out_of_domain)} samples')
+            ax2.grid(True, alpha=0.3)
+        else:
+            ax2.text(0.5, 0.5, 'No out-of-domain scores', ha='center', va='center')
+            ax2.set_title(f'OOD Scores - Out-of-Domain Levels\n{split} - No data')
+
+        plt.tight_layout()
+        
+        # Save to file
+        histogram_path = self.eval_run_dir / f'ood_score_histograms_{split}.png'
+        plt.savefig(histogram_path, dpi=150, bbox_inches='tight')
+        logging.info(f"Saved OOD score histograms to {histogram_path}")
+        
+        # Log to wandb if available
+        if logger is not None:
+            import wandb
+            logger.experiment.log({
+                f"ood_score_histograms_{split}": wandb.Image(str(histogram_path))
+            })
+        
+        plt.close(fig)
+
     def _eval_loop(self, policy, env, max_episodes: int) -> dict:
         args = self.args
 
@@ -282,6 +346,9 @@ class Evaluator:
             # Whether *any* state has been predicted as ood.
             "level_ood_pred": [],
             "level_ood_gt": [],
+            # OOD scores per timestep for histogram analysis
+            "scores_in_domain": [],  # Scores for deterministic coin levels
+            "scores_out_of_domain": [],  # Scores for random coin levels
         }
 
         # A temporary log that only contains stats for the current episode.
@@ -360,6 +427,15 @@ class Evaluator:
 
                 # Some OOD detectors, like the random one, don't assign scores.
                 scores_i = scores[i] if scores is not None else None
+
+                # Collect scores for histogram analysis (only if scores exist)
+                if scores_i is not None and not done[i]:
+                    # Check if this level has random or deterministic coin
+                    is_random_coin = current_level_ood_gt[i]
+                    if is_random_coin:
+                        log["scores_out_of_domain"].append(float(scores_i))
+                    else:
+                        log["scores_in_domain"].append(float(scores_i))
 
                 if not self.done_saving_actions_for_vid:
                     self.collected_states[i][-1].append(
