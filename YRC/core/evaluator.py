@@ -220,6 +220,27 @@ class Evaluator:
                 episode_log[f"action_{self.LOGGED_ACTION}"][i] += (
                     action[i] == self.LOGGED_ACTION
                 ).sum()
+                # Since has done is changed below, we also need to check done here.
+                # Since done will not stay True, because the env is reset at the end,
+                # we can't just only check done.
+                # if not has_done[i] and not done[i] and not self.collected_actions_done:
+                # Recons is None for non reconstruction-based OOD detectors like
+                # Deep-SVDD.
+                recons_i = recons[i] if recons is not None else None
+
+                # Some OOD detectors, like the random one, don't assign scores.
+                scores_i = scores[i] if scores is not None else None
+
+                if not self.collected_actions_done:
+                    self.collected_states[i][-1].append(
+                        {
+                            "obs": prev_obs["env_obs"][i],
+                            "scores": scores_i,
+                            "recons": recons_i,
+                            "action": action[i],
+                            "done": done[i],
+                        }
+                    )
 
                 if done[i] and num_episodes < max_episodes:
                     log["level_ood_pred"].append(current_level_ood_pred[i])
@@ -252,27 +273,6 @@ class Evaluator:
                 # because gym3 automatically resets the environment at the end of an
                 # episode, so the info dict might be of the next episode.
                 current_level_ood_gt[i] = info[i]["randomize_goal"]
-
-                # Since has done is changed below, we also need to check done here.
-                # Since done will not stay True, because the env is reset at the end,
-                # we can't just only check done.
-                # if not has_done[i] and not done[i] and not self.collected_actions_done:
-                # Recons is None for non reconstruction-based OOD detectors like
-                # Deep-SVDD.
-                recons_i = recons[i] if recons is not None else None
-
-                # Some OOD detectors, like the random one, don't assign scores.
-                scores_i = scores[i] if scores is not None else None
-
-                self.collected_states[i][-1].append(
-                    {
-                        "obs": prev_obs["env_obs"][i],
-                        "scores": scores_i,
-                        "recons": recons_i,
-                        "action": action[i],
-                        "done": done[i],
-                    }
-                )
 
                 if self.video_episodes_collected >= getattr(
                     self.args, "video_episodes_to_collect", float("inf")
