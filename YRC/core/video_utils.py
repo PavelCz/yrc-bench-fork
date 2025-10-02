@@ -7,7 +7,6 @@ This module contains classes and functions for:
 - Extracting episode video data and logging videos to WandB
 """
 
-import logging
 from pathlib import Path
 import numpy as np
 from typing import List, Tuple, Optional, Dict, Any, Literal, Union
@@ -229,25 +228,21 @@ class TextRenderer:
         return np.array(pil_image).transpose(2, 0, 1)
 
 
-def extract_video_data(
-    collected_states: List[List[Dict]], episode_idx: int
-) -> Optional[Dict[str, Any]]:
+def extract_video_data(episode: List[Dict]) -> Optional[Dict[str, Any]]:
     """Extract and validate video data from collected states."""
-    if episode_idx >= len(collected_states) or not collected_states[episode_idx]:
-        logging.warning(f"No data available for episode {episode_idx}")
-        return None
 
-    episode_data = collected_states[episode_idx]
-    obs = [x["obs"] for x in episode_data]
-    scores = [x["scores"] for x in episode_data]
-    recons = [x["recons"] for x in episode_data]
-    actions = [x["action"] for x in episode_data]
+    obs = [x["obs"] for x in episode]
+    scores = [x["scores"] for x in episode]
+    recons = [x["recons"] for x in episode]
+    actions = [x["action"] for x in episode]
+    dones = [x["done"] for x in episode]
 
     return {
         "observations": obs,
         "scores": scores,
         "reconstructions": recons,
         "actions": actions,
+        "dones": dones,
     }
 
 
@@ -431,7 +426,7 @@ def save_video_to_folder(
 
 
 def process_and_log_video(
-    collected_states: List[List[Dict]],
+    episode: List[Dict],
     episode_idx: int,
     threshold: float,
     afhp: float,
@@ -444,7 +439,7 @@ def process_and_log_video(
     Complete video processing and logging pipeline.
 
     Args:
-        collected_states: List of collected state data for all episodes
+        episode: List of collected state data for an episode
         episode_idx: Index of the episode to process
         logger: WandbLogger instance (required for wandb mode)
         threshold: Threshold value for the video caption
@@ -459,9 +454,7 @@ def process_and_log_video(
         return
 
     # Extract and validate data
-    video_data = extract_video_data(collected_states, episode_idx)
-    if not video_data:
-        return
+    video_data = extract_video_data(episode)
 
     # Create video processor instance
     processor = VideoProcessor(video_config)

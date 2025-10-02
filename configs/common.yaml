@@ -37,6 +37,7 @@ evaluation:
         validation_episodes: 256
         test_episodes: 256
         act_greedy: False
+        video_episodes_to_collect: 16
     cliport:
         validation_episodes: 64
         test_episodes: 64

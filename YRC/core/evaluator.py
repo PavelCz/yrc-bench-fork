@@ -32,6 +32,7 @@ class Evaluator:
 
         self.collected_states = []
         self.collected_actions_done = False
+        self.video_episodes_collected = 0
 
         self.defer_to_oracle: Optional[bool] = None
 
@@ -52,7 +53,8 @@ class Evaluator:
         self.defer_to_oracle = args.defer_to_oracle
 
         self.collected_actions_done = False
-        self.collected_states: List[List[Dict]] = []
+        self.video_episodes_collected = 0
+        self.collected_states: List[List[List[Dict]]] = []
 
         summary = {}
         for split in eval_splits:
@@ -66,9 +68,14 @@ class Evaluator:
                     # num_episodes = args.test_episodes
                 assert num_episodes % envs[split].num_envs == 0
 
-            self.collected_states = []
+            # The dimensions of the collected states are:
+            # [env_idx][episode_idx][state_idx]
+            # i.e. for every parallel env, we collect a list of episodes, and for each
+            # episode, we collect a list of states.
+            self.collected_states: List[List[List[Dict]]] = []
             for i in range(envs[split].num_envs):
                 self.collected_states.append([])
+                self.collected_states[i].append([])
 
             logging.info(f"Evaluation on {split} for {num_episodes} episodes")
 
@@ -103,22 +110,33 @@ class Evaluator:
                 else:
                     afhp = summary[split]["action_1_frac"]
 
-                for i in range(len(self.collected_states)):
-                    process_and_log_video(
-                        self.collected_states,
-                        i,
-                        threshold,
-                        afhp,
-                        self.VIDEO_CONFIG,
-                        output_folder=output_folder,
-                        logger=logger,
-                        logging_mode=logging_mode,
-                    )
+                # Global episode index for video logging.
+                global_episode_idx = 0
 
+                for env_idx in range(len(self.collected_states)):
+                    for episode_idx in range(len(self.collected_states[env_idx])):
+                        episode: List[Dict] = self.collected_states[env_idx][
+                            episode_idx
+                        ]
+
+                        # Only log videos for completed episodes.
+                        if len(episode) > 0 and episode[-1]["done"]:
+                            process_and_log_video(
+                                episode,
+                                global_episode_idx,
+                                threshold,
+                                afhp,
+                                self.VIDEO_CONFIG,
+                                output_folder=output_folder,
+                                logger=logger,
+                                logging_mode=logging_mode,
+                            )
+                        global_episode_idx += 1
         return summary
 
     def _get_default_video_folder(self) -> Path:
-        """Get or create the default video folder in the eval_run_dir or experiment directory."""
+        """Get or create the default video folder in the eval_run_dir or experiment
+        directory."""
         # Try to get eval_run_dir from config first
         base_dir = self.eval_run_dir
 
@@ -214,6 +232,13 @@ class Evaluator:
                     log["level_ood_gt"].append(current_level_ood_gt[i])
                     num_episodes += 1
 
+                    # Count this completed episode for video collection limit
+                    if not self.collected_actions_done:
+                        self.video_episodes_collected += 1
+
+                        # Create a new list for the next episode for this env.
+                        self.collected_states[i].append([])
+
                     episode_log["cumulative_reward"][i] = 0
                     episode_log["cumulative_env_reward"][i] = 0
                     episode_log["episode_length"][i] = 0
@@ -231,28 +256,31 @@ class Evaluator:
                 # Since has done is changed below, we also need to check done here.
                 # Since done will not stay True, because the env is reset at the end,
                 # we can't just only check done.
-                if not has_done[i] and not done[i] and not self.collected_actions_done:
-                    # Recons is None for non reconstruction-based OOD detectors like
-                    # Deep-SVDD.
-                    recons_i = recons[i] if recons is not None else None
+                # if not has_done[i] and not done[i] and not self.collected_actions_done:
+                # Recons is None for non reconstruction-based OOD detectors like
+                # Deep-SVDD.
+                recons_i = recons[i] if recons is not None else None
 
-                    # Some OOD detectors, like the random one, don't assign scores.
-                    scores_i = scores[i] if scores is not None else None
+                # Some OOD detectors, like the random one, don't assign scores.
+                scores_i = scores[i] if scores is not None else None
 
-                    self.collected_states[i].append(
-                        {
-                            "obs": prev_obs["env_obs"][i],
-                            "scores": scores_i,
-                            "recons": recons_i,
-                            "action": action[i],
-                        }
-                    )
+                self.collected_states[i][-1].append(
+                    {
+                        "obs": prev_obs["env_obs"][i],
+                        "scores": scores_i,
+                        "recons": recons_i,
+                        "action": action[i],
+                        "done": done[i],
+                    }
+                )
+
+                if self.video_episodes_collected >= getattr(
+                    self.args, "video_episodes_to_collect", float("inf")
+                ):
+                    self.collected_actions_done = True
             prev_obs = obs
 
             has_done |= done
-
-            if all(has_done):
-                self.collected_actions_done = True
 
         return log
 

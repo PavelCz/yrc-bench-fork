@@ -13,6 +13,7 @@ wandb:
 evaluation:
     coverage_fraction: 0.05
     threshold_sampler: 'ood_percentage'
+    video_episodes_to_collect: 16
 
 # Inherit all settings from common.yaml
 environment: 
