@@ -306,9 +306,10 @@ class Evaluator:
         has_done = np.array([False] * env.num_envs)
         num_episodes = 0
 
+        # Upper bound to prevent infinite loops if videos are hard to collect
         episode_upper_bound = max_episodes * 5
 
-        while (num_episodes < max_episodes or not self.done_saving_actions_for_vid) and num_episodes < episode_upper_bound:
+        while num_episodes < episode_upper_bound and (num_episodes < max_episodes or not self.done_saving_actions_for_vid):
             # Add the episode timestep to the obs. This is necessary for
             # OneCheckRandomPolicy to know whether a new episode has started.
             obs["episode_timestep"] = episode_log["episode_length"]
@@ -371,15 +372,19 @@ class Evaluator:
                         }
                     )
 
-                if done[i] and num_episodes < max_episodes:
-                    log["level_ood_pred"].append(current_level_ood_pred[i])
-                    log["returns"].append(episode_log["cumulative_reward"][i])
-                    log["env_returns"].append(episode_log["cumulative_env_reward"][i])
-                    log["episode_length"].append(episode_log["episode_length"][i])
-                    log[f"action_{self.LOGGED_ACTION}"].append(
-                        episode_log[f"action_{self.LOGGED_ACTION}"][i]
-                    )
-                    log["level_ood_gt"].append(current_level_ood_gt[i])
+                if done[i]:
+                    # Only log to evaluation metrics if within max_episodes limit
+                    if num_episodes < max_episodes:
+                        log["level_ood_pred"].append(current_level_ood_pred[i])
+                        log["returns"].append(episode_log["cumulative_reward"][i])
+                        log["env_returns"].append(episode_log["cumulative_env_reward"][i])
+                        log["episode_length"].append(episode_log["episode_length"][i])
+                        log[f"action_{self.LOGGED_ACTION}"].append(
+                            episode_log[f"action_{self.LOGGED_ACTION}"][i]
+                        )
+                        log["level_ood_gt"].append(current_level_ood_gt[i])
+                    
+                    # Always increment episode counter (for upper bound check)
                     num_episodes += 1
 
                     # Check which filters this episode passes
