@@ -360,6 +360,15 @@ def make():
     )
 
     parser.add_argument(
+        "-video_filter_mode",
+        "--evaluation.video_filter_mode",
+        type=str,
+        choices=["any", "all"],
+        default="any",
+        help="Filter mode: 'any' creates separate category for each filter, 'all' requires episode to pass all filters to be saved",
+    )
+
+    parser.add_argument(
         "-rollout_dir",
         "--training.rollout_dir",
         type=str,

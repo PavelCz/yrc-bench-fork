@@ -126,10 +126,17 @@ class Evaluator:
 
             # Get video filters - default to ['all'] if not specified
             video_filters = getattr(args, "video_filter", ["all"])
+            filter_mode = getattr(args, "video_filter_mode", "any")
 
             # Initialize per-filter tracking
-            for filter_name in video_filters:
-                self.video_filter_passed[filter_name] = 0
+            if filter_mode == "any":
+                # Track each filter separately
+                for filter_name in video_filters:
+                    self.video_filter_passed[filter_name] = 0
+            else:  # filter_mode == "all"
+                # Track combined filter (all must pass)
+                combined_filter_name = "_and_".join(video_filters)
+                self.video_filter_passed[combined_filter_name] = 0
 
             for i in range(envs[split].num_envs):
                 self.collected_states.append([])
@@ -172,6 +179,7 @@ class Evaluator:
 
                 # Get video filters for this evaluation
                 video_filters = getattr(args, "video_filter", ["all"])
+                filter_mode = getattr(args, "video_filter_mode", "any")
 
                 # Global episode index for video logging.
                 global_episode_idx = 0
@@ -190,20 +198,47 @@ class Evaluator:
                             if episode_meta:  # Check if metadata exists
                                 filter_results = episode_meta["filter_results"]
 
-                                # Save video to appropriate filter folders
-                                for filter_name, passed in filter_results.items():
-                                    if passed:
-                                        # Create filter-specific output folder
+                                if filter_mode == "any":
+                                    # Save video to appropriate filter folders (separate categories)
+                                    for filter_name, passed in filter_results.items():
+                                        if passed:
+                                            # Create filter-specific output folder
+                                            filter_output_folder = None
+                                            if output_folder is not None:
+                                                filter_output_folder = (
+                                                    output_folder / filter_name
+                                                )
+                                                filter_output_folder.mkdir(
+                                                    parents=True, exist_ok=True
+                                                )
+
+                                            # Save video for this filter
+                                            process_and_log_video(
+                                                episode,
+                                                global_episode_idx,
+                                                threshold,
+                                                afhp,
+                                                self.VIDEO_CONFIG,
+                                                output_folder=filter_output_folder,
+                                                logger=logger,
+                                                logging_mode=logging_mode,
+                                                subfolder=filter_name,
+                                                wandb_category=f"videos_{filter_name}",
+                                            )
+                                else:  # filter_mode == "all"
+                                    # Only save if ALL filters passed
+                                    if all(filter_results.values()):
+                                        combined_filter_name = "_and_".join(video_filters)
                                         filter_output_folder = None
                                         if output_folder is not None:
                                             filter_output_folder = (
-                                                output_folder / filter_name
+                                                output_folder / combined_filter_name
                                             )
                                             filter_output_folder.mkdir(
                                                 parents=True, exist_ok=True
                                             )
 
-                                        # Save video for this filter
+                                        # Save video to combined filter folder
                                         process_and_log_video(
                                             episode,
                                             global_episode_idx,
@@ -213,8 +248,8 @@ class Evaluator:
                                             output_folder=filter_output_folder,
                                             logger=logger,
                                             logging_mode=logging_mode,
-                                            subfolder=filter_name,
-                                            wandb_category=f"videos_{filter_name}",
+                                            subfolder=combined_filter_name,
+                                            wandb_category=f"videos_{combined_filter_name}",
                                         )
 
                         global_episode_idx += 1
@@ -363,6 +398,9 @@ class Evaluator:
 
                     # Count this completed episode for video collection limit
                     if not self.done_saving_actions_for_vid:
+                        # Get filter mode
+                        filter_mode = getattr(self.args, "video_filter_mode", "any")
+                        
                         # Track which filters this episode passed
                         passed_filters = [
                             f for f, passed in filter_results.items() if passed
@@ -377,8 +415,18 @@ class Evaluator:
                         }
 
                         # Update per-filter counts
-                        for filter_name in passed_filters:
-                            self.video_filter_passed[filter_name] += 1
+                        if filter_mode == "any":
+                            # Track each filter separately
+                            for filter_name in passed_filters:
+                                if filter_name in self.video_filter_passed:
+                                    self.video_filter_passed[filter_name] += 1
+                        else:  # filter_mode == "all"
+                            # Track combined filter (only if all passed)
+                            if all(filter_results.values()):
+                                video_filters = getattr(self.args, "video_filter", ["all"])
+                                combined_filter_name = "_and_".join(video_filters)
+                                if combined_filter_name in self.video_filter_passed:
+                                    self.video_filter_passed[combined_filter_name] += 1
 
                         # Log progress for each filter
                         for filter_name, count in self.video_filter_passed.items():
