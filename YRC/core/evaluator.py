@@ -294,26 +294,41 @@ class Evaluator:
             logging.info("No scores available for histogram generation")
             return
 
+        # Filter out infinite values
+        def filter_finite(scores):
+            """Remove positive and negative infinity from scores."""
+            finite_scores = [s for s in scores if np.isfinite(s)]
+            return finite_scores
+        
+        scores_in_domain_filtered = filter_finite(scores_in_domain)
+        scores_out_of_domain_filtered = filter_finite(scores_out_of_domain)
+        
+        # Log if we filtered out any values
+        if len(scores_in_domain) != len(scores_in_domain_filtered):
+            logging.info(f"Filtered {len(scores_in_domain) - len(scores_in_domain_filtered)} infinite values from in-domain scores")
+        if len(scores_out_of_domain) != len(scores_out_of_domain_filtered):
+            logging.info(f"Filtered {len(scores_out_of_domain) - len(scores_out_of_domain_filtered)} infinite values from out-of-domain scores")
+
         # Create figure with two subplots
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
         
         # Histogram for in-domain levels (deterministic coin)
-        if scores_in_domain:
-            ax1.hist(scores_in_domain, bins=50, alpha=0.7, color='blue', edgecolor='black')
+        if scores_in_domain_filtered:
+            ax1.hist(scores_in_domain_filtered, bins=50, alpha=0.7, color='blue', edgecolor='black')
             ax1.set_xlabel('OOD Score')
             ax1.set_ylabel('Frequency')
-            ax1.set_title(f'OOD Scores - In-Domain Levels (Deterministic Coin)\n{split} - {len(scores_in_domain)} samples')
+            ax1.set_title(f'OOD Scores - In-Domain Levels (Deterministic Coin)\n{split} - {len(scores_in_domain_filtered)} samples (finite)')
             ax1.grid(True, alpha=0.3)
         else:
             ax1.text(0.5, 0.5, 'No in-domain scores', ha='center', va='center')
             ax1.set_title(f'OOD Scores - In-Domain Levels\n{split} - No data')
 
         # Histogram for out-of-domain levels (random coin)
-        if scores_out_of_domain:
-            ax2.hist(scores_out_of_domain, bins=50, alpha=0.7, color='red', edgecolor='black')
+        if scores_out_of_domain_filtered:
+            ax2.hist(scores_out_of_domain_filtered, bins=50, alpha=0.7, color='red', edgecolor='black')
             ax2.set_xlabel('OOD Score')
             ax2.set_ylabel('Frequency')
-            ax2.set_title(f'OOD Scores - Out-of-Domain Levels (Random Coin)\n{split} - {len(scores_out_of_domain)} samples')
+            ax2.set_title(f'OOD Scores - Out-of-Domain Levels (Random Coin)\n{split} - {len(scores_out_of_domain_filtered)} samples (finite)')
             ax2.grid(True, alpha=0.3)
         else:
             ax2.text(0.5, 0.5, 'No out-of-domain scores', ha='center', va='center')
