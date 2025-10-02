@@ -345,6 +345,13 @@ def make():
     )
 
     parser.add_argument(
+        "-video_episodes_to_collect",
+        "--evaluation.video_episodes_to_collect",
+        type=int,
+        help="Number of video episodes to collect for evaluation",
+    )
+
+    parser.add_argument(
         "-rollout_dir",
         "--training.rollout_dir",
         type=str,
