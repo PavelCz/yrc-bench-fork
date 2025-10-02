@@ -406,39 +406,53 @@ class Evaluator:
                             f for f, passed in filter_results.items() if passed
                         ]
 
-                        # Store episode metadata for later video saving
-                        self.episode_metadata[i][-1] = {
-                            "filter_results": filter_results,
-                            "episode_data": episode_data,
-                            "level_info": level_info,
-                            "episode_idx": num_episodes - 1,  # Global episode index
-                        }
-
-                        # Update per-filter counts
+                        # Determine if episode should be kept
+                        should_keep_episode = False
                         if filter_mode == "any":
-                            # Track each filter separately
-                            for filter_name in passed_filters:
-                                if filter_name in self.video_filter_passed:
-                                    self.video_filter_passed[filter_name] += 1
+                            # Keep if passes at least one filter
+                            should_keep_episode = len(passed_filters) > 0
                         else:  # filter_mode == "all"
-                            # Track combined filter (only if all passed)
-                            if all(filter_results.values()):
+                            # Keep only if passes all filters
+                            should_keep_episode = all(filter_results.values())
+
+                        if should_keep_episode:
+                            # Store episode metadata for later video saving
+                            self.episode_metadata[i][-1] = {
+                                "filter_results": filter_results,
+                                "episode_data": episode_data,
+                                "level_info": level_info,
+                                "episode_idx": num_episodes - 1,  # Global episode index
+                            }
+
+                            # Update per-filter counts
+                            if filter_mode == "any":
+                                # Track each filter separately
+                                for filter_name in passed_filters:
+                                    if filter_name in self.video_filter_passed:
+                                        self.video_filter_passed[filter_name] += 1
+                            else:  # filter_mode == "all"
+                                # Track combined filter (only if all passed)
                                 video_filters = getattr(self.args, "video_filter", ["all"])
                                 combined_filter_name = "_and_".join(video_filters)
                                 if combined_filter_name in self.video_filter_passed:
                                     self.video_filter_passed[combined_filter_name] += 1
 
-                        # Log progress for each filter
-                        for filter_name, count in self.video_filter_passed.items():
-                            logging.info(
-                                f"Episode {num_episodes} - Filter '{filter_name}': {count}/{self.args.video_episodes_to_collect}"
-                            )
+                            # Log progress for each filter
+                            for filter_name, count in self.video_filter_passed.items():
+                                logging.info(
+                                    f"Episode {num_episodes} - Filter '{filter_name}': {count}/{self.args.video_episodes_to_collect}"
+                                )
 
-                        self.video_episodes_collected += 1
+                            self.video_episodes_collected += 1
 
-                        # Create a new list for the next episode for this env.
-                        self.collected_states[i].append([])
-                        self.episode_metadata[i].append({})
+                            # Create a new list for the next episode for this env.
+                            self.collected_states[i].append([])
+                            self.episode_metadata[i].append({})
+                        else:
+                            # Episode didn't pass filters - discard collected states
+                            # Clear the current episode data and reuse the same slot
+                            self.collected_states[i][-1] = []
+                            self.episode_metadata[i][-1] = {}
 
                     episode_log["cumulative_reward"][i] = 0
                     episode_log["cumulative_env_reward"][i] = 0
