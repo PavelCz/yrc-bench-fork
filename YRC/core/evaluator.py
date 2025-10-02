@@ -59,12 +59,6 @@ class Evaluator:
         for filter_type in video_filters:
             if filter_type == "all":
                 results[filter_type] = True
-            elif filter_type == "no_death":
-                # Episode did not end by the agent dying (assuming death means done=True at the end)
-                # For procgen coinrun, death typically means the agent didn't collect the coin in time
-                results[
-                    filter_type
-                ] = not final_done_state  # Don't save if episode ended with done=True
             elif filter_type == "random_coin_success":
                 # Agent successfully got the coin (positive reward) AND coin was randomly placed
                 results[filter_type] = total_reward > 0 and randomize_goal
