@@ -31,7 +31,7 @@ class Evaluator:
         self.eval_run_dir = Path(config.eval_run_dir)
 
         self.collected_states = []
-        self.collected_actions_done = False
+        self.done_saving_actions_for_vid = False
         self.video_episodes_collected = 0
 
         self.defer_to_oracle: Optional[bool] = None
@@ -52,7 +52,7 @@ class Evaluator:
 
         self.defer_to_oracle = args.defer_to_oracle
 
-        self.collected_actions_done = False
+        self.done_saving_actions_for_vid = False
         self.video_episodes_collected = 0
         self.collected_states: List[List[List[Dict]]] = []
 
@@ -231,7 +231,7 @@ class Evaluator:
                 # Some OOD detectors, like the random one, don't assign scores.
                 scores_i = scores[i] if scores is not None else None
 
-                if not self.collected_actions_done:
+                if not self.done_saving_actions_for_vid:
                     self.collected_states[i][-1].append(
                         {
                             "obs": prev_obs["env_obs"][i],
@@ -254,7 +254,7 @@ class Evaluator:
                     num_episodes += 1
 
                     # Count this completed episode for video collection limit
-                    if not self.collected_actions_done:
+                    if not self.done_saving_actions_for_vid:
                         self.video_episodes_collected += 1
 
                         # Create a new list for the next episode for this env.
@@ -274,10 +274,8 @@ class Evaluator:
                 # episode, so the info dict might be of the next episode.
                 current_level_ood_gt[i] = info[i]["randomize_goal"]
 
-                if self.video_episodes_collected >= getattr(
-                    self.args, "video_episodes_to_collect", float("inf")
-                ):
-                    self.collected_actions_done = True
+                if self.video_episodes_collected >= self.args.video_episodes_to_collect:
+                    self.done_saving_actions_for_vid = True
             prev_obs = obs
 
             has_done |= done
