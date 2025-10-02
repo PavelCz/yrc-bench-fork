@@ -161,6 +161,8 @@ class Evaluator:
                 log.get("scores_out_of_domain", []),
                 afhp=afhp,
                 logger=logger,
+                scores_original_in_domain=log.get("scores_original_in_domain", []),
+                scores_original_out_of_domain=log.get("scores_original_out_of_domain", []),
             )
 
             envs[split].close()
@@ -290,8 +292,14 @@ class Evaluator:
         scores_out_of_domain: List[float],
         afhp: float,
         logger: Optional[WandbLogger] = None,
+        scores_original_in_domain: Optional[List[float]] = None,
+        scores_original_out_of_domain: Optional[List[float]] = None,
     ) -> None:
-        """Create and save histograms of OOD scores for in-domain and out-of-domain levels."""
+        """Create and save histograms of OOD scores for in-domain and out-of-domain levels.
+        
+        If original scores are provided, creates 4 histograms (2 for original, 2 for rolling avg).
+        Otherwise, creates 2 histograms (1 for in-domain, 1 for out-of-domain).
+        """
         if not scores_in_domain and not scores_out_of_domain:
             logging.info("No scores available for histogram generation")
             return
@@ -302,39 +310,113 @@ class Evaluator:
             finite_scores = [s for s in scores if np.isfinite(s)]
             return finite_scores
         
-        scores_in_domain_filtered = filter_finite(scores_in_domain)
-        scores_out_of_domain_filtered = filter_finite(scores_out_of_domain)
+        # Determine if we have rolling average (original scores provided)
+        has_rolling_avg = (scores_original_in_domain is not None and len(scores_original_in_domain) > 0) or \
+                         (scores_original_out_of_domain is not None and len(scores_original_out_of_domain) > 0)
         
-        # Log if we filtered out any values
-        if len(scores_in_domain) != len(scores_in_domain_filtered):
-            logging.info(f"Filtered {len(scores_in_domain) - len(scores_in_domain_filtered)} infinite values from in-domain scores")
-        if len(scores_out_of_domain) != len(scores_out_of_domain_filtered):
-            logging.info(f"Filtered {len(scores_out_of_domain) - len(scores_out_of_domain_filtered)} infinite values from out-of-domain scores")
-
-        # Create figure with two subplots
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-        
-        # Histogram for in-domain levels (deterministic coin)
-        if scores_in_domain_filtered:
-            ax1.hist(scores_in_domain_filtered, bins=50, alpha=0.7, color='blue', edgecolor='black')
-            ax1.set_xlabel('OOD Score')
-            ax1.set_ylabel('Frequency')
-            ax1.set_title(f'OOD Scores - In-Domain Levels (Deterministic Coin)\n{split} - {len(scores_in_domain_filtered)} samples (finite) - AFHP: {afhp:.2f}')
-            ax1.grid(True, alpha=0.3)
+        if has_rolling_avg:
+            # Create figure with 4 subplots (2 rows, 2 columns)
+            fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 10))
+            
+            # Filter scores
+            scores_original_in_domain_filtered = filter_finite(scores_original_in_domain or [])
+            scores_original_out_of_domain_filtered = filter_finite(scores_original_out_of_domain or [])
+            scores_in_domain_filtered = filter_finite(scores_in_domain)
+            scores_out_of_domain_filtered = filter_finite(scores_out_of_domain)
+            
+            # Log filtered values
+            if scores_original_in_domain:
+                n_filtered = len(scores_original_in_domain) - len(scores_original_in_domain_filtered)
+                if n_filtered > 0:
+                    logging.info(f"Filtered {n_filtered} infinite values from original in-domain scores")
+            if scores_original_out_of_domain:
+                n_filtered = len(scores_original_out_of_domain) - len(scores_original_out_of_domain_filtered)
+                if n_filtered > 0:
+                    logging.info(f"Filtered {n_filtered} infinite values from original out-of-domain scores")
+            if len(scores_in_domain) != len(scores_in_domain_filtered):
+                logging.info(f"Filtered {len(scores_in_domain) - len(scores_in_domain_filtered)} infinite values from rolling avg in-domain scores")
+            if len(scores_out_of_domain) != len(scores_out_of_domain_filtered):
+                logging.info(f"Filtered {len(scores_out_of_domain) - len(scores_out_of_domain_filtered)} infinite values from rolling avg out-of-domain scores")
+            
+            # Top row: Original scores (before rolling average)
+            # Histogram for original in-domain levels (deterministic coin)
+            if scores_original_in_domain_filtered:
+                ax1.hist(scores_original_in_domain_filtered, bins=50, alpha=0.7, color='blue', edgecolor='black')
+                ax1.set_xlabel('OOD Score (Original)')
+                ax1.set_ylabel('Frequency')
+                ax1.set_title(f'Original Scores - In-Domain (Deterministic Coin)\n{split} - {len(scores_original_in_domain_filtered)} samples')
+                ax1.grid(True, alpha=0.3)
+            else:
+                ax1.text(0.5, 0.5, 'No original in-domain scores', ha='center', va='center')
+                ax1.set_title(f'Original Scores - In-Domain\n{split} - No data')
+            
+            # Histogram for original out-of-domain levels (random coin)
+            if scores_original_out_of_domain_filtered:
+                ax2.hist(scores_original_out_of_domain_filtered, bins=50, alpha=0.7, color='red', edgecolor='black')
+                ax2.set_xlabel('OOD Score (Original)')
+                ax2.set_ylabel('Frequency')
+                ax2.set_title(f'Original Scores - Out-of-Domain (Random Coin)\n{split} - {len(scores_original_out_of_domain_filtered)} samples')
+                ax2.grid(True, alpha=0.3)
+            else:
+                ax2.text(0.5, 0.5, 'No original out-of-domain scores', ha='center', va='center')
+                ax2.set_title(f'Original Scores - Out-of-Domain\n{split} - No data')
+            
+            # Bottom row: Rolling average scores
+            # Histogram for rolling avg in-domain levels (deterministic coin)
+            if scores_in_domain_filtered:
+                ax3.hist(scores_in_domain_filtered, bins=50, alpha=0.7, color='blue', edgecolor='black')
+                ax3.set_xlabel('OOD Score (Rolling Avg)')
+                ax3.set_ylabel('Frequency')
+                ax3.set_title(f'Rolling Avg Scores - In-Domain (Deterministic Coin)\n{split} - {len(scores_in_domain_filtered)} samples - AFHP: {afhp:.2f}')
+                ax3.grid(True, alpha=0.3)
+            else:
+                ax3.text(0.5, 0.5, 'No rolling avg in-domain scores', ha='center', va='center')
+                ax3.set_title(f'Rolling Avg Scores - In-Domain\n{split} - No data - AFHP: {afhp:.2f}')
+            
+            # Histogram for rolling avg out-of-domain levels (random coin)
+            if scores_out_of_domain_filtered:
+                ax4.hist(scores_out_of_domain_filtered, bins=50, alpha=0.7, color='red', edgecolor='black')
+                ax4.set_xlabel('OOD Score (Rolling Avg)')
+                ax4.set_ylabel('Frequency')
+                ax4.set_title(f'Rolling Avg Scores - Out-of-Domain (Random Coin)\n{split} - {len(scores_out_of_domain_filtered)} samples - AFHP: {afhp:.2f}')
+                ax4.grid(True, alpha=0.3)
+            else:
+                ax4.text(0.5, 0.5, 'No rolling avg out-of-domain scores', ha='center', va='center')
+                ax4.set_title(f'Rolling Avg Scores - Out-of-Domain\n{split} - No data - AFHP: {afhp:.2f}')
         else:
-            ax1.text(0.5, 0.5, 'No in-domain scores', ha='center', va='center')
-            ax1.set_title(f'OOD Scores - In-Domain Levels\n{split} - No data - AFHP: {afhp:.2f}')
+            # Create figure with 2 subplots (no rolling average)
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+            
+            scores_in_domain_filtered = filter_finite(scores_in_domain)
+            scores_out_of_domain_filtered = filter_finite(scores_out_of_domain)
+            
+            # Log if we filtered out any values
+            if len(scores_in_domain) != len(scores_in_domain_filtered):
+                logging.info(f"Filtered {len(scores_in_domain) - len(scores_in_domain_filtered)} infinite values from in-domain scores")
+            if len(scores_out_of_domain) != len(scores_out_of_domain_filtered):
+                logging.info(f"Filtered {len(scores_out_of_domain) - len(scores_out_of_domain_filtered)} infinite values from out-of-domain scores")
 
-        # Histogram for out-of-domain levels (random coin)
-        if scores_out_of_domain_filtered:
-            ax2.hist(scores_out_of_domain_filtered, bins=50, alpha=0.7, color='red', edgecolor='black')
-            ax2.set_xlabel('OOD Score')
-            ax2.set_ylabel('Frequency')
-            ax2.set_title(f'OOD Scores - Out-of-Domain Levels (Random Coin)\n{split} - {len(scores_out_of_domain_filtered)} samples (finite) - AFHP: {afhp:.2f}')
-            ax2.grid(True, alpha=0.3)
-        else:
-            ax2.text(0.5, 0.5, 'No out-of-domain scores', ha='center', va='center')
-            ax2.set_title(f'OOD Scores - Out-of-Domain Levels\n{split} - No data - AFHP: {afhp:.2f}')
+            # Histogram for in-domain levels (deterministic coin)
+            if scores_in_domain_filtered:
+                ax1.hist(scores_in_domain_filtered, bins=50, alpha=0.7, color='blue', edgecolor='black')
+                ax1.set_xlabel('OOD Score')
+                ax1.set_ylabel('Frequency')
+                ax1.set_title(f'OOD Scores - In-Domain Levels (Deterministic Coin)\n{split} - {len(scores_in_domain_filtered)} samples (finite) - AFHP: {afhp:.2f}')
+                ax1.grid(True, alpha=0.3)
+            else:
+                ax1.text(0.5, 0.5, 'No in-domain scores', ha='center', va='center')
+                ax1.set_title(f'OOD Scores - In-Domain Levels\n{split} - No data - AFHP: {afhp:.2f}')
+
+            # Histogram for out-of-domain levels (random coin)
+            if scores_out_of_domain_filtered:
+                ax2.hist(scores_out_of_domain_filtered, bins=50, alpha=0.7, color='red', edgecolor='black')
+                ax2.set_xlabel('OOD Score')
+                ax2.set_ylabel('Frequency')
+                ax2.set_title(f'OOD Scores - Out-of-Domain Levels (Random Coin)\n{split} - {len(scores_out_of_domain_filtered)} samples (finite) - AFHP: {afhp:.2f}')
+                ax2.grid(True, alpha=0.3)
+            else:
+                ax2.text(0.5, 0.5, 'No out-of-domain scores', ha='center', va='center')
+                ax2.set_title(f'OOD Scores - Out-of-Domain Levels\n{split} - No data - AFHP: {afhp:.2f}')
 
         plt.tight_layout()
         
@@ -366,6 +448,9 @@ class Evaluator:
             # OOD scores per timestep for histogram analysis
             "scores_in_domain": [],  # Scores for deterministic coin levels
             "scores_out_of_domain": [],  # Scores for random coin levels
+            # Original scores (before rolling average)
+            "scores_original_in_domain": [],
+            "scores_original_out_of_domain": [],
         }
 
         # A temporary log that only contains stats for the current episode.
@@ -449,10 +534,25 @@ class Evaluator:
                 if scores_i is not None and not done[i]:
                     # Check if this level has random or deterministic coin
                     is_random_coin = current_level_ood_gt[i]
+                    
+                    # Collect rolling average scores (or final scores if no rolling average)
                     if is_random_coin:
                         log["scores_out_of_domain"].append(float(scores_i))
                     else:
                         log["scores_in_domain"].append(float(scores_i))
+                    
+                    # Collect original scores (before rolling average) if available
+                    if hasattr(policy, 'last_scores_original') and policy.last_scores_original is not None:
+                        # Convert tensor to numpy if needed
+                        original_scores = policy.last_scores_original
+                        if hasattr(original_scores, 'cpu'):
+                            original_scores = original_scores.cpu().numpy()
+                        scores_original_i = float(original_scores[i])
+                        
+                        if is_random_coin:
+                            log["scores_original_out_of_domain"].append(scores_original_i)
+                        else:
+                            log["scores_original_in_domain"].append(scores_original_i)
 
                 if not self.done_saving_actions_for_vid:
                     self.collected_states[i][-1].append(

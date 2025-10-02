@@ -139,6 +139,9 @@ class ThresholdPolicy(Policy):
         else:
             raise NotImplementedError(f"Unrecognized metric: {metric}")
 
+        # Store original scores before applying rolling average
+        score_original = score.clone() if self.rolling_average is not None else None
+        
         if self.rolling_average is not None:
             for i in range(len(self.rolling_average_buffers)):
                 self.rolling_average_buffers[i].append(score[i].item())
@@ -149,6 +152,10 @@ class ThresholdPolicy(Policy):
                     score[i] = torch.median(torch.tensor(self.rolling_average_buffers[i])).item()
                 else:
                     raise NotImplementedError(f"Unrecognized rolling average: {self.rolling_average}")
+
+        # Store the scores for potential retrieval (used by evaluator for histograms)
+        self.last_scores_original = score_original
+        self.last_scores_rolling_avg = score if self.rolling_average is not None else None
 
         return score
 
