@@ -148,11 +148,18 @@ class Evaluator:
             summary[split] = self.summarize(log)
             self.write_summary(split, summary[split])
 
-            # Create and save OOD score histograms
+            # Calculate AFHP for logging
+            if self.defer_to_oracle:
+                afhp = summary[split]["ood_pred_percentage"]
+            else:
+                afhp = summary[split]["action_1_frac"]
+
+            # Create and save OOD score histograms with AFHP
             self._save_score_histograms(
                 split,
                 log.get("scores_in_domain", []),
                 log.get("scores_out_of_domain", []),
+                afhp=afhp,
                 logger=logger,
             )
 
@@ -175,12 +182,6 @@ class Evaluator:
                 else:
                     # For wandb/none modes, don't create folders even if specified
                     output_folder = None
-
-                # Choose correct AFHP for video logging
-                if self.defer_to_oracle:
-                    afhp = summary[split]["ood_pred_percentage"]
-                else:
-                    afhp = summary[split]["action_1_frac"]
 
                 # Get video filters for this evaluation
                 video_filters = getattr(args, "video_filter", ["all"])
@@ -287,6 +288,7 @@ class Evaluator:
         split: str,
         scores_in_domain: List[float],
         scores_out_of_domain: List[float],
+        afhp: float,
         logger: Optional[WandbLogger] = None,
     ) -> None:
         """Create and save histograms of OOD scores for in-domain and out-of-domain levels."""
@@ -317,35 +319,35 @@ class Evaluator:
             ax1.hist(scores_in_domain_filtered, bins=50, alpha=0.7, color='blue', edgecolor='black')
             ax1.set_xlabel('OOD Score')
             ax1.set_ylabel('Frequency')
-            ax1.set_title(f'OOD Scores - In-Domain Levels (Deterministic Coin)\n{split} - {len(scores_in_domain_filtered)} samples (finite)')
+            ax1.set_title(f'OOD Scores - In-Domain Levels (Deterministic Coin)\n{split} - {len(scores_in_domain_filtered)} samples (finite) - AFHP: {afhp:.2f}')
             ax1.grid(True, alpha=0.3)
         else:
             ax1.text(0.5, 0.5, 'No in-domain scores', ha='center', va='center')
-            ax1.set_title(f'OOD Scores - In-Domain Levels\n{split} - No data')
+            ax1.set_title(f'OOD Scores - In-Domain Levels\n{split} - No data - AFHP: {afhp:.2f}')
 
         # Histogram for out-of-domain levels (random coin)
         if scores_out_of_domain_filtered:
             ax2.hist(scores_out_of_domain_filtered, bins=50, alpha=0.7, color='red', edgecolor='black')
             ax2.set_xlabel('OOD Score')
             ax2.set_ylabel('Frequency')
-            ax2.set_title(f'OOD Scores - Out-of-Domain Levels (Random Coin)\n{split} - {len(scores_out_of_domain_filtered)} samples (finite)')
+            ax2.set_title(f'OOD Scores - Out-of-Domain Levels (Random Coin)\n{split} - {len(scores_out_of_domain_filtered)} samples (finite) - AFHP: {afhp:.2f}')
             ax2.grid(True, alpha=0.3)
         else:
             ax2.text(0.5, 0.5, 'No out-of-domain scores', ha='center', va='center')
-            ax2.set_title(f'OOD Scores - Out-of-Domain Levels\n{split} - No data')
+            ax2.set_title(f'OOD Scores - Out-of-Domain Levels\n{split} - No data - AFHP: {afhp:.2f}')
 
         plt.tight_layout()
         
-        # Save to file
-        histogram_path = self.eval_run_dir / f'ood_score_histograms_{split}.png'
+        # Save to file with AFHP in filename
+        histogram_path = self.eval_run_dir / f'ood_score_histograms_{split}_afhp_{afhp:.2f}.png'
         plt.savefig(histogram_path, dpi=150, bbox_inches='tight')
         logging.info(f"Saved OOD score histograms to {histogram_path}")
         
-        # Log to wandb if available
+        # Log to wandb if available with AFHP in the key
         if logger is not None:
             import wandb
             logger.experiment.log({
-                f"ood_score_histograms_{split}": wandb.Image(str(histogram_path))
+                f"ood_score_histograms_{split}_afhp_{afhp:.2f}": wandb.Image(str(histogram_path))
             })
         
         plt.close(fig)
