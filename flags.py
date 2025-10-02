@@ -352,6 +352,14 @@ def make():
     )
 
     parser.add_argument(
+        "-video_filter",
+        "--evaluation.video_filter",
+        type=str,
+        nargs="+",
+        help="Filter criteria for which episodes to save as videos. Can specify multiple filters to create separate categories. Options: 'all', 'no_death', 'random_coin_success', 'deterministic_coin_success', 'ood_detected', 'in_distribution'",
+    )
+
+    parser.add_argument(
         "-rollout_dir",
         "--training.rollout_dir",
         type=str,

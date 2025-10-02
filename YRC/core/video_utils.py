@@ -338,11 +338,18 @@ def log_to_wandb(
     caption: str,
     afhp: float,
     video_config: dict,
+    wandb_category: Optional[str] = None,
 ) -> None:
-    """Log video to WandB."""
+    """Log video to WandB with optional category organization."""
+    # Create the video key with category prefix if provided
+    if wandb_category:
+        video_key = f"{wandb_category}/episode_{afhp:.2f}"
+    else:
+        video_key = f"eval_episode_{afhp:.2f}"
+
     logger.experiment.log(
         {
-            f"eval_episode_{afhp:.2f}": wandb.Video(
+            video_key: wandb.Video(
                 video,
                 fps=video_config["fps"],
                 format="gif",
@@ -434,6 +441,8 @@ def process_and_log_video(
     output_folder: Optional[Path] = None,
     logger: Optional[WandbLogger] = None,
     logging_mode: Literal["wandb", "folder", "both"] = "wandb",
+    subfolder: Optional[str] = None,
+    wandb_category: Optional[str] = None,
 ) -> None:
     """
     Complete video processing and logging pipeline.
@@ -447,6 +456,8 @@ def process_and_log_video(
         video_config: Video configuration dictionary
         output_folder: Folder path for saving videos (required for folder and both modes)
         logging_mode: Logging mode - "wandb", "folder", "both", or "none"
+        subfolder: Optional subfolder name to create within output_folder for organization
+        wandb_category: Optional category name for wandb logging organization
     """
 
     # Skip video logging entirely if mode is "none"
@@ -483,19 +494,28 @@ def process_and_log_video(
 
     # Generate caption
     caption = generate_caption(threshold, afhp, video_data)
-    filename = f"episode_{episode_idx}_afhp_{afhp:.2f}"
+    # Include subfolder/category info in filename if provided
+    if subfolder or wandb_category:
+        category_suffix = f"_{subfolder or wandb_category}"
+        filename = f"episode_{episode_idx}_afhp_{afhp:.2f}{category_suffix}"
+    else:
+        filename = f"episode_{episode_idx}_afhp_{afhp:.2f}"
 
     # Log based on mode
     if logging_mode in ["wandb", "both"]:
         if logger is None:
             raise ValueError("logger is required for wandb logging mode")
-        log_to_wandb(logger, combined_video, caption, afhp, video_config)
+        log_to_wandb(
+            logger, combined_video, caption, afhp, video_config, wandb_category
+        )
 
     if logging_mode in ["folder", "both"]:
         if output_folder is None:
             raise ValueError(
                 "output_folder is required for folder and both logging modes"
             )
+        # Create subfolder if specified
+        target_folder = output_folder / subfolder if subfolder else output_folder
         save_video_to_folder(
-            combined_video, output_folder, filename, video_config, caption
+            combined_video, target_folder, filename, video_config, caption
         )

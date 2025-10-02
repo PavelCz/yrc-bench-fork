@@ -14,6 +14,7 @@ evaluation:
     coverage_fraction: 0.05
     threshold_sampler: 'ood_percentage'
     video_episodes_to_collect: 16
+    video_filter: ['all']
 
 # Inherit all settings from common.yaml
 environment: 

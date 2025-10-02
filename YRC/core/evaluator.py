@@ -33,10 +33,55 @@ class Evaluator:
         self.collected_states = []
         self.done_saving_actions_for_vid = False
         self.video_episodes_collected = 0
+        self.video_filter_passed = {}
 
         self.defer_to_oracle: Optional[bool] = None
 
         self.env_config = env_config
+
+        self.episode_metadata: List[List[Dict]] = []
+
+    def _check_episode_filters(
+        self, episode_data: dict, level_info: dict
+    ) -> Dict[str, bool]:
+        """Check which filters an episode passes. Returns dict mapping filter names to boolean results."""
+        video_filters = getattr(self.args, "video_filter", ["all"])
+        results = {}
+
+        # Extract episode information
+        total_reward = episode_data.get("cumulative_reward", 0)
+        # episode_length = episode_data.get("episode_length", 0)
+        randomize_goal = level_info.get("randomize_goal", False)
+        # level_ood_gt = level_info.get("level_ood_gt", False)
+        level_ood_pred = level_info.get("level_ood_pred", False)
+        final_done_state = episode_data.get("final_done", False)
+
+        for filter_type in video_filters:
+            if filter_type == "all":
+                results[filter_type] = True
+            elif filter_type == "no_death":
+                # Episode did not end by the agent dying (assuming death means done=True at the end)
+                # For procgen coinrun, death typically means the agent didn't collect the coin in time
+                results[
+                    filter_type
+                ] = not final_done_state  # Don't save if episode ended with done=True
+            elif filter_type == "random_coin_success":
+                # Agent successfully got the coin (positive reward) AND coin was randomly placed
+                results[filter_type] = total_reward > 0 and randomize_goal
+            elif filter_type == "deterministic_coin_success":
+                # Agent successfully got the coin (positive reward) AND coin was deterministically placed
+                results[filter_type] = total_reward > 0 and not randomize_goal
+            elif filter_type == "ood_detected":
+                # OOD was detected in this episode
+                results[filter_type] = level_ood_pred
+            elif filter_type == "in_distribution":
+                # In-distribution episode (no OOD detected)
+                results[filter_type] = not level_ood_pred
+            else:
+                # Unknown filter type, default to saving
+                results[filter_type] = True
+
+        return results
 
     def eval(
         self,
@@ -54,7 +99,11 @@ class Evaluator:
 
         self.done_saving_actions_for_vid = False
         self.video_episodes_collected = 0
+        self.video_filter_passed = {}  # Track counts per filter
         self.collected_states: List[List[List[Dict]]] = []
+        self.episode_metadata: List[
+            List[Dict]
+        ] = []  # Track which episodes passed each filter
 
         summary = {}
         for split in eval_splits:
@@ -73,9 +122,20 @@ class Evaluator:
             # i.e. for every parallel env, we collect a list of episodes, and for each
             # episode, we collect a list of states.
             self.collected_states: List[List[List[Dict]]] = []
+            self.episode_metadata: List[List[Dict]] = []
+
+            # Get video filters - default to ['all'] if not specified
+            video_filters = getattr(args, "video_filter", ["all"])
+
+            # Initialize per-filter tracking
+            for filter_name in video_filters:
+                self.video_filter_passed[filter_name] = 0
+
             for i in range(envs[split].num_envs):
                 self.collected_states.append([])
                 self.collected_states[i].append([])
+                self.episode_metadata.append([])
+                self.episode_metadata[i].append({})
 
             logging.info(f"Evaluation on {split} for {num_episodes} episodes")
 
@@ -110,6 +170,9 @@ class Evaluator:
                 else:
                     afhp = summary[split]["action_1_frac"]
 
+                # Get video filters for this evaluation
+                video_filters = getattr(args, "video_filter", ["all"])
+
                 # Global episode index for video logging.
                 global_episode_idx = 0
 
@@ -121,16 +184,39 @@ class Evaluator:
 
                         # Only log videos for completed episodes.
                         if len(episode) > 0 and episode[-1]["done"]:
-                            process_and_log_video(
-                                episode,
-                                global_episode_idx,
-                                threshold,
-                                afhp,
-                                self.VIDEO_CONFIG,
-                                output_folder=output_folder,
-                                logger=logger,
-                                logging_mode=logging_mode,
-                            )
+                            # Get stored episode metadata
+                            episode_meta = self.episode_metadata[env_idx][episode_idx]
+
+                            if episode_meta:  # Check if metadata exists
+                                filter_results = episode_meta["filter_results"]
+
+                                # Save video to appropriate filter folders
+                                for filter_name, passed in filter_results.items():
+                                    if passed:
+                                        # Create filter-specific output folder
+                                        filter_output_folder = None
+                                        if output_folder is not None:
+                                            filter_output_folder = (
+                                                output_folder / filter_name
+                                            )
+                                            filter_output_folder.mkdir(
+                                                parents=True, exist_ok=True
+                                            )
+
+                                        # Save video for this filter
+                                        process_and_log_video(
+                                            episode,
+                                            global_episode_idx,
+                                            threshold,
+                                            afhp,
+                                            self.VIDEO_CONFIG,
+                                            output_folder=filter_output_folder,
+                                            logger=logger,
+                                            logging_mode=logging_mode,
+                                            subfolder=filter_name,
+                                            wandb_category=f"videos_{filter_name}",
+                                        )
+
                         global_episode_idx += 1
         return summary
 
@@ -179,7 +265,9 @@ class Evaluator:
         has_done = np.array([False] * env.num_envs)
         num_episodes = 0
 
-        while num_episodes < max_episodes:
+        episode_upper_bound = max_episodes * 5
+
+        while (num_episodes < max_episodes or not self.done_saving_actions_for_vid) and num_episodes < episode_upper_bound:
             # Add the episode timestep to the obs. This is necessary for
             # OneCheckRandomPolicy to know whether a new episode has started.
             obs["episode_timestep"] = episode_log["episode_length"]
@@ -253,12 +341,56 @@ class Evaluator:
                     log["level_ood_gt"].append(current_level_ood_gt[i])
                     num_episodes += 1
 
+                    # Check which filters this episode passes
+                    episode_data = {
+                        "cumulative_reward": episode_log["cumulative_reward"][i],
+                        "episode_length": episode_log["episode_length"][i],
+                        "final_done": done[
+                            i
+                        ],  # This is the done state that caused the episode to end
+                    }
+                    level_info = {
+                        "randomize_goal": current_level_ood_gt[
+                            i
+                        ],  # This will be updated below, but we capture the current value
+                        "level_ood_gt": current_level_ood_gt[i],
+                        "level_ood_pred": current_level_ood_pred[i],
+                    }
+
+                    filter_results = self._check_episode_filters(
+                        episode_data, level_info
+                    )
+
                     # Count this completed episode for video collection limit
                     if not self.done_saving_actions_for_vid:
+                        # Track which filters this episode passed
+                        passed_filters = [
+                            f for f, passed in filter_results.items() if passed
+                        ]
+
+                        # Store episode metadata for later video saving
+                        self.episode_metadata[i][-1] = {
+                            "filter_results": filter_results,
+                            "episode_data": episode_data,
+                            "level_info": level_info,
+                            "episode_idx": num_episodes - 1,  # Global episode index
+                        }
+
+                        # Update per-filter counts
+                        for filter_name in passed_filters:
+                            self.video_filter_passed[filter_name] += 1
+
+                        # Log progress for each filter
+                        for filter_name, count in self.video_filter_passed.items():
+                            logging.info(
+                                f"Episode {num_episodes} - Filter '{filter_name}': {count}/{self.args.video_episodes_to_collect}"
+                            )
+
                         self.video_episodes_collected += 1
 
                         # Create a new list for the next episode for this env.
                         self.collected_states[i].append([])
+                        self.episode_metadata[i].append({})
 
                     episode_log["cumulative_reward"][i] = 0
                     episode_log["cumulative_env_reward"][i] = 0
@@ -274,7 +406,18 @@ class Evaluator:
                 # episode, so the info dict might be of the next episode.
                 current_level_ood_gt[i] = info[i]["randomize_goal"]
 
-                if self.video_episodes_collected >= self.args.video_episodes_to_collect:
+                # Check if all filters have enough episodes
+                video_filters = getattr(self.args, "video_filter", ["all"])
+                all_filters_satisfied = True
+                for filter_name in video_filters:
+                    if (
+                        self.video_filter_passed[filter_name]
+                        < self.args.video_episodes_to_collect
+                    ):
+                        all_filters_satisfied = False
+                        break
+
+                if all_filters_satisfied and self.args.video_episodes_to_collect > 0:
                     self.done_saving_actions_for_vid = True
             prev_obs = obs
 
