@@ -427,6 +427,7 @@ class Evaluator:
                             
                             if filter_mode == "any":
                                 # Check if any filter still needs more episodes
+                                # Only check filters that were initialized (i.e., in video_filters)
                                 for filter_name in passed_filters:
                                     if filter_name in self.video_filter_passed:
                                         if self.video_filter_passed[filter_name] < self.args.video_episodes_to_collect:
@@ -496,9 +497,11 @@ class Evaluator:
                 current_level_ood_gt[i] = info[i]["randomize_goal"]
 
                 # Check if all filters have enough episodes
-                video_filters = getattr(self.args, "video_filter", ["all"])
+                filter_mode = getattr(self.args, "video_filter_mode", "any")
                 all_filters_satisfied = True
-                for filter_name in video_filters:
+                
+                # Check the appropriate filter(s) based on mode
+                for filter_name in self.video_filter_passed.keys():
                     if (
                         self.video_filter_passed[filter_name]
                         < self.args.video_episodes_to_collect
