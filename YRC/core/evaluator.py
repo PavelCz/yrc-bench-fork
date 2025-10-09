@@ -273,122 +273,134 @@ class Evaluator:
 
             envs[split].close()
 
+            # Process and log videos if logger is available
             if logger is not None:
-                # Determine output folder for video logging
-                raw_output_folder = getattr(self.args, "video_output_folder", None)
-                logging_mode = getattr(self.args, "video_logging_mode", "none")
+                self._process_and_log_videos(split, threshold, afhp, logger)
 
-                if raw_output_folder is None and logging_mode in ["folder", "both"]:
-                    output_folder = self._get_default_video_folder()
-                elif raw_output_folder is not None and logging_mode in [
-                    "folder",
-                    "both",
-                ]:
-                    output_folder = resolve_video_output_folder(
-                        raw_output_folder, self.eval_run_dir, create_folder=True
-                    )
-                else:
-                    # For wandb/none modes, don't create folders even if specified
-                    output_folder = None
-
-                # Get video filters for this evaluation
-                video_filters = getattr(args, "video_filter", ["all"])
-                filter_mode = getattr(args, "video_filter_mode", "any")
-                max_videos = args.video_episodes_to_collect
-
-                # Track how many videos we've logged per filter
-                videos_logged = {}
-                if filter_mode == "any":
-                    for filter_name in video_filters:
-                        videos_logged[filter_name] = 0
-                else:
-                    combined_filter_name = "_and_".join(video_filters)
-                    videos_logged[combined_filter_name] = 0
-
-                # Global episode index for video logging.
-                global_episode_idx = 0
-
-                for env_idx in range(len(self.collected_states)):
-                    for episode_idx in range(len(self.collected_states[env_idx])):
-                        episode: List[Dict] = self.collected_states[env_idx][
-                            episode_idx
-                        ]
-
-                        # Only log videos for completed episodes.
-                        if len(episode) > 0 and episode[-1]["done"]:
-                            # Get stored episode metadata
-                            episode_meta = self.episode_metadata[env_idx][episode_idx]
-
-                            if episode_meta:  # Check if metadata exists
-                                filter_results = episode_meta["filter_results"]
-
-                                if filter_mode == "any":
-                                    # Save video to appropriate filter folders (separate categories)
-                                    for filter_name, passed in filter_results.items():
-                                        # Only save if this filter passed AND we haven't reached the limit
-                                        if (
-                                            passed
-                                            and videos_logged[filter_name] < max_videos
-                                        ):
-                                            # Create filter-specific output folder
-                                            filter_output_folder = None
-                                            if output_folder is not None:
-                                                filter_output_folder = (
-                                                    output_folder / filter_name
-                                                )
-                                                filter_output_folder.mkdir(
-                                                    parents=True, exist_ok=True
-                                                )
-
-                                            # Save video for this filter
-                                            process_and_log_video(
-                                                episode,
-                                                global_episode_idx,
-                                                threshold,
-                                                afhp,
-                                                self.VIDEO_CONFIG,
-                                                output_folder=filter_output_folder,
-                                                logger=logger,
-                                                logging_mode=logging_mode,
-                                                subfolder=filter_name,
-                                                wandb_category=f"videos_{filter_name}",
-                                                skip_score_normalization=self.skip_score_normalization,
-                                            )
-                                            videos_logged[filter_name] += 1
-                                else:  # filter_mode == "all"
-                                    # Only save if ALL filters passed AND we haven't reached the limit
-                                    if (
-                                        all(filter_results.values())
-                                        and videos_logged[combined_filter_name]
-                                        < max_videos
-                                    ):
-                                        filter_output_folder = None
-                                        if output_folder is not None:
-                                            filter_output_folder = (
-                                                output_folder / combined_filter_name
-                                            )
-                                            filter_output_folder.mkdir(
-                                                parents=True, exist_ok=True
-                                            )
-
-                                        # Save video to combined filter folder
-                                        process_and_log_video(
-                                            episode,
-                                            global_episode_idx,
-                                            threshold,
-                                            afhp,
-                                            self.VIDEO_CONFIG,
-                                            output_folder=filter_output_folder,
-                                            logger=logger,
-                                            logging_mode=logging_mode,
-                                            subfolder=combined_filter_name,
-                                            wandb_category=f"videos_{combined_filter_name}",
-                                            skip_score_normalization=self.skip_score_normalization,
-                                        )
-                                        videos_logged[combined_filter_name] += 1
-
-                        global_episode_idx += 1
         return summary
+
+    def _process_and_log_videos(
+        self,
+        split: str,
+        threshold: Optional[float],
+        afhp: float,
+        logger: WandbLogger,
+    ) -> None:
+        """Process collected episode states and log them as videos.
+
+        Args:
+            split: The evaluation split (e.g., "val", "test")
+            threshold: The OOD threshold value
+            afhp: The AFHP (Agent-Friendly Help Probability) value
+            logger: WandB logger for logging videos
+        """
+        args = self.args
+
+        # Determine output folder for video logging
+        raw_output_folder = getattr(args, "video_output_folder", None)
+        logging_mode = getattr(args, "video_logging_mode", "none")
+
+        if raw_output_folder is None and logging_mode in ["folder", "both"]:
+            output_folder = self._get_default_video_folder()
+        elif raw_output_folder is not None and logging_mode in ["folder", "both"]:
+            output_folder = resolve_video_output_folder(
+                raw_output_folder, self.eval_run_dir, create_folder=True
+            )
+        else:
+            # For wandb/none modes, don't create folders even if specified
+            output_folder = None
+
+        # Get video filters for this evaluation
+        video_filters = getattr(args, "video_filter", ["all"])
+        filter_mode = getattr(args, "video_filter_mode", "any")
+        max_videos = args.video_episodes_to_collect
+
+        # Track how many videos we've logged per filter
+        videos_logged = {}
+        if filter_mode == "any":
+            for filter_name in video_filters:
+                videos_logged[filter_name] = 0
+        else:
+            combined_filter_name = "_and_".join(video_filters)
+            videos_logged[combined_filter_name] = 0
+
+        # Global episode index for video logging.
+        global_episode_idx = 0
+
+        for env_idx in range(len(self.collected_states)):
+            for episode_idx in range(len(self.collected_states[env_idx])):
+                episode: List[Dict] = self.collected_states[env_idx][episode_idx]
+
+                # Only log videos for completed episodes.
+                if len(episode) > 0 and episode[-1]["done"]:
+                    # Get stored episode metadata
+                    episode_meta = self.episode_metadata[env_idx][episode_idx]
+
+                    if episode_meta:  # Check if metadata exists
+                        filter_results = episode_meta["filter_results"]
+
+                        if filter_mode == "any":
+                            # Save video to appropriate filter folders (separate categories)
+                            for filter_name, passed in filter_results.items():
+                                # Only save if this filter passed AND we haven't reached the limit
+                                if passed and videos_logged[filter_name] < max_videos:
+                                    # Create filter-specific output folder
+                                    filter_output_folder = None
+                                    if output_folder is not None:
+                                        filter_output_folder = (
+                                            output_folder / filter_name
+                                        )
+                                        filter_output_folder.mkdir(
+                                            parents=True, exist_ok=True
+                                        )
+
+                                    # Save video for this filter
+                                    process_and_log_video(
+                                        episode,
+                                        global_episode_idx,
+                                        threshold,
+                                        afhp,
+                                        self.VIDEO_CONFIG,
+                                        output_folder=filter_output_folder,
+                                        logger=logger,
+                                        logging_mode=logging_mode,
+                                        subfolder=filter_name,
+                                        wandb_category=f"videos_{filter_name}",
+                                        skip_score_normalization=self.skip_score_normalization,
+                                    )
+                                    videos_logged[filter_name] += 1
+                        else:  # filter_mode == "all"
+                            # Only save if ALL filters passed AND we haven't reached the limit
+                            if (
+                                all(filter_results.values())
+                                and videos_logged[combined_filter_name] < max_videos
+                            ):
+                                filter_output_folder = None
+                                if output_folder is not None:
+                                    filter_output_folder = (
+                                        output_folder / combined_filter_name
+                                    )
+                                    filter_output_folder.mkdir(
+                                        parents=True, exist_ok=True
+                                    )
+
+                                # Save video to combined filter folder
+                                process_and_log_video(
+                                    episode,
+                                    global_episode_idx,
+                                    threshold,
+                                    afhp,
+                                    self.VIDEO_CONFIG,
+                                    output_folder=filter_output_folder,
+                                    logger=logger,
+                                    logging_mode=logging_mode,
+                                    subfolder=combined_filter_name,
+                                    wandb_category=f"videos_{combined_filter_name}",
+                                    skip_score_normalization=self.skip_score_normalization,
+                                )
+                                videos_logged[combined_filter_name] += 1
+
+                global_episode_idx += 1
 
     def _get_default_video_folder(self) -> Path:
         """Get or create the default video folder in the eval_run_dir or experiment
