@@ -320,6 +320,9 @@ class Evaluator:
                         "level_ood_pred": current_level_ood_pred[i],
                     }
 
+                    # Reset the level_ood_pred for the next episode.
+                    current_level_ood_pred[i] = False
+
                     filter_results = self._check_episode_filters(
                         episode_data, level_info
                     )
