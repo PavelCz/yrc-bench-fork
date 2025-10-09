@@ -253,11 +253,31 @@ def add_score_bars(
     score_renderer: ScoreBarRenderer,
     text_renderer: TextRenderer,
     video_config: dict,
+    skip_normalization: bool = False,
 ) -> np.ndarray:
-    """Add score bars to video frames."""
-    score_min, score_max = score_renderer.calculate_score_bounds(scores)
+    """Add score bars to video frames.
+    
+    Args:
+        video: Video array
+        scores: List of scores for each frame
+        actions: List of actions for each frame
+        score_renderer: ScoreBarRenderer instance
+        text_renderer: TextRenderer instance
+        video_config: Video configuration dictionary
+        skip_normalization: If True, don't normalize scores (useful for max_prob which is already in [0,1])
+    
+    Returns:
+        Video with score bars added
+    """
     bar_height = video_config["score_bar_height"]
     time_steps, channels, _, width = video.shape
+
+    # Calculate score bounds for normalization (unless we're skipping normalization)
+    if not skip_normalization:
+        score_min, score_max = score_renderer.calculate_score_bounds(scores)
+    else:
+        # For max_prob, scores are already in [0, 1] range
+        score_min, score_max = 0.0, 1.0
 
     # Create new video with extra height for score bar
     processor = VideoProcessor(video_config)
@@ -275,10 +295,14 @@ def add_score_bars(
             current_score = scores[-1] if scores else 0.0
             current_action = actions[-1] if actions else 0
 
-        # Normalize score to 0-1 range
-        normalized_score = score_renderer.normalize_score(
-            current_score, score_min, score_max
-        )
+        # Normalize score to 0-1 range (or use as-is if skipping normalization)
+        if skip_normalization:
+            # Clamp to [0, 1] just in case
+            normalized_score = float(np.clip(current_score, 0, 1))
+        else:
+            normalized_score = score_renderer.normalize_score(
+                current_score, score_min, score_max
+            )
 
         # Calculate bar width
         bar_width, needs_bg = score_renderer.calculate_bar_dimensions(
@@ -443,6 +467,7 @@ def process_and_log_video(
     logging_mode: Literal["wandb", "folder", "both"] = "wandb",
     subfolder: Optional[str] = None,
     wandb_category: Optional[str] = None,
+    skip_score_normalization: bool = False,
 ) -> None:
     """
     Complete video processing and logging pipeline.
@@ -458,6 +483,7 @@ def process_and_log_video(
         logging_mode: Logging mode - "wandb", "folder", "both", or "none"
         subfolder: Optional subfolder name to create within output_folder for organization
         wandb_category: Optional category name for wandb logging organization
+        skip_score_normalization: If True, don't normalize scores (useful for max_prob metric)
     """
 
     # Skip video logging entirely if mode is "none"
@@ -490,6 +516,7 @@ def process_and_log_video(
             score_renderer,
             text_renderer,
             video_config,
+            skip_normalization=skip_score_normalization,
         )
 
     # Generate caption

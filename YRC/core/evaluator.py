@@ -43,6 +43,11 @@ class Evaluator:
         self.env_config = env_config
 
         self.episode_metadata: List[List[Dict]] = []
+        
+        # Check if we should skip score normalization (for max_prob metric)
+        # max_prob outputs probabilities in [0, 1] range, so normalization would be misleading
+        metric = getattr(config.coord_policy, "metric", None)
+        self.skip_score_normalization = metric == "max_prob"
 
     def _check_episode_filters(
         self, episode_data: dict, level_info: dict
@@ -243,6 +248,7 @@ class Evaluator:
                                                 logging_mode=logging_mode,
                                                 subfolder=filter_name,
                                                 wandb_category=f"videos_{filter_name}",
+                                                skip_score_normalization=self.skip_score_normalization,
                                             )
                                             videos_logged[filter_name] += 1
                                 else:  # filter_mode == "all"
@@ -269,6 +275,7 @@ class Evaluator:
                                             logging_mode=logging_mode,
                                             subfolder=combined_filter_name,
                                             wandb_category=f"videos_{combined_filter_name}",
+                                            skip_score_normalization=self.skip_score_normalization,
                                         )
                                         videos_logged[combined_filter_name] += 1
 
