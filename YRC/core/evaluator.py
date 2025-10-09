@@ -180,6 +180,11 @@ class Evaluator:
 
         obs = env.reset()
         prev_obs = obs
+
+        for i in range(env.num_envs):
+            # Maker sure there are no stale scores in the rolling average buffer.
+            policy.reset_rolling_average_buffer(i)
+
         # This tracks the very first done and is only used to determine whether to keep
         # collecting observations that are later used to generate the video.
         has_done = np.array([False] * env.num_envs)
