@@ -375,7 +375,7 @@ class LightningAEPolicy(OODPolicy):
 
         # Store original scores before applying rolling average
         scores_original = scores.copy() if self.rolling_average is not None else None
-        
+
         if self.rolling_average is not None:
             for i in range(len(self.rolling_average_buffers)):
                 self.rolling_average_buffers[i].append(scores[i].item())
@@ -394,7 +394,9 @@ class LightningAEPolicy(OODPolicy):
 
         # Store the scores for potential retrieval (used by evaluator for histograms)
         self.last_scores_original = scores_original
-        self.last_scores_rolling_avg = scores if self.rolling_average is not None else None
+        self.last_scores_rolling_avg = (
+            scores if self.rolling_average is not None else None
+        )
 
         # Use our own threshold instead of self.clf.threshold_
         action: np.ndarray = (scores > self.threshold_).astype(int)

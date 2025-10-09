@@ -256,7 +256,7 @@ def add_score_bars(
     skip_normalization: bool = False,
 ) -> np.ndarray:
     """Add score bars to video frames.
-    
+
     Args:
         video: Video array
         scores: List of scores for each frame
@@ -265,7 +265,7 @@ def add_score_bars(
         text_renderer: TextRenderer instance
         video_config: Video configuration dictionary
         skip_normalization: If True, don't normalize scores (useful for max_prob which is already in [0,1])
-    
+
     Returns:
         Video with score bars added
     """
