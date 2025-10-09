@@ -6,8 +6,6 @@ Utility functions for analyzing environments and agents.
 # TODO Remove after this program no longer supports Python 3.8.*
 from __future__ import annotations
 
-import sys
-import os
 from pathlib import Path
 from typing import List, Optional
 
@@ -19,7 +17,7 @@ import argparse
 
 
 # Add YRC to path for imports
-sys.path.append(os.path.join(os.path.dirname(__file__), "."))
+# sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 
 from lib.procgenAISC.procgen import ProcgenEnv
 from YRC.envs.procgen.wrappers import (
@@ -28,6 +26,11 @@ from YRC.envs.procgen.wrappers import (
     ScaledFloatFrame,
     HardResetWrapper,
 )
+import matplotlib
+
+# The backend must be set before any plotting operations, but after importing
+# procgen, which pulls in dependencies that set the backend.
+matplotlib.use("TkAgg")
 
 
 def create_env(random_percent: int = 100, start_level: int = 0, num_levels: int = 1):
