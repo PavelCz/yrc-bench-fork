@@ -210,7 +210,7 @@
             }
         },
         {
-            "name": "Eval ocrandom",
+            "name": "Eval level based random",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/eval_afhp.py",
@@ -218,7 +218,7 @@
                 "-wandb_project",
                 "yrc-debug",
                 "-c",
-                "configs/eval/coinrun_bg_ocrandom.yaml",
+                "configs/eval/coinrun_bg_level_based_random.yaml",
                 "-n",
                 "debug_random_bg_defer",
                 "-sim",
@@ -229,7 +229,7 @@
                 "YRC/checkpoints/procgen/coinrun/strong/model_200015872.pth",
                 "-coverage_fraction",
                 "0.3",
-                "-test_episodes",
+                "-num_levels",
                 "16",
                 "-defer_to_oracle",
                 "-experiment_group",
