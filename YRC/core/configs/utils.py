@@ -1,5 +1,4 @@
 import os
-from re import A
 import sys
 import logging
 import time
@@ -46,29 +45,45 @@ def load(yaml_file_or_str, flags=None) -> ConfigDict:
     if flags is not None:
         config_dict = config.as_dict()
         flags_dict = flags.as_dict()
-        
+
         # Handle experiment_group special logic
-        if "experiment_group" in flags_dict and flags_dict["experiment_group"] is not None:
+        if (
+            "experiment_group" in flags_dict
+            and flags_dict["experiment_group"] is not None
+        ):
             experiment_group = flags_dict["experiment_group"]
-            
+
             # Set wandb group if not already set
             if "wandb" not in flags_dict:
                 flags_dict["wandb"] = {}
-            if "group" not in flags_dict["wandb"] or flags_dict["wandb"]["group"] is None:
+            if (
+                "group" not in flags_dict["wandb"]
+                or flags_dict["wandb"]["group"] is None
+            ):
                 flags_dict["wandb"]["group"] = experiment_group
-            
+
             # Set eval_run_name as prefix if not already set
             if "eval_run_name" not in flags_dict or flags_dict["eval_run_name"] is None:
                 flags_dict["eval_run_name"] = experiment_group
-        
+
         update_config(flags_dict, config_dict)
         config = ConfigDict(**config_dict)
 
     # Only copy env_name_suffix for environments that use it (e.g., minigrid)
-    if hasattr(config.environment.train, 'env_name_suffix') and config.environment.val_sim is not None:
-        config.environment.val_sim.env_name_suffix = config.environment.train.env_name_suffix
-    if hasattr(config.environment.test, 'env_name_suffix') and config.environment.val_true is not None:
-        config.environment.val_true.env_name_suffix = config.environment.test.env_name_suffix
+    if (
+        hasattr(config.environment.train, "env_name_suffix")
+        and config.environment.val_sim is not None
+    ):
+        config.environment.val_sim.env_name_suffix = (
+            config.environment.train.env_name_suffix
+        )
+    if (
+        hasattr(config.environment.test, "env_name_suffix")
+        and config.environment.val_true is not None
+    ):
+        config.environment.val_true.env_name_suffix = (
+            config.environment.test.env_name_suffix
+        )
 
     config.data_dir = os.getenv("SM_DATA_DIR", config.data_dir)
     output_dir = Path(os.getenv("SM_OUTPUT_DIR", "experiments"))
@@ -102,30 +117,35 @@ def load(yaml_file_or_str, flags=None) -> ConfigDict:
     if config.eval_mode:
         # Require experiment_group to be set for eval mode
         experiment_group = None
-        if hasattr(config, 'experiment_group') and config.experiment_group:
+        if hasattr(config, "experiment_group") and config.experiment_group:
             experiment_group = config.experiment_group
-        elif hasattr(config, 'wandb') and hasattr(config.wandb, 'group') and config.wandb.group:
+        elif (
+            hasattr(config, "wandb")
+            and hasattr(config.wandb, "group")
+            and config.wandb.group
+        ):
             experiment_group = config.wandb.group
-        
+
         if not experiment_group:
             raise ValueError(
                 "experiment_group must be set for eval mode. "
                 "Use --experiment_group flag or --wandb.group flag."
             )
-        
+
         # Generate timestamp for eval run
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
+
         # Extract model name from experiment_dir (last component of path)
         model_name = Path(config.experiment_dir).name
-        
-        # Build new eval directory structure: experiments/evals/<experiment_group>/<model_name>/<timestamp>/
+
+        # Build new eval directory structure:
+        # experiments/evals/<experiment_group>/<model_name>/<timestamp>/
         output_dir = Path(os.getenv("SM_OUTPUT_DIR", "experiments"))
         eval_run_dir = output_dir / "evals" / experiment_group / model_name / timestamp
-        
+
         # Create the directory if it doesn't exist
         eval_run_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Set log file path based on file_name type
         if config.file_name is None or "trained" in config.file_name:
             log_file = str(eval_run_dir / f"eval_seed_{seed}.log")
@@ -137,7 +157,7 @@ def load(yaml_file_or_str, flags=None) -> ConfigDict:
             raise ValueError(
                 f"Unrecognized eval setting with file name: {config.file_name}"
             )
-        
+
         # Store eval run directory in config for potential use by other components
         config.eval_run_dir = str(eval_run_dir)
     else:
@@ -190,7 +210,7 @@ def config_logging(log_file):
     sys.excepthook = handler
 
 
-class ElapsedFormatter:
+class ElapsedFormatter(logging.Formatter):
     def __init__(self):
         self.start_time = datetime.now()
 

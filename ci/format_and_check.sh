@@ -17,6 +17,7 @@ SRC_FILES=(
     "analyzing/plot_policy_training_curves.py"
     "analyzing/utils.py"
     "analyzing/plot_ood.py"
+    "YRC/core/configs/utils.py"
     "flags.py"
 )
 EXCLUDED_FILES=("")
