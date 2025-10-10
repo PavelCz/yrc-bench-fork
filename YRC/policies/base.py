@@ -87,7 +87,7 @@ class AlwaysPolicy(Policy):
         return action
 
 
-class RandomPolicy(Policy):
+class TimestepRandomPolicy(Policy):
     def __init__(self, config, env):
         self.prob = 0.5
         self.device = get_global_variable("device")

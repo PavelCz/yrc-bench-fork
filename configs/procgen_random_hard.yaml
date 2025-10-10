@@ -1,7 +1,7 @@
 name: 'procgen_random_hard'
 general:
     benchmark: 'procgen'
-    algorithm: 'random'
+    algorithm: 'timestep_random'
     device: 0
     skyline: 0
     seed: 10

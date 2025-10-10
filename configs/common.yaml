@@ -5,8 +5,11 @@ coord_policy:
     threshold:
         cls: ThresholdPolicy
         metric: 'logit'
-    random:
-        cls: RandomPolicy
+    timestep_random:
+        cls: TimestepRandomPolicy
+        baseline: False
+    onecheck_random:
+        cls: OneCheckRandomPolicy
         baseline: False
     ppo:
         cls: PPOPolicy
@@ -133,7 +136,9 @@ environment:
 algorithm:
     always:
         dummy: null
-    random:
+    timestep_random:
+        cls: RandomAlgorithm
+    onecheck_random:
         cls: RandomAlgorithm
     threshold:
         cls: ThresholdAlgorithm

@@ -48,7 +48,10 @@ class Evaluator:
         # Check if we should skip score normalization (for max_prob metric)
         # max_prob outputs probabilities in [0, 1] range, so normalization would be misleading
         metric = getattr(config.coord_policy, "metric", None)
-        self.skip_score_normalization = metric == "max_prob"
+        alg_cls = getattr(config.algorithm, "cls", None)
+        self.skip_score_normalization = (
+            metric == "max_prob" or alg_cls == "RandomAlgorithm"
+        )
 
     def eval(
         self,

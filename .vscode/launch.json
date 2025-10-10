@@ -173,7 +173,7 @@
             }
         },
         {
-            "name": "Eval random",
+            "name": "Eval timestep random",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/eval_afhp.py",
@@ -181,7 +181,7 @@
                 "-wandb_project",
                 "yrc-debug",
                 "-c",
-                "configs/eval/coinrun_bg_random.yaml",
+                "configs/eval/coinrun_bg_timestep_random.yaml",
                 "-n",
                 "debug_random_bg_defer",
                 "-sim",
