@@ -8,8 +8,8 @@ coord_policy:
     timestep_random:
         cls: TimestepRandomPolicy
         baseline: False
-    onecheck_random:
-        cls: OneCheckRandomPolicy
+    level_based_random:
+        cls: LevelBasedRandomPolicy
         baseline: False
     ppo:
         cls: PPOPolicy
@@ -138,7 +138,7 @@ algorithm:
         dummy: null
     timestep_random:
         cls: RandomAlgorithm
-    onecheck_random:
+    level_based_random:
         cls: RandomAlgorithm
     threshold:
         cls: ThresholdAlgorithm

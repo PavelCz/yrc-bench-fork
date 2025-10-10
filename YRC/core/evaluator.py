@@ -200,7 +200,7 @@ class Evaluator:
             num_episodes < max_episodes or not self.done_saving_actions_for_vid
         ):
             # Add the episode timestep to the obs. This is necessary for
-            # OneCheckRandomPolicy to know whether a new episode has started.
+            # LevelBasedRandomPolicy to know whether a new episode has started.
             obs["episode_timestep"] = episode_log["episode_length"]
             # For most policies I have seen, the greedy flag is ignored. These include
             # random, lightning_ae, and ood.

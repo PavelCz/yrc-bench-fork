@@ -131,7 +131,7 @@ class TimestepRandomPolicy(Policy):
         return (100 - percentile) * 0.01
 
 
-class OneCheckRandomPolicy(Policy):
+class LevelBasedRandomPolicy(Policy):
     """A random policy that checks once at the beginning of the episode, whether it
     should ask for help or not. It then sticks with that decision for the rest of the
     episode.
