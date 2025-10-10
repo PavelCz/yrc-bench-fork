@@ -22,7 +22,7 @@ def main():
 
     envs = env_factory.make(config)
     policy = policy_factory.make(config, envs["train"])
-    evaluator = Evaluator(config.evaluation)
+    evaluator = Evaluator(config)
 
     if config.training.rollout_dir is not None:
 

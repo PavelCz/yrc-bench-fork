@@ -37,14 +37,19 @@ evaluation:
         validation_episodes: 256
         test_episodes: 256
         act_greedy: False
+        video_episodes_to_collect: 16
+        video_filter: ['all', 'no_death']
+        video_filter_mode: 'any'
     cliport:
         validation_episodes: 64
         test_episodes: 64
         act_greedy: False
+        video_filter_mode: 'any'
     minigrid:
         validation_episodes: 256
         test_episodes: 256
         act_greedy: False
+        video_filter_mode: 'any'
 environment:
     procgen:
         common:

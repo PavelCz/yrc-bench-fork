@@ -320,12 +320,52 @@ def make():
     )
 
     parser.add_argument(
+        "-video_logging_mode",
+        "--evaluation.video_logging_mode",
+        type=str,
+        choices=["wandb", "folder", "both", "none"],
+        default="folder",
+        help="video logging mode: wandb (Weights & Biases), folder (local files), both, or none",
+    )
+
+    parser.add_argument(
+        "-video_output_folder",
+        "--evaluation.video_output_folder",
+        type=str,
+        help="folder path for saving videos when using folder or both logging modes (relative to eval_run_dir, defaults to eval_run_dir/videos if not specified)",
+    )
+
+    parser.add_argument(
         "-experiment_group",
         "--experiment_group",
         type=str,
         help=(
             "experiment group name - used for wandb group and as prefix for eval names"
         ),
+    )
+
+    parser.add_argument(
+        "-video_episodes_to_collect",
+        "--evaluation.video_episodes_to_collect",
+        type=int,
+        help="Number of video episodes to collect for evaluation",
+    )
+
+    parser.add_argument(
+        "-video_filter",
+        "--evaluation.video_filter",
+        type=str,
+        nargs="+",
+        help="Filter criteria for which episodes to save as videos. Can specify multiple filters to create separate categories. Options: 'all', 'no_death', 'random_coin_success', 'deterministic_coin_success', 'ood_detected', 'in_distribution'",
+    )
+
+    parser.add_argument(
+        "-video_filter_mode",
+        "--evaluation.video_filter_mode",
+        type=str,
+        choices=["any", "all"],
+        default="any",
+        help="Filter mode: 'any' creates separate category for each filter, 'all' requires episode to pass all filters to be saved",
     )
 
     parser.add_argument(

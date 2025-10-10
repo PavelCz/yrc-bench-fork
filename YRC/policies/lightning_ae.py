@@ -74,7 +74,8 @@ class LightningAEPolicy(OODPolicy):
             for _ in range(env.num_envs):
                 self.rolling_average_buffers.append(
                     collections.deque(
-                        self.rolling_average_size*[float("-inf")], self.rolling_average_size
+                        self.rolling_average_size * [float("-inf")],
+                        self.rolling_average_size,
                     )
                 )
 
@@ -360,21 +361,42 @@ class LightningAEPolicy(OODPolicy):
 
         # Get decision score for the observation.
         if return_scores_and_recons:
+            scores: np.ndarray
+            recons: List[np.ndarray]
             scores, recons = self._compute_decision_scores(
                 observation, return_recons=return_scores_and_recons
             )
         else:
-            scores = self._compute_decision_scores(observation)
+            # we know that the return type is np.ndarray (default case if return_scores
+            # arg is not set)
+            scores: np.ndarray = cast(
+                np.ndarray, self._compute_decision_scores(observation)
+            )
+
+        # Store original scores before applying rolling average
+        scores_original = scores.copy() if self.rolling_average is not None else None
 
         if self.rolling_average is not None:
             for i in range(len(self.rolling_average_buffers)):
                 self.rolling_average_buffers[i].append(scores[i].item())
                 if self.rolling_average == "mean":
-                    scores[i] = torch.mean(torch.tensor(self.rolling_average_buffers[i])).item()
+                    scores[i] = torch.mean(
+                        torch.tensor(self.rolling_average_buffers[i])
+                    ).item()
                 elif self.rolling_average == "median":
-                    scores[i] = torch.median(torch.tensor(self.rolling_average_buffers[i])).item()
+                    scores[i] = torch.median(
+                        torch.tensor(self.rolling_average_buffers[i])
+                    ).item()
                 else:
-                    raise NotImplementedError(f"Unrecognized rolling average: {self.rolling_average}")
+                    raise NotImplementedError(
+                        f"Unrecognized rolling average: {self.rolling_average}"
+                    )
+
+        # Store the scores for potential retrieval (used by evaluator for histograms)
+        self.last_scores_original = scores_original
+        self.last_scores_rolling_avg = (
+            scores if self.rolling_average is not None else None
+        )
 
         # Use our own threshold instead of self.clf.threshold_
         action: np.ndarray = (scores > self.threshold_).astype(int)
@@ -388,12 +410,12 @@ class LightningAEPolicy(OODPolicy):
         return action
 
     def reset_rolling_average_buffer(self, index: int) -> None:
-        """Reset the rolling average buffer for a given index. The index corresponds 
+        """Reset the rolling average buffer for a given index. The index corresponds
         to the environment index.
         """
         if self.rolling_average is not None:
             self.rolling_average_buffers[index] = collections.deque(
-                self.rolling_average_size*[float("-inf")], self.rolling_average_size
+                self.rolling_average_size * [float("-inf")], self.rolling_average_size
             )
 
     def update_params(self, params: Dict[str, Any]) -> None:

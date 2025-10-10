@@ -77,7 +77,7 @@ def get_test_eval_info(config, coord_envs):
     if env_name not in data[benchmark]:
         logging.info(f"Missing info about {benchmark}-{env_name}!")
         logging.info("Calculating missing info (taking a few minutes)...")
-        evaluator = Evaluator(config.evaluation)
+        evaluator = Evaluator(config)
         # eval strong agent on test environment to get statistics
         summary = evaluator.eval(
             coord_envs["test"].strong_agent,

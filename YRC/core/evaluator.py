@@ -1,22 +1,54 @@
 import logging
 import numpy as np
+from pathlib import Path
 from typing import Optional, List, Dict
 from pytorch_lightning.loggers import WandbLogger
-import wandb
-from PIL import Image, ImageDraw, ImageFont
+import matplotlib
+
+matplotlib.use("Agg")  # Use non-interactive backend
+import matplotlib.pyplot as plt
+
+from YRC.core.video_utils import process_and_log_video, resolve_video_output_folder
 
 
 class Evaluator:
     LOGGED_ACTION = 1
 
-    def __init__(self, config, env_config: dict):
-        self.args = config
+    # Video logging configuration constants
+    VIDEO_CONFIG = {
+        "fps": 10,
+        "final_frame_repetitions": 10,
+        "score_bar_height": 15,
+        "score_bar_bg_color": 64,  # Dark gray
+        "font_size": 12,
+        "text_padding": 5,
+        "char_width_estimate": 6,
+        "normal_color": [0, 255, 0],  # Green
+        "ood_color": [255, 0, 0],  # Red
+        "text_color": [255, 255, 255],  # White
+        "outline_color": [0, 0, 0],  # Black
+    }
+
+    def __init__(self, config, env_config: Optional[dict] = None):
+        self.args = config.evaluation
+
+        self.eval_run_dir = Path(config.eval_run_dir)
+
         self.collected_states = []
-        self.collected_actions_done = False
+        self.done_saving_actions_for_vid = False
+        self.video_episodes_collected = 0
+        self.video_filter_passed = {}
 
         self.defer_to_oracle: Optional[bool] = None
 
         self.env_config = env_config
+
+        self.episode_metadata: List[List[Dict]] = []
+
+        # Check if we should skip score normalization (for max_prob metric)
+        # max_prob outputs probabilities in [0, 1] range, so normalization would be misleading
+        metric = getattr(config.coord_policy, "metric", None)
+        self.skip_score_normalization = metric == "max_prob"
 
     def eval(
         self,
@@ -32,8 +64,13 @@ class Evaluator:
 
         self.defer_to_oracle = args.defer_to_oracle
 
-        self.collected_actions_done = False
-        self.collected_states: List[List[Dict]] = []
+        self.done_saving_actions_for_vid = False
+        self.video_episodes_collected = 0
+        self.video_filter_passed = {}  # Track counts per filter
+        self.collected_states: List[List[List[Dict]]] = []
+        self.episode_metadata: List[
+            List[Dict]
+        ] = []  # Track which episodes passed each filter
 
         summary = {}
         for split in eval_splits:
@@ -47,9 +84,32 @@ class Evaluator:
                     # num_episodes = args.test_episodes
                 assert num_episodes % envs[split].num_envs == 0
 
-            self.collected_states = []
+            # The dimensions of the collected states are:
+            # [env_idx][episode_idx][state_idx]
+            # i.e. for every parallel env, we collect a list of episodes, and for each
+            # episode, we collect a list of states.
+            self.collected_states: List[List[List[Dict]]] = []
+            self.episode_metadata: List[List[Dict]] = []
+
+            # Get video filters - default to ['all'] if not specified
+            video_filters = getattr(args, "video_filter", ["all"])
+            filter_mode = getattr(args, "video_filter_mode", "any")
+
+            # Initialize per-filter tracking
+            if filter_mode == "any":
+                # Track each filter separately
+                for filter_name in video_filters:
+                    self.video_filter_passed[filter_name] = 0
+            else:  # filter_mode == "all"
+                # Track combined filter (all must pass)
+                combined_filter_name = "_and_".join(video_filters)
+                self.video_filter_passed[combined_filter_name] = 0
+
             for i in range(envs[split].num_envs):
                 self.collected_states.append([])
+                self.collected_states[i].append([])
+                self.episode_metadata.append([])
+                self.episode_metadata[i].append({})
 
             logging.info(f"Evaluation on {split} for {num_episodes} episodes")
 
@@ -58,226 +118,32 @@ class Evaluator:
             summary[split] = self.summarize(log)
             self.write_summary(split, summary[split])
 
+            # Calculate AFHP for logging
+            if self.defer_to_oracle:
+                afhp = summary[split]["ood_pred_percentage"]
+            else:
+                afhp = summary[split]["action_1_frac"]
+
+            # Create and save OOD score histograms with AFHP
+            self._save_score_histograms(
+                split,
+                log.get("scores_in_domain", []),
+                log.get("scores_out_of_domain", []),
+                afhp=afhp,
+                logger=logger,
+                scores_original_in_domain=log.get("scores_original_in_domain", []),
+                scores_original_out_of_domain=log.get(
+                    "scores_original_out_of_domain", []
+                ),
+            )
+
             envs[split].close()
 
+            # Process and log videos if logger is available
             if logger is not None:
-                afhp = summary[split]["action_1_frac"]
-                for i in range(len(self.collected_states)):
-                    self._log_evaluation_video(logger, threshold, afhp, i)
+                self._process_and_log_videos(split, threshold, afhp, logger)
 
         return summary
-
-    def _log_evaluation_video(
-        self, logger: WandbLogger, threshold: float, afhp: float, i: int
-    ) -> None:
-        """
-        Generate and log evaluation video with score bars to wandb.
-
-        Args:
-            logger: WandbLogger instance for logging
-            threshold: Threshold value for the video caption
-            afhp: Ask for help percentage
-            i: Index of the episode to log
-        """
-        obs = [x["obs"] for x in self.collected_states[i]]
-        scores = [x["scores"] for x in self.collected_states[i]]
-        recons = [x["recons"] for x in self.collected_states[i]]
-        actions = [x["action"] for x in self.collected_states[i]]
-
-        # We determine whether our OOD detector uses reconstructions by checking
-        # whether the first element of the first reconstruction is None.
-        use_recons = recons[0] is not None
-
-        # Stack observations and reconstructions
-        obs_vid = np.stack(obs, axis=0)
-
-        if use_recons:
-            recons_vid = np.stack(recons, axis=0)
-
-            # Ensure both videos have the same shape
-            if obs_vid.shape != recons_vid.shape:
-                # Reshape reconstructions to match observations if needed
-                recons_vid = np.resize(recons_vid, obs_vid.shape)
-
-            # Clip the reconstructions to the range 0-1.
-            recons_vid = np.clip(recons_vid, 0, 1)
-
-            # Concatenate horizontally (side by side)
-            # obs_vid and recons_vid have shape (batch, time, c, h, w)
-            # We want to concatenate along the width dimension (last dimension)
-            combined_vid = np.concatenate([obs_vid, recons_vid], axis=-1)
-        else:
-            combined_vid = obs_vid
-
-        # Normalize to 0-255 range
-        combined_vid = combined_vid * 255
-        combined_vid = combined_vid.astype(np.uint8)
-
-        # Repeat the final frame for 1 second (10 frames at 10 fps)
-        final_frame = combined_vid[-1:].copy()  # Get the last frame
-        repeated_frames = np.repeat(final_frame, 10, axis=0)  # Repeat 10 times
-        combined_vid = np.concatenate([combined_vid, repeated_frames], axis=0)
-
-        use_score_bars = scores[0] is not None
-
-        if use_score_bars:
-            # Add score bars at the top of each frame
-            # Find global min and max scores across all frames
-            all_scores = np.array(scores)
-
-            # If we are using a floating window average for the score, some scores might
-            # be set to -inf. We don't want to consider these when computing the min.
-            all_rational_scores = all_scores[all_scores != float("-inf")]
-            score_min = np.min(all_rational_scores)
-
-            score_max = np.max(all_scores)
-
-            # Create score bar visualization
-            bar_height = 15  # Height of the score bar in pixels
-            time_steps, channels, height, width = combined_vid.shape
-
-            # Create new video with extra height for score bar
-            vid_with_bars = np.zeros(
-                (time_steps, channels, height + bar_height, width), dtype=np.uint8
-            )
-
-            # Copy original video content below the bar area
-            vid_with_bars[:, :, bar_height:, :] = combined_vid
-
-            # Add score bars for each frame
-            for t in range(time_steps):
-                # Get current score and action, handling repeated frames
-                if t < len(scores):
-                    current_score = scores[t]
-                    current_action = actions[t] if t < len(actions) else 0
-                else:
-                    # For repeated frames, use the last values
-                    current_score = scores[-1] if scores else 0.0
-                    current_action = actions[-1] if actions else 0
-
-                # Normalize score to 0-1 range
-                if score_max > score_min:
-                    normalized_score = (current_score - score_min) / (
-                        score_max - score_min
-                    )
-                    # Clamp edge cases. This should only happen if there are values
-                    # set to -inf.
-                    if normalized_score < 0:
-                        normalized_score = 0
-                    if normalized_score > 1:
-                        normalized_score = 1
-                else:
-                    normalized_score = 0.5
-
-                # Calculate bar width (as fraction of total width)
-                bar_width = int(normalized_score * width)
-
-                # Create score bar (green by default, red if action is 1)
-                if current_action == 1:
-                    # Red for action = 1 (OOD detected)
-                    bar_color = [255, 0, 0]  # Red
-                else:
-                    # Green for action = 0 (normal)
-                    bar_color = [0, 255, 0]  # Green
-
-                # Fill the bar area
-                if bar_width > 0:
-                    vid_with_bars[t, :, :bar_height, :bar_width] = np.array(bar_color)[
-                        :, np.newaxis, np.newaxis
-                    ]
-
-                # Add background for remaining part of bar (dark gray)
-                if bar_width < width:
-                    vid_with_bars[t, :, :bar_height, bar_width:] = 64  # Dark gray
-
-                # Add text overlay with score value
-                # Convert the current frame to PIL Image for text rendering
-                frame = vid_with_bars[t].transpose(
-                    1, 2, 0
-                )  # Convert from (C, H, W) to (H, W, C)
-                pil_image = Image.fromarray(frame, mode="RGB")
-                draw = ImageDraw.Draw(pil_image)
-
-                # Try to use a small font, fall back to default if not available
-                try:
-                    font = ImageFont.truetype("arial.ttf", 12)
-                except OSError:
-                    try:
-                        font = ImageFont.load_default()
-                    except OSError:
-                        font = None
-
-                # Format score text
-                score_text = f"{current_score:.3f}"
-
-                # Calculate text position (fixed location)
-                if font:
-                    text_bbox = draw.textbbox((0, 0), score_text, font=font)
-                    _text_width = text_bbox[2] - text_bbox[0]
-                    text_height = text_bbox[3] - text_bbox[1]
-                else:
-                    _text_width = len(score_text) * 6  # Rough estimate
-                    text_height = 11
-
-                # Fixed position: left side of the bar with small padding
-                text_x = 5
-                text_y = (bar_height - text_height) // 2
-
-                # Draw text with white color and black outline for better visibility
-                if font:
-                    # Black outline
-                    for dx in [-1, 0, 1]:
-                        for dy in [-1, 0, 1]:
-                            if dx != 0 or dy != 0:
-                                draw.text(
-                                    (text_x + dx, text_y + dy),
-                                    score_text,
-                                    fill=(0, 0, 0),
-                                    font=font,
-                                )
-                    # White text
-                    draw.text(
-                        (text_x, text_y), score_text, fill=(255, 255, 255), font=font
-                    )
-                else:
-                    # Fallback without font
-                    draw.text((text_x, text_y), score_text, fill=(255, 255, 255))
-
-                # Convert back to numpy array
-                frame_with_text = np.array(pil_image).transpose(
-                    2, 0, 1
-                )  # Convert back to (C, H, W)
-                vid_with_bars[t] = frame_with_text
-
-            combined_vid = vid_with_bars
-
-            caption = f"Threshold: {threshold:.2E} - AFHP: {afhp:.2f}"
-
-            if use_recons:
-                caption += " - Left: Original, Right: Reconstruction"
-            else:
-                caption += " - Original observations"
-
-            if use_score_bars:
-                caption += (
-                    " - Top bar: Score with values (Green=Normal, Red=OOD, Range: "
-                    f"{score_min:.3f}-{score_max:.3f})"
-                )
-
-            # # We want to log separate videos and not in a batch.
-            # for i in range(combined_vid.shape[0]):
-
-            logger.experiment.log(
-                {
-                    f"eval_episode_{afhp:.2f}": wandb.Video(
-                        # (time dim, c, h, w)
-                        combined_vid,
-                        fps=10,
-                        format="gif",
-                        caption=caption,
-                    ),
-                }
-            )
 
     def _eval_loop(self, policy, env, max_episodes: int) -> dict:
         args = self.args
@@ -290,6 +156,12 @@ class Evaluator:
             # Whether *any* state has been predicted as ood.
             "level_ood_pred": [],
             "level_ood_gt": [],
+            # OOD scores per timestep for histogram analysis
+            "scores_in_domain": [],  # Scores for deterministic coin levels
+            "scores_out_of_domain": [],  # Scores for random coin levels
+            # Original scores (before rolling average)
+            "scores_original_in_domain": [],
+            "scores_original_out_of_domain": [],
         }
 
         # A temporary log that only contains stats for the current episode.
@@ -309,12 +181,21 @@ class Evaluator:
         obs = env.reset()
         prev_obs = obs
 
+        for i in range(env.num_envs):
+            # Maker sure there are no stale scores in the rolling average buffer.
+            policy.reset_rolling_average_buffer(i)
+
         # This tracks the very first done and is only used to determine whether to keep
         # collecting observations that are later used to generate the video.
         has_done = np.array([False] * env.num_envs)
         num_episodes = 0
 
-        while num_episodes < max_episodes:
+        # Upper bound to prevent infinite loops if videos are hard to collect
+        episode_upper_bound = max_episodes * 5
+
+        while num_episodes < episode_upper_bound and (
+            num_episodes < max_episodes or not self.done_saving_actions_for_vid
+        ):
             # Add the episode timestep to the obs. This is necessary for
             # OneCheckRandomPolicy to know whether a new episode has started.
             obs["episode_timestep"] = episode_log["episode_length"]
@@ -355,17 +236,147 @@ class Evaluator:
                 episode_log[f"action_{self.LOGGED_ACTION}"][i] += (
                     action[i] == self.LOGGED_ACTION
                 ).sum()
+                # Since has done is changed below, we also need to check done here.
+                # Since done will not stay True, because the env is reset at the end,
+                # we can't just only check done.
+                # if not has_done[i] and not done[i] and not self.collected_actions_done:
+                # Recons is None for non reconstruction-based OOD detectors like
+                # Deep-SVDD.
+                recons_i = recons[i] if recons is not None else None
 
-                if done[i] and num_episodes < max_episodes:
-                    log["level_ood_pred"].append(current_level_ood_pred[i])
-                    log["returns"].append(episode_log["cumulative_reward"][i])
-                    log["env_returns"].append(episode_log["cumulative_env_reward"][i])
-                    log["episode_length"].append(episode_log["episode_length"][i])
-                    log[f"action_{self.LOGGED_ACTION}"].append(
-                        episode_log[f"action_{self.LOGGED_ACTION}"][i]
+                # Some OOD detectors, like the random one, don't assign scores.
+                scores_i = scores[i] if scores is not None else None
+
+                # Collect scores for histogram analysis (only if scores exist)
+                if scores_i is not None and not done[i]:
+                    # Check if this level has random or deterministic coin
+                    is_random_coin = current_level_ood_gt[i]
+
+                    # Collect rolling average scores (or final scores if no rolling average)
+                    if is_random_coin:
+                        log["scores_out_of_domain"].append(float(scores_i))
+                    else:
+                        log["scores_in_domain"].append(float(scores_i))
+
+                    # Collect original scores (before rolling average) if available
+                    if (
+                        hasattr(policy, "last_scores_original")
+                        and policy.last_scores_original is not None
+                    ):
+                        # Convert tensor to numpy if needed
+                        original_scores = policy.last_scores_original
+                        if hasattr(original_scores, "cpu"):
+                            original_scores = original_scores.cpu().numpy()
+                        scores_original_i = float(original_scores[i])
+
+                        if is_random_coin:
+                            log["scores_original_out_of_domain"].append(
+                                scores_original_i
+                            )
+                        else:
+                            log["scores_original_in_domain"].append(scores_original_i)
+
+                if not self.done_saving_actions_for_vid:
+                    self.collected_states[i][-1].append(
+                        {
+                            "obs": prev_obs["env_obs"][i],
+                            "scores": scores_i,
+                            "recons": recons_i,
+                            "action": action[i],
+                            "done": done[i],
+                        }
                     )
-                    log["level_ood_gt"].append(current_level_ood_gt[i])
+
+                if done[i]:
+                    # Only log to evaluation metrics if within max_episodes limit
+                    if num_episodes < max_episodes:
+                        log["level_ood_pred"].append(current_level_ood_pred[i])
+                        log["returns"].append(episode_log["cumulative_reward"][i])
+                        log["env_returns"].append(
+                            episode_log["cumulative_env_reward"][i]
+                        )
+                        log["episode_length"].append(episode_log["episode_length"][i])
+                        log[f"action_{self.LOGGED_ACTION}"].append(
+                            episode_log[f"action_{self.LOGGED_ACTION}"][i]
+                        )
+                        log["level_ood_gt"].append(current_level_ood_gt[i])
+
+                    # Always increment episode counter (for upper bound check)
                     num_episodes += 1
+
+                    # Check which filters this episode passes
+                    episode_data = {
+                        "cumulative_reward": episode_log["cumulative_reward"][i],
+                        "episode_length": episode_log["episode_length"][i],
+                        "final_done": done[
+                            i
+                        ],  # This is the done state that caused the episode to end
+                    }
+                    level_info = {
+                        "randomize_goal": current_level_ood_gt[
+                            i
+                        ],  # This will be updated below, but we capture the current value
+                        "level_ood_gt": current_level_ood_gt[i],
+                        "level_ood_pred": current_level_ood_pred[i],
+                    }
+
+                    # Reset the level_ood_pred for the next episode.
+                    current_level_ood_pred[i] = False
+
+                    filter_results = self._check_episode_filters(
+                        episode_data, level_info
+                    )
+
+                    # Count this completed episode for video collection limit
+                    if not self.done_saving_actions_for_vid:
+                        # Get filter mode
+                        filter_mode = getattr(self.args, "video_filter_mode", "any")
+
+                        # Track which filters this episode passed
+                        passed_filters = [
+                            f for f, passed in filter_results.items() if passed
+                        ]
+
+                        # Determine if episode should be kept based on filters
+                        should_keep_episode = self._should_keep_episode(
+                            filter_results, filter_mode
+                        )
+
+                        if should_keep_episode:
+                            # Check if we need to keep this episode or if we already have enough
+                            need_this_episode = self._need_episode_for_video(
+                                passed_filters, filter_mode
+                            )
+
+                            if need_this_episode:
+                                # Store episode metadata for later video saving
+                                self.episode_metadata[i][-1] = {
+                                    "filter_results": filter_results,
+                                    "episode_data": episode_data,
+                                    "level_info": level_info,
+                                    "episode_idx": num_episodes
+                                    - 1,  # Global episode index
+                                }
+
+                                # Update per-filter counts
+                                self._update_video_filter_counts(
+                                    passed_filters, filter_mode, num_episodes
+                                )
+
+                                self.video_episodes_collected += 1
+
+                                # Create a new list for the next episode for this env.
+                                self.collected_states[i].append([])
+                                self.episode_metadata[i].append({})
+                            else:
+                                # Episode passes filters but we have enough - discard
+                                self.collected_states[i][-1] = []
+                                self.episode_metadata[i][-1] = {}
+                        else:
+                            # Episode didn't pass filters - discard collected states
+                            # Clear the current episode data and reuse the same slot
+                            self.collected_states[i][-1] = []
+                            self.episode_metadata[i][-1] = {}
 
                     episode_log["cumulative_reward"][i] = 0
                     episode_log["cumulative_env_reward"][i] = 0
@@ -381,31 +392,12 @@ class Evaluator:
                 # episode, so the info dict might be of the next episode.
                 current_level_ood_gt[i] = info[i]["randomize_goal"]
 
-                # Since has done is changed below, we also need to check done here.
-                # Since done will not stay True, because the env is reset at the end,
-                # we can't just only check done.
-                if not has_done[i] and not done[i] and not self.collected_actions_done:
-                    # Recons is None for non reconstruction-based OOD detectors like
-                    # Deep-SVDD.
-                    recons_i = recons[i] if recons is not None else None
-
-                    # Some OOD detectors, like the random one, don't assign scores.
-                    scores_i = scores[i] if scores is not None else None
-
-                    self.collected_states[i].append(
-                        {
-                            "obs": prev_obs["env_obs"][i],
-                            "scores": scores_i,
-                            "recons": recons_i,
-                            "action": action[i],
-                        }
-                    )
+                # Check if all filters have enough episodes
+                if self._all_video_filters_satisfied():
+                    self.done_saving_actions_for_vid = True
             prev_obs = obs
 
             has_done |= done
-
-            if all(has_done):
-                self.collected_actions_done = True
 
         return log
 
@@ -453,3 +445,527 @@ class Evaluator:
         logging.info(log_str)
 
         return summary
+
+    def _save_score_histograms(
+        self,
+        split: str,
+        scores_in_domain: List[float],
+        scores_out_of_domain: List[float],
+        afhp: float,
+        logger: Optional[WandbLogger] = None,
+        scores_original_in_domain: Optional[List[float]] = None,
+        scores_original_out_of_domain: Optional[List[float]] = None,
+    ) -> None:
+        """Create and save histograms of OOD scores for in-domain and out-of-domain levels.
+
+        If original scores are provided, creates 4 histograms (2 for original, 2 for rolling avg).
+        Otherwise, creates 2 histograms (1 for in-domain, 1 for out-of-domain).
+        """
+        if not scores_in_domain and not scores_out_of_domain:
+            logging.info("No scores available for histogram generation")
+            return
+
+        # Filter out infinite values
+        def filter_finite(scores):
+            """Remove positive and negative infinity from scores."""
+            finite_scores = [s for s in scores if np.isfinite(s)]
+            return finite_scores
+
+        # Determine if we have rolling average (original scores provided)
+        has_rolling_avg = (
+            scores_original_in_domain is not None and len(scores_original_in_domain) > 0
+        ) or (
+            scores_original_out_of_domain is not None
+            and len(scores_original_out_of_domain) > 0
+        )
+
+        if has_rolling_avg:
+            # Create figure with 4 subplots (2 rows, 2 columns)
+            fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 10))
+
+            # Filter scores
+            scores_original_in_domain_filtered = filter_finite(
+                scores_original_in_domain or []
+            )
+            scores_original_out_of_domain_filtered = filter_finite(
+                scores_original_out_of_domain or []
+            )
+            scores_in_domain_filtered = filter_finite(scores_in_domain)
+            scores_out_of_domain_filtered = filter_finite(scores_out_of_domain)
+
+            # Log filtered values
+            if scores_original_in_domain:
+                n_filtered = len(scores_original_in_domain) - len(
+                    scores_original_in_domain_filtered
+                )
+                if n_filtered > 0:
+                    logging.info(
+                        f"Filtered {n_filtered} infinite values from original in-domain scores"
+                    )
+            if scores_original_out_of_domain:
+                n_filtered = len(scores_original_out_of_domain) - len(
+                    scores_original_out_of_domain_filtered
+                )
+                if n_filtered > 0:
+                    logging.info(
+                        f"Filtered {n_filtered} infinite values from original out-of-domain scores"
+                    )
+            if len(scores_in_domain) != len(scores_in_domain_filtered):
+                logging.info(
+                    f"Filtered {len(scores_in_domain) - len(scores_in_domain_filtered)} infinite values from rolling avg in-domain scores"
+                )
+            if len(scores_out_of_domain) != len(scores_out_of_domain_filtered):
+                logging.info(
+                    f"Filtered {len(scores_out_of_domain) - len(scores_out_of_domain_filtered)} infinite values from rolling avg out-of-domain scores"
+                )
+
+            # Top row: Original scores (before rolling average)
+            # Histogram for original in-domain levels (deterministic coin)
+            if scores_original_in_domain_filtered:
+                ax1.hist(
+                    scores_original_in_domain_filtered,
+                    bins=50,
+                    alpha=0.7,
+                    color="blue",
+                    edgecolor="black",
+                )
+                ax1.set_xlabel("OOD Score (Original)")
+                ax1.set_ylabel("Frequency")
+                ax1.set_title(
+                    f"Original Scores - In-Domain (Deterministic Coin)\n{split} - {len(scores_original_in_domain_filtered)} samples"
+                )
+                ax1.grid(True, alpha=0.3)
+            else:
+                ax1.text(
+                    0.5, 0.5, "No original in-domain scores", ha="center", va="center"
+                )
+                ax1.set_title(f"Original Scores - In-Domain\n{split} - No data")
+
+            # Histogram for original out-of-domain levels (random coin)
+            if scores_original_out_of_domain_filtered:
+                ax2.hist(
+                    scores_original_out_of_domain_filtered,
+                    bins=50,
+                    alpha=0.7,
+                    color="red",
+                    edgecolor="black",
+                )
+                ax2.set_xlabel("OOD Score (Original)")
+                ax2.set_ylabel("Frequency")
+                ax2.set_title(
+                    f"Original Scores - Out-of-Domain (Random Coin)\n{split} - {len(scores_original_out_of_domain_filtered)} samples"
+                )
+                ax2.grid(True, alpha=0.3)
+            else:
+                ax2.text(
+                    0.5,
+                    0.5,
+                    "No original out-of-domain scores",
+                    ha="center",
+                    va="center",
+                )
+                ax2.set_title(f"Original Scores - Out-of-Domain\n{split} - No data")
+
+            # Bottom row: Rolling average scores
+            # Histogram for rolling avg in-domain levels (deterministic coin)
+            if scores_in_domain_filtered:
+                ax3.hist(
+                    scores_in_domain_filtered,
+                    bins=50,
+                    alpha=0.7,
+                    color="blue",
+                    edgecolor="black",
+                )
+                ax3.set_xlabel("OOD Score (Rolling Avg)")
+                ax3.set_ylabel("Frequency")
+                ax3.set_title(
+                    f"Rolling Avg Scores - In-Domain (Deterministic Coin)\n{split} - {len(scores_in_domain_filtered)} samples - AFHP: {afhp:.2f}"
+                )
+                ax3.grid(True, alpha=0.3)
+            else:
+                ax3.text(
+                    0.5,
+                    0.5,
+                    "No rolling avg in-domain scores",
+                    ha="center",
+                    va="center",
+                )
+                ax3.set_title(
+                    f"Rolling Avg Scores - In-Domain\n{split} - No data - AFHP: {afhp:.2f}"
+                )
+
+            # Histogram for rolling avg out-of-domain levels (random coin)
+            if scores_out_of_domain_filtered:
+                ax4.hist(
+                    scores_out_of_domain_filtered,
+                    bins=50,
+                    alpha=0.7,
+                    color="red",
+                    edgecolor="black",
+                )
+                ax4.set_xlabel("OOD Score (Rolling Avg)")
+                ax4.set_ylabel("Frequency")
+                ax4.set_title(
+                    f"Rolling Avg Scores - Out-of-Domain (Random Coin)\n{split} - {len(scores_out_of_domain_filtered)} samples - AFHP: {afhp:.2f}"
+                )
+                ax4.grid(True, alpha=0.3)
+            else:
+                ax4.text(
+                    0.5,
+                    0.5,
+                    "No rolling avg out-of-domain scores",
+                    ha="center",
+                    va="center",
+                )
+                ax4.set_title(
+                    f"Rolling Avg Scores - Out-of-Domain\n{split} - No data - AFHP: {afhp:.2f}"
+                )
+        else:
+            # Create figure with 2 subplots (no rolling average)
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+            scores_in_domain_filtered = filter_finite(scores_in_domain)
+            scores_out_of_domain_filtered = filter_finite(scores_out_of_domain)
+
+            # Log if we filtered out any values
+            if len(scores_in_domain) != len(scores_in_domain_filtered):
+                logging.info(
+                    f"Filtered {len(scores_in_domain) - len(scores_in_domain_filtered)} infinite values from in-domain scores"
+                )
+            if len(scores_out_of_domain) != len(scores_out_of_domain_filtered):
+                logging.info(
+                    f"Filtered {len(scores_out_of_domain) - len(scores_out_of_domain_filtered)} infinite values from out-of-domain scores"
+                )
+
+            # Histogram for in-domain levels (deterministic coin)
+            if scores_in_domain_filtered:
+                ax1.hist(
+                    scores_in_domain_filtered,
+                    bins=50,
+                    alpha=0.7,
+                    color="blue",
+                    edgecolor="black",
+                )
+                ax1.set_xlabel("OOD Score")
+                ax1.set_ylabel("Frequency")
+                ax1.set_title(
+                    f"OOD Scores - In-Domain Levels (Deterministic Coin)\n{split} - {len(scores_in_domain_filtered)} samples (finite) - AFHP: {afhp:.2f}"
+                )
+                ax1.grid(True, alpha=0.3)
+            else:
+                ax1.text(0.5, 0.5, "No in-domain scores", ha="center", va="center")
+                ax1.set_title(
+                    f"OOD Scores - In-Domain Levels\n{split} - No data - AFHP: {afhp:.2f}"
+                )
+
+            # Histogram for out-of-domain levels (random coin)
+            if scores_out_of_domain_filtered:
+                ax2.hist(
+                    scores_out_of_domain_filtered,
+                    bins=50,
+                    alpha=0.7,
+                    color="red",
+                    edgecolor="black",
+                )
+                ax2.set_xlabel("OOD Score")
+                ax2.set_ylabel("Frequency")
+                ax2.set_title(
+                    f"OOD Scores - Out-of-Domain Levels (Random Coin)\n{split} - {len(scores_out_of_domain_filtered)} samples (finite) - AFHP: {afhp:.2f}"
+                )
+                ax2.grid(True, alpha=0.3)
+            else:
+                ax2.text(0.5, 0.5, "No out-of-domain scores", ha="center", va="center")
+                ax2.set_title(
+                    f"OOD Scores - Out-of-Domain Levels\n{split} - No data - AFHP: {afhp:.2f}"
+                )
+
+        plt.tight_layout()
+
+        # Save to file with AFHP in filename
+        histogram_path = (
+            self.eval_run_dir / f"ood_score_histograms_{split}_afhp_{afhp:.2f}.png"
+        )
+        plt.savefig(histogram_path, dpi=150, bbox_inches="tight")
+        logging.info(f"Saved OOD score histograms to {histogram_path}")
+
+        # Log to wandb if available with AFHP in the key
+        if logger is not None:
+            import wandb
+
+            logger.experiment.log(
+                {
+                    f"ood_score_histograms_{split}_afhp_{afhp:.2f}": wandb.Image(
+                        str(histogram_path)
+                    )
+                }
+            )
+
+        plt.close(fig)
+
+    # Helper methods for video filtering and processing
+    def _check_episode_filters(
+        self, episode_data: dict, level_info: dict
+    ) -> Dict[str, bool]:
+        """Check which filters an episode passes. Returns dict mapping filter names to boolean results."""
+        video_filters = getattr(self.args, "video_filter", ["all"])
+        results = {}
+
+        # Extract episode information
+        total_reward = episode_data.get("cumulative_reward", 0)
+        # episode_length = episode_data.get("episode_length", 0)
+        randomize_goal = level_info.get("randomize_goal", False)
+        # level_ood_gt = level_info.get("level_ood_gt", False)
+        level_ood_pred = level_info.get("level_ood_pred", False)
+        # final_done_state = episode_data.get("final_done", False)
+
+        for filter_type in video_filters:
+            if filter_type == "all":
+                results[filter_type] = True
+            elif filter_type == "random_coin_success":
+                # Agent successfully got the coin (positive reward) AND coin was randomly placed
+                results[filter_type] = total_reward > 0 and randomize_goal
+            elif filter_type == "deterministic_coin_success":
+                # Agent successfully got the coin (positive reward) AND coin was deterministically placed
+                results[filter_type] = total_reward > 0 and not randomize_goal
+            elif filter_type == "ood_detected":
+                # OOD was detected in this episode
+                results[filter_type] = level_ood_pred
+            elif filter_type == "in_distribution":
+                # In-distribution episode (no OOD detected)
+                results[filter_type] = not level_ood_pred
+            else:
+                # Unknown filter type, default to saving
+                results[filter_type] = True
+
+        return results
+
+    def _should_keep_episode(
+        self, filter_results: Dict[str, bool], filter_mode: str
+    ) -> bool:
+        """Determine if an episode should be kept based on filter results and mode.
+
+        Args:
+            filter_results: Dict mapping filter names to whether the episode passed that filter
+            filter_mode: Either "any" (keep if passes at least one filter) or "all" (keep only if passes all filters)
+
+        Returns:
+            True if episode should be kept, False otherwise
+        """
+        if filter_mode == "any":
+            # Keep if passes at least one filter
+            return any(filter_results.values())
+        else:  # filter_mode == "all"
+            # Keep only if passes all filters
+            return all(filter_results.values())
+
+    def _need_episode_for_video(
+        self, passed_filters: List[str], filter_mode: str
+    ) -> bool:
+        """Check if we still need to collect videos for any of the passed filters.
+
+        Args:
+            passed_filters: List of filter names that this episode passed
+            filter_mode: Either "any" or "all"
+
+        Returns:
+            True if we need this episode for video collection, False if we have enough
+        """
+        if filter_mode == "any":
+            # Check if any filter still needs more episodes
+            for filter_name in passed_filters:
+                if filter_name in self.video_filter_passed:
+                    if (
+                        self.video_filter_passed[filter_name]
+                        < self.args.video_episodes_to_collect
+                    ):
+                        return True
+            return False
+        else:  # filter_mode == "all"
+            # Check if combined filter still needs more episodes
+            video_filters = getattr(self.args, "video_filter", ["all"])
+            combined_filter_name = "_and_".join(video_filters)
+            if combined_filter_name in self.video_filter_passed:
+                return (
+                    self.video_filter_passed[combined_filter_name]
+                    < self.args.video_episodes_to_collect
+                )
+            return False
+
+    def _update_video_filter_counts(
+        self, passed_filters: List[str], filter_mode: str, num_episodes: int
+    ) -> None:
+        """Update the count of collected videos for each filter.
+
+        Args:
+            passed_filters: List of filter names that this episode passed
+            filter_mode: Either "any" or "all"
+            num_episodes: Current episode number (for logging)
+        """
+        if filter_mode == "any":
+            # Track each filter separately
+            for filter_name in passed_filters:
+                if filter_name in self.video_filter_passed:
+                    self.video_filter_passed[filter_name] += 1
+        else:  # filter_mode == "all"
+            # Track combined filter (only if all passed)
+            video_filters = getattr(self.args, "video_filter", ["all"])
+            combined_filter_name = "_and_".join(video_filters)
+            if combined_filter_name in self.video_filter_passed:
+                self.video_filter_passed[combined_filter_name] += 1
+
+        # Log progress for each filter
+        for filter_name, count in self.video_filter_passed.items():
+            logging.info(
+                f"Episode {num_episodes} - Filter '{filter_name}': {count}/{self.args.video_episodes_to_collect}"
+            )
+
+    def _all_video_filters_satisfied(self) -> bool:
+        """Check if all video filters have collected enough episodes.
+
+        Returns:
+            True if all filters have enough episodes, False otherwise
+        """
+        if self.args.video_episodes_to_collect <= 0:
+            return False
+
+        for filter_name in self.video_filter_passed.keys():
+            if (
+                self.video_filter_passed[filter_name]
+                < self.args.video_episodes_to_collect
+            ):
+                return False
+
+        return True
+
+    def _process_and_log_videos(
+        self,
+        split: str,
+        threshold: Optional[float],
+        afhp: float,
+        logger: WandbLogger,
+    ) -> None:
+        """Process collected episode states and log them as videos.
+
+        Args:
+            split: The evaluation split (e.g., "val", "test")
+            threshold: The OOD threshold value
+            afhp: The AFHP (Agent-Friendly Help Probability) value
+            logger: WandB logger for logging videos
+        """
+        args = self.args
+
+        # Determine output folder for video logging
+        raw_output_folder = getattr(args, "video_output_folder", None)
+        logging_mode = getattr(args, "video_logging_mode", "none")
+
+        if raw_output_folder is None and logging_mode in ["folder", "both"]:
+            output_folder = self._get_default_video_folder()
+        elif raw_output_folder is not None and logging_mode in ["folder", "both"]:
+            output_folder = resolve_video_output_folder(
+                raw_output_folder, self.eval_run_dir, create_folder=True
+            )
+        else:
+            # For wandb/none modes, don't create folders even if specified
+            output_folder = None
+
+        # Get video filters for this evaluation
+        video_filters = getattr(args, "video_filter", ["all"])
+        filter_mode = getattr(args, "video_filter_mode", "any")
+        max_videos = args.video_episodes_to_collect
+
+        # Track how many videos we've logged per filter
+        videos_logged = {}
+        if filter_mode == "any":
+            for filter_name in video_filters:
+                videos_logged[filter_name] = 0
+        else:
+            combined_filter_name = "_and_".join(video_filters)
+            videos_logged[combined_filter_name] = 0
+
+        # Global episode index for video logging.
+        global_episode_idx = 0
+
+        for env_idx in range(len(self.collected_states)):
+            for episode_idx in range(len(self.collected_states[env_idx])):
+                episode: List[Dict] = self.collected_states[env_idx][episode_idx]
+
+                # Only log videos for completed episodes.
+                if len(episode) > 0 and episode[-1]["done"]:
+                    # Get stored episode metadata
+                    episode_meta = self.episode_metadata[env_idx][episode_idx]
+
+                    if episode_meta:  # Check if metadata exists
+                        filter_results = episode_meta["filter_results"]
+
+                        if filter_mode == "any":
+                            # Save video to appropriate filter folders (separate categories)
+                            for filter_name, passed in filter_results.items():
+                                # Only save if this filter passed AND we haven't reached the limit
+                                if passed and videos_logged[filter_name] < max_videos:
+                                    # Create filter-specific output folder
+                                    filter_output_folder = None
+                                    if output_folder is not None:
+                                        filter_output_folder = (
+                                            output_folder / filter_name
+                                        )
+                                        filter_output_folder.mkdir(
+                                            parents=True, exist_ok=True
+                                        )
+
+                                    # Save video for this filter
+                                    process_and_log_video(
+                                        episode,
+                                        global_episode_idx,
+                                        threshold,
+                                        afhp,
+                                        self.VIDEO_CONFIG,
+                                        output_folder=filter_output_folder,
+                                        logger=logger,
+                                        logging_mode=logging_mode,
+                                        subfolder=filter_name,
+                                        wandb_category=f"videos_{filter_name}",
+                                        skip_score_normalization=self.skip_score_normalization,
+                                    )
+                                    videos_logged[filter_name] += 1
+                        else:  # filter_mode == "all"
+                            # Only save if ALL filters passed AND we haven't reached the limit
+                            if (
+                                all(filter_results.values())
+                                and videos_logged[combined_filter_name] < max_videos
+                            ):
+                                filter_output_folder = None
+                                if output_folder is not None:
+                                    filter_output_folder = (
+                                        output_folder / combined_filter_name
+                                    )
+                                    filter_output_folder.mkdir(
+                                        parents=True, exist_ok=True
+                                    )
+
+                                # Save video to combined filter folder
+                                process_and_log_video(
+                                    episode,
+                                    global_episode_idx,
+                                    threshold,
+                                    afhp,
+                                    self.VIDEO_CONFIG,
+                                    output_folder=filter_output_folder,
+                                    logger=logger,
+                                    logging_mode=logging_mode,
+                                    subfolder=combined_filter_name,
+                                    wandb_category=f"videos_{combined_filter_name}",
+                                    skip_score_normalization=self.skip_score_normalization,
+                                )
+                                videos_logged[combined_filter_name] += 1
+
+                global_episode_idx += 1
+
+    def _get_default_video_folder(self) -> Path:
+        """Get or create the default video folder in the eval_run_dir or experiment
+        directory."""
+        # Try to get eval_run_dir from config first
+        base_dir = self.eval_run_dir
+
+        video_folder = base_dir / "videos"
+        video_folder.mkdir(parents=True, exist_ok=True)
+        return video_folder
