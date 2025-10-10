@@ -8,6 +8,7 @@ import wandb
 
 import yaml
 from datetime import datetime
+from pathlib import Path
 
 import torch
 import numpy as np
@@ -70,18 +71,17 @@ def load(yaml_file_or_str, flags=None) -> ConfigDict:
         config.environment.val_true.env_name_suffix = config.environment.test.env_name_suffix
 
     config.data_dir = os.getenv("SM_DATA_DIR", config.data_dir)
-    output_dir = os.getenv("SM_OUTPUT_DIR", "experiments")
-    config.experiment_dir = "%s/%s" % (output_dir, config.name)
+    output_dir = Path(os.getenv("SM_OUTPUT_DIR", "experiments"))
+    config.experiment_dir = str(output_dir / config.name)
 
     if not config.eval_mode and (config.overwrite is None or not config.overwrite):
         try:
-            os.makedirs(config.experiment_dir)
-        except:
+            Path(config.experiment_dir).mkdir(parents=True, exist_ok=False)
+        except FileExistsError:
             raise FileExistsError(
                 "Experiment directory %s probably exists!" % config.experiment_dir
             )
-    if not os.path.exists(config.experiment_dir):
-        os.makedirs(config.experiment_dir)
+    Path(config.experiment_dir).mkdir(parents=True, exist_ok=True)
 
     seed = config.general.seed
     torch.manual_seed(seed)
@@ -100,43 +100,53 @@ def load(yaml_file_or_str, flags=None) -> ConfigDict:
     config.start_time = time.time()
 
     if config.eval_mode:
+        # Require experiment_group to be set for eval mode
+        experiment_group = None
+        if hasattr(config, 'experiment_group') and config.experiment_group:
+            experiment_group = config.experiment_group
+        elif hasattr(config, 'wandb') and hasattr(config.wandb, 'group') and config.wandb.group:
+            experiment_group = config.wandb.group
+        
+        if not experiment_group:
+            raise ValueError(
+                "experiment_group must be set for eval mode. "
+                "Use --experiment_group flag or --wandb.group flag."
+            )
+        
         # Generate timestamp for eval run
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # Create eval run name with timestamp
-        if hasattr(config, 'eval_run_name') and config.eval_run_name:
-            eval_dir_name = f"{config.eval_run_name}_{timestamp}"
-        else:
-            eval_dir_name = f"eval_{timestamp}"
+        # Extract model name from experiment_dir (last component of path)
+        model_name = Path(config.experiment_dir).name
         
-        # Create eval runs subdirectory
-        eval_runs_dir = os.path.join(config.experiment_dir, "eval_runs")
-        eval_run_dir = os.path.join(eval_runs_dir, eval_dir_name)
+        # Build new eval directory structure: experiments/evals/<experiment_group>/<model_name>/<timestamp>/
+        output_dir = Path(os.getenv("SM_OUTPUT_DIR", "experiments"))
+        eval_run_dir = output_dir / "evals" / experiment_group / model_name / timestamp
         
         # Create the directory if it doesn't exist
-        if not os.path.exists(eval_run_dir):
-            os.makedirs(eval_run_dir)
+        eval_run_dir.mkdir(parents=True, exist_ok=True)
         
         # Set log file path based on file_name type
         if config.file_name is None or "trained" in config.file_name:
-            log_file = os.path.join(eval_run_dir, f"eval_seed_{seed}.log")
+            log_file = str(eval_run_dir / f"eval_seed_{seed}.log")
         elif config.file_name.__contains__("sim"):
-            log_file = os.path.join(eval_run_dir, f"eval_sim_seed_{seed}.log")
+            log_file = str(eval_run_dir / f"eval_sim_seed_{seed}.log")
         elif config.file_name.__contains__("true"):
-            log_file = os.path.join(eval_run_dir, f"eval_true_seed_{seed}.log")
+            log_file = str(eval_run_dir / f"eval_true_seed_{seed}.log")
         else:
             raise ValueError(
                 f"Unrecognized eval setting with file name: {config.file_name}"
             )
         
         # Store eval run directory in config for potential use by other components
-        config.eval_run_dir = eval_run_dir
+        config.eval_run_dir = str(eval_run_dir)
     else:
-        log_file = os.path.join(config.experiment_dir, "run.log")
+        log_file = str(Path(config.experiment_dir) / "run.log")
     set_global_variable("log_file", log_file)
 
-    if os.path.isfile(log_file):
-        os.remove(log_file)
+    log_file_path = Path(log_file)
+    if log_file_path.is_file():
+        log_file_path.unlink()
     config_logging(log_file)
     logging.info(str(datetime.now()))
     logging.info("python -u " + " ".join(sys.argv))
