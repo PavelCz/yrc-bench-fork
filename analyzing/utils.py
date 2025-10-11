@@ -328,15 +328,15 @@ def extract_x_and_y_values(
 def get_nested_config_value(config: dict, key_path: str):
     """
     Get a value from a nested config dictionary using dot notation.
-    
+
     Args:
         config: Configuration dictionary
         key_path: Dot-separated path to the value (e.g., "general.seed")
-    
+
     Returns:
         The value at the key path, or None if not found
     """
-    keys = key_path.split('.')
+    keys = key_path.split(".")
     value = config
     for key in keys:
         if isinstance(value, dict) and key in value:
@@ -359,8 +359,8 @@ def extract_results(
                 # Every grandchild is a different method.
                 method_name = grandchild.name
                 for run_dir in grandchild.iterdir():
-                    # The runs_dirs are different runs with different 
-                    # timestamps. Potentially, they might have different 
+                    # The runs_dirs are different runs with different
+                    # timestamps. Potentially, they might have different
                     # hyperparameters.
                     for run_file in run_dir.iterdir():
                         if run_file.is_file() and run_file.suffix == ".npz":
@@ -368,13 +368,17 @@ def extract_results(
                             if ablation_key is not None:
                                 config_file = run_dir / "config.json"
                                 if config_file.exists():
-                                    with open(config_file, 'r') as f:
+                                    with open(config_file, "r") as f:
                                         config = json.load(f)
-                                    ablation_value = get_nested_config_value(config, ablation_key)
+                                    ablation_value = get_nested_config_value(
+                                        config, ablation_key
+                                    )
                                     # Create a unique key using method name and ablation value
                                     # Use only the final element of the key path for cleaner labels
-                                    key_label = ablation_key.split('.')[-1]
-                                    unique_key = f"{method_name}_{key_label}={ablation_value}"
+                                    key_label = ablation_key.split(".")[-1]
+                                    unique_key = (
+                                        f"{method_name}_{key_label}={ablation_value}"
+                                    )
                                     evals[unique_key] = run_file
                                 else:
                                     # Fallback if config.json doesn't exist

@@ -115,6 +115,8 @@ def load(yaml_file_or_str, flags=None) -> ConfigDict:
 
     config.data_dir = os.getenv("SM_DATA_DIR", config.data_dir)
     output_dir = Path(os.getenv("SM_OUTPUT_DIR", "experiments"))
+    if config.name is None:
+        raise ValueError("config.name is None. A name must be provided.")
     config.experiment_dir = str(output_dir / config.name)
 
     if not config.eval_mode and (config.overwrite is None or not config.overwrite):
