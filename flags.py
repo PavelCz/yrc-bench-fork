@@ -160,7 +160,7 @@ def make():
         "--coord_policy.rolling_average",
         type=str,
         help="rolling average for the threshold policy",
-        choices=["mean", "median"],
+        choices=["mean", "median", "none"],
     )
     parser.add_argument(
         "-cp_rolling_average_size",

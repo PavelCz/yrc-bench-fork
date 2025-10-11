@@ -19,6 +19,9 @@ class ThresholdPolicy(Policy):
         self.device = get_global_variable("device")
         self.rolling_average: Optional[str] = self.args.rolling_average
 
+        if self.rolling_average == "none":
+            self.rolling_average = None
+
         if (
             self.rolling_average is not None
             and self.rolling_average != "mean"
