@@ -4,6 +4,7 @@ import logging
 import time
 import traceback
 import wandb
+import json
 
 import yaml
 from datetime import datetime
@@ -15,6 +16,33 @@ import numpy as np
 
 from YRC.core.configs import ConfigDict
 from YRC.core.configs.global_configs import set_global_variable
+
+
+def make_json_serializable(obj):
+    """Convert config dict values to JSON-serializable format."""
+    if isinstance(obj, dict):
+        return {k: make_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [make_json_serializable(item) for item in obj]
+    elif isinstance(obj, torch.device):
+        return str(obj)
+    elif isinstance(obj, Path):
+        return str(obj)
+    elif isinstance(obj, (np.integer, np.floating)):
+        return obj.item()
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        return obj
+
+
+def save_config_json(config: ConfigDict, output_path: Path):
+    """Save config as JSON file for later filtering and grouping."""
+    config_dict = config.as_dict()
+    serializable_config = make_json_serializable(config_dict)
+
+    with open(output_path, "w") as f:
+        json.dump(serializable_config, f, indent=2, sort_keys=True)
 
 
 def load(yaml_file_or_str, flags=None) -> ConfigDict:
@@ -146,6 +174,10 @@ def load(yaml_file_or_str, flags=None) -> ConfigDict:
         # Create the directory if it doesn't exist
         eval_run_dir.mkdir(parents=True, exist_ok=True)
 
+        # Save config as JSON for later filtering and grouping
+        config_json_path = eval_run_dir / "config.json"
+        save_config_json(config, config_json_path)
+
         # Set log file path based on file_name type
         if config.file_name is None or "trained" in config.file_name:
             log_file = str(eval_run_dir / f"eval_seed_{seed}.log")
@@ -171,6 +203,9 @@ def load(yaml_file_or_str, flags=None) -> ConfigDict:
     logging.info(str(datetime.now()))
     logging.info("python -u " + " ".join(sys.argv))
     logging.info("Write log to %s" % log_file)
+    if config.eval_mode:
+        config_json_path = Path(config.eval_run_dir) / "config.json"
+        logging.info("Saved eval config to %s" % config_json_path)
     logging.info(str(config))
 
     wandb.init(
