@@ -80,7 +80,7 @@ def plot_afhp(
     y_data_key: str,
     disable_horizontal_lines: bool = False,
     key_filter: Optional[List[str]] = None,
-    ablation_key: Optional[str] = None,
+    ablation_key: Optional[List[str]] = None,
 ):
     """
     Plot AFHP (Ask for Help Percentage) vs performance.
@@ -88,7 +88,7 @@ def plot_afhp(
     Args:
         name_order: List of method names to plot in order. If None, uses all available
         names.
-        ablation_key: Config key to differentiate multiple runs from the same method.
+        ablation_key: Config key(s) to differentiate multiple runs from the same method.
     """
     results = extract_results(eval_dir, prefix_filter, ablation_key)
 
@@ -226,9 +226,11 @@ def eval_result_plotter():
         "--ablation_key",
         default=None,
         type=str,
+        nargs="+",
         help=(
-            "Config key (with dots for nested keys) to differentiate multiple runs "
-            "from the same method. E.g., 'evaluation.coverage_fraction' or 'general.seed'"
+            "Config key(s) (with dots for nested keys) to differentiate multiple runs "
+            "from the same method. Can specify multiple keys to use all of them. "
+            "E.g., 'evaluation.coverage_fraction' or 'general.seed' or both"
         ),
     )
 
@@ -347,7 +349,9 @@ def get_nested_config_value(config: dict, key_path: str):
 
 
 def extract_results(
-    eval_dir: Path, prefix_filter: Optional[str], ablation_key: Optional[str] = None
+    eval_dir: Path,
+    prefix_filter: Optional[str],
+    ablation_key: Optional[List[str]] = None,
 ) -> dict[str, Path]:
     evals = {}
 
@@ -365,20 +369,26 @@ def extract_results(
                     for run_file in run_dir.iterdir():
                         if run_file.is_file() and run_file.suffix == ".npz":
                             # If ablation_key is provided, differentiate runs by config value
-                            if ablation_key is not None:
+                            if ablation_key is not None and len(ablation_key) > 0:
                                 config_file = run_dir / "config.json"
                                 if config_file.exists():
                                     with open(config_file, "r") as f:
                                         config = json.load(f)
-                                    ablation_value = get_nested_config_value(
-                                        config, ablation_key
-                                    )
-                                    # Create a unique key using method name and ablation value
-                                    # Use only the final element of the key path for cleaner labels
-                                    key_label = ablation_key.split(".")[-1]
-                                    unique_key = (
-                                        f"{method_name}_{key_label}={ablation_value}"
-                                    )
+
+                                    # Build unique key from all ablation keys
+                                    key_parts = []
+                                    for key in ablation_key:
+                                        ablation_value = get_nested_config_value(
+                                            config, key
+                                        )
+                                        # Use only the final element of the key path for cleaner labels
+                                        key_label = key.split(".")[-1]
+                                        key_parts.append(
+                                            f"{key_label}={ablation_value}"
+                                        )
+
+                                    # Combine method name with all ablation key-value pairs
+                                    unique_key = f"{method_name}_{'_'.join(key_parts)}"
                                     evals[unique_key] = run_file
                                 else:
                                     # Fallback if config.json doesn't exist
