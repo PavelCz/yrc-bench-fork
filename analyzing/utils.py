@@ -317,17 +317,17 @@ def extract_results(
     evals = {}
 
     for child in eval_dir.iterdir():
-        if child.is_dir():
-            method_name = child.name
-            if (child / "eval_runs").exists():
-                for grandchild in (child / "eval_runs").iterdir():
-                    for grandgrandchild in grandchild.iterdir():
-                        if (
-                            grandgrandchild.is_file()
-                            and grandgrandchild.suffix == ".npz"
-                        ):
-                            if prefix_filter is None or grandchild.stem.startswith(
-                                f"{prefix_filter}"
-                            ):
-                                evals[method_name] = grandgrandchild
+        # Every child of the eval_dir is a different "grouped run".
+        # We want to only select the runs that support the prefix_filter.
+        if child.is_dir() and prefix_filter is not None and prefix_filter in child.name:
+            for grandchild in child.iterdir():
+                # Every grandchild is a different method.
+                method_name = grandchild.name
+                for run_dir in grandchild.iterdir():
+                    # The runs_dirs are different runs with different 
+                    # timestamps. Potentially, they might have different 
+                    # hyperparameters.
+                    for run_file in run_dir.iterdir():
+                        if run_file.is_file() and run_file.suffix == ".npz":
+                            evals[method_name] = run_file
     return evals
