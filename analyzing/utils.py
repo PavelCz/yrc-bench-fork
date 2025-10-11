@@ -73,7 +73,7 @@ def create_env(random_percent: int = 100, start_level: int = 0, num_levels: int 
 
 def plot_afhp(
     name_order: Optional[List[str]],
-    eval_file_dir: Path,
+    eval_dir: Path,
     prefix_filter: Optional[str],
     x_data_key: str,
     y_data_key: str,
@@ -87,7 +87,7 @@ def plot_afhp(
         name_order: List of method names to plot in order. If None, uses all available
         names.
     """
-    results = extract_results(eval_file_dir, prefix_filter)
+    results = extract_results(eval_dir, prefix_filter)
 
     # Collect first and last performance values for all curves
     first_performances = []
@@ -180,7 +180,7 @@ def eval_result_plotter():
     )  # type: ignore[arg-type]
 
     parser.add_argument(
-        "--eval_file_dir",
+        "--eval_dir",
         type=str,
         help="Directory containing the evaluation files.",
     )
@@ -221,7 +221,7 @@ def eval_result_plotter():
 
     args = parser.parse_args()
 
-    eval_file_dir = Path(args.eval_file_dir)
+    eval_dir = Path(args.eval_dir)
     prefix_filter = args.prefix_filter
     x_data_key = args.x_data_key
     y_data_key = args.y_data_key
@@ -236,7 +236,7 @@ def eval_result_plotter():
 
     plot_afhp(
         name_order,
-        eval_file_dir,
+        eval_dir,
         prefix_filter,
         x_data_key,
         y_data_key,
@@ -312,11 +312,11 @@ def extract_x_and_y_values(
 
 
 def extract_results(
-    eval_file_dir: Path, prefix_filter: Optional[str]
+    eval_dir: Path, prefix_filter: Optional[str]
 ) -> dict[str, Path]:
     evals = {}
 
-    for child in eval_file_dir.iterdir():
+    for child in eval_dir.iterdir():
         if child.is_dir():
             method_name = child.name
             if (child / "eval_runs").exists():
