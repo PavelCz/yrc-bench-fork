@@ -14,6 +14,7 @@ import numpy as np
 import seaborn as sns  # type: ignore
 
 import argparse
+import json
 
 
 # Add YRC to path for imports
@@ -79,6 +80,7 @@ def plot_afhp(
     y_data_key: str,
     disable_horizontal_lines: bool = False,
     key_filter: Optional[List[str]] = None,
+    ablation_key: Optional[str] = None,
 ):
     """
     Plot AFHP (Ask for Help Percentage) vs performance.
@@ -86,8 +88,9 @@ def plot_afhp(
     Args:
         name_order: List of method names to plot in order. If None, uses all available
         names.
+        ablation_key: Config key to differentiate multiple runs from the same method.
     """
-    results = extract_results(eval_dir, prefix_filter)
+    results = extract_results(eval_dir, prefix_filter, ablation_key)
 
     # Collect first and last performance values for all curves
     first_performances = []
@@ -219,6 +222,16 @@ def eval_result_plotter():
         help="Filter out these keys.",
     )
 
+    parser.add_argument(
+        "--ablation_key",
+        default=None,
+        type=str,
+        help=(
+            "Config key (with dots for nested keys) to differentiate multiple runs "
+            "from the same method. E.g., 'evaluation.coverage_fraction' or 'general.seed'"
+        ),
+    )
+
     args = parser.parse_args()
 
     eval_dir = Path(args.eval_dir)
@@ -242,6 +255,7 @@ def eval_result_plotter():
         y_data_key,
         args.disable_horizontal_lines,
         args.key_filter,
+        args.ablation_key,
     )
 
 
@@ -311,8 +325,29 @@ def extract_x_and_y_values(
     return x, y
 
 
+def get_nested_config_value(config: dict, key_path: str):
+    """
+    Get a value from a nested config dictionary using dot notation.
+    
+    Args:
+        config: Configuration dictionary
+        key_path: Dot-separated path to the value (e.g., "general.seed")
+    
+    Returns:
+        The value at the key path, or None if not found
+    """
+    keys = key_path.split('.')
+    value = config
+    for key in keys:
+        if isinstance(value, dict) and key in value:
+            value = value[key]
+        else:
+            return None
+    return value
+
+
 def extract_results(
-    eval_dir: Path, prefix_filter: Optional[str]
+    eval_dir: Path, prefix_filter: Optional[str], ablation_key: Optional[str] = None
 ) -> dict[str, Path]:
     evals = {}
 
@@ -329,5 +364,21 @@ def extract_results(
                     # hyperparameters.
                     for run_file in run_dir.iterdir():
                         if run_file.is_file() and run_file.suffix == ".npz":
-                            evals[method_name] = run_file
+                            # If ablation_key is provided, differentiate runs by config value
+                            if ablation_key is not None:
+                                config_file = run_dir / "config.json"
+                                if config_file.exists():
+                                    with open(config_file, 'r') as f:
+                                        config = json.load(f)
+                                    ablation_value = get_nested_config_value(config, ablation_key)
+                                    # Create a unique key using method name and ablation value
+                                    # Use only the final element of the key path for cleaner labels
+                                    key_label = ablation_key.split('.')[-1]
+                                    unique_key = f"{method_name}_{key_label}={ablation_value}"
+                                    evals[unique_key] = run_file
+                                else:
+                                    # Fallback if config.json doesn't exist
+                                    evals[method_name] = run_file
+                            else:
+                                evals[method_name] = run_file
     return evals
