@@ -98,6 +98,12 @@ def make():
         help="agent to evaluate",
     )
     parser.add_argument(
+        "-model_file",
+        "--model_file",
+        type=str,
+        help="path to model file to evaluate (for eval_policy.py)",
+    )
+    parser.add_argument(
         "-cp_feature",
         "--coord_policy.feature_type",
         type=str,

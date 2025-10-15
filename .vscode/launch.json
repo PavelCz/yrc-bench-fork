@@ -519,6 +519,78 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Eval Policy - Weak Agent",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/eval_policy.py",
+            "args": [
+                "-c",
+                "configs/eval/coinrun_bg_timestep_random.yaml",
+                "-n",
+                "debug_eval_weak",
+                "--model_file",
+                "YRC/checkpoints/procgen/coinrun/weak/model_80019456.pth",
+                "-num_rollouts",
+                "20",
+                "-experiment_group",
+                "debug_eval_weak",
+                "-num_envs",
+                "4",
+                "-num_levels",
+                "20",
+                "-random_percent",
+                "25",
+                "-use_bg",
+                "True",
+                "-wandb_project",
+                "yrc-debug",
+                "-wandb_mode",
+                "offline",
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+            }
+        },
+        {
+            "name": "Eval Policy - Strong Agent",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/eval_policy.py",
+            "args": [
+                "-c",
+                "configs/eval/coinrun_bg_timestep_random.yaml",
+                "-n",
+                "debug_eval_strong",
+                "--model_file",
+                "YRC/checkpoints/procgen/coinrun/strong/model_200015872.pth",
+                "-num_rollouts",
+                "20",
+                "-experiment_group",
+                "debug_eval_strong",
+                "-num_envs",
+                "4",
+                "-num_levels",
+                "20",
+                "-random_percent",
+                "25",
+                "-use_bg",
+                "True",
+                "-wandb_project",
+                "yrc-debug",
+                "-wandb_mode",
+                "offline",
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+            }
         }
     ]
 }
