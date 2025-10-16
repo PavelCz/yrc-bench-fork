@@ -104,6 +104,14 @@ def make():
         help="path to model file to evaluate (for eval_policy.py)",
     )
     parser.add_argument(
+        "-loader_type",
+        "--loader_type",
+        type=str,
+        choices=["yrc", "alternative"],
+        default="yrc",
+        help="policy loader type: 'yrc' uses YRC.envs loader, 'alternative' uses train-procgen-pytorch-backgrounds loader",
+    )
+    parser.add_argument(
         "-cp_feature",
         "--coord_policy.feature_type",
         type=str,

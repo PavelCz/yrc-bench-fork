@@ -8,20 +8,22 @@ Usage:
     python eval_policy.py -c <config_file> --model_file <path_to_model> [options]
 
 Examples:
-    # Evaluate a specific model
+    # Evaluate a specific model (YRC loader)
     python eval_policy.py -c configs/procgen_threshold.yaml \
         --model_file YRC/checkpoints/procgen/coinrun/weak/model_80019456.pth \
         -num_rollouts 100
     
-    # With environment variable
+    # Evaluate with alternative loader
     export COINRUN_BG_EXTRAHARD=/path/to/model.pth
     python eval_policy.py -c configs/procgen_threshold.yaml \
         --model_file $COINRUN_BG_EXTRAHARD \
+        -loader_type alternative \
         -num_rollouts 100
 
 Options:
     -c, --config: Path to YAML config file (required)
     --model_file: Path to the model checkpoint to evaluate (required)
+    -loader_type: Loader type - 'yrc' (default) or 'alternative' (train-procgen-pytorch-backgrounds)
     -num_rollouts: Number of episodes to evaluate (default: from config)
     -num_envs: Number of parallel environments
     -seed: Random seed
@@ -40,6 +42,104 @@ import importlib
 import numpy as np
 import json
 import logging
+import sys
+import os
+import torch
+
+
+def load_policy_alternative(model_file, env, device):
+    """
+    Load policy using the train-procgen-pytorch-backgrounds method.
+    This matches the loading approach in render.py from that codebase.
+    """
+    # Add the train-procgen-pytorch-backgrounds directory to the path
+    train_procgen_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../train-procgen-pytorch-backgrounds")
+    )
+    if train_procgen_path not in sys.path:
+        sys.path.insert(0, train_procgen_path)
+
+    try:
+        from common.model import NatureModel, ImpalaModel
+        from common.policy import CategoricalPolicy
+        import gym
+    except ImportError as e:
+        raise ImportError(
+            f"Could not import from train-procgen-pytorch-backgrounds. "
+            f"Make sure the directory exists at {train_procgen_path}. Error: {e}"
+        )
+
+    logging.info("Using alternative loader (train-procgen-pytorch-backgrounds)")
+
+    # Get environment information
+    observation_space = env.observation_space
+    observation_shape = observation_space.shape
+    in_channels = observation_shape[0]
+    action_space = env.action_space
+
+    # Default to impala architecture (can be made configurable if needed)
+    architecture = "impala"
+    logging.info(f"Using {architecture} architecture")
+
+    # Create model
+    if architecture == "nature":
+        model = NatureModel(in_channels=in_channels)
+    elif architecture == "impala":
+        model = ImpalaModel(in_channels=in_channels)
+    else:
+        raise ValueError(f"Unknown architecture: {architecture}")
+
+    # Create policy (non-recurrent by default)
+    recurrent = False
+    if isinstance(action_space, gym.spaces.Discrete):
+        action_size = action_space.n
+        policy = CategoricalPolicy(model, recurrent, action_size)
+    else:
+        raise NotImplementedError("Only discrete action spaces supported")
+
+    policy.to(device)
+
+    # Load checkpoint
+    logging.info(f"Loading checkpoint from {model_file}")
+    if not Path(model_file).is_file():
+        raise FileNotFoundError(f"Model file {Path(model_file).absolute()} not found")
+    checkpoint = torch.load(model_file, map_location=device)
+    policy.load_state_dict(checkpoint["model_state_dict"])
+    policy.eval()
+
+    # Create a simple wrapper with an act method
+    class PolicyWrapper:
+        def __init__(self, policy, device):
+            self.policy = policy
+            self.device = device
+
+        def eval(self):
+            self.policy.eval()
+
+        def act(self, obs, greedy=False):
+            # Convert obs to tensor if needed
+            if not isinstance(obs, torch.Tensor):
+                obs = torch.from_numpy(obs).to(self.device)
+            elif obs.device != self.device:
+                obs = obs.to(self.device)
+
+            with torch.no_grad():
+                # Create dummy hidden state and masks for non-recurrent policy
+                batch_size = obs.shape[0]
+                hidden_state = torch.zeros(batch_size, 1).to(self.device)
+                masks = torch.ones(batch_size, 1).to(self.device)
+
+                # Get action distribution
+                dist, value, _ = self.policy(obs, hidden_state, masks)
+
+                if greedy:
+                    action = dist.probs.argmax(dim=-1)
+                else:
+                    action = dist.sample()
+
+                return action.cpu().numpy()
+
+    return PolicyWrapper(policy, device)
 
 
 def main():
@@ -55,7 +155,8 @@ def main():
         )
 
     model_file = args.model_file
-    logging.info(f"Loading policy from: {model_file}")
+    loader_type = getattr(args, "loader_type", "yrc")
+    logging.info(f"Loading policy from: {model_file} using loader: {loader_type}")
 
     # Create a single environment (we only need one for loading the policy)
     # We'll use the raw environment creation to avoid loading coordination agents
@@ -66,13 +167,20 @@ def main():
     create_env_fn = getattr(module, "create_env")
     train_env = create_env_fn("train", config.environment)
 
-    print(f"Loading policy using module YRC.envs.{benchmark}")
-    # Load the policy directly using the environment-specific load function
-    load_policy_fn = getattr(module, "load_policy")
-    policy = load_policy_fn(model_file, train_env)
-    policy.eval()
+    # Load the policy using the specified loader
+    if loader_type == "yrc":
+        logging.info(f"Loading policy using module YRC.envs.{benchmark}")
+        load_policy_fn = getattr(module, "load_policy")
+        policy = load_policy_fn(model_file, train_env)
+        policy.eval()
+    elif loader_type == "alternative":
+        device = get_global_variable("device")
+        policy = load_policy_alternative(model_file, train_env, device)
+    else:
+        raise ValueError(
+            f"Unknown loader_type: {loader_type}. Must be 'yrc' or 'alternative'"
+        )
 
-    
     logging.info("Policy loaded successfully")
 
     # Number of episodes to evaluate
@@ -130,6 +238,7 @@ def main():
         "all_returns": [float(r) for r in returns],
         "eval_split": eval_split,
         "model_file": model_file,
+        "loader_type": loader_type,
     }
 
     results_path = save_dir / "policy_eval_results.json"
