@@ -66,11 +66,13 @@ def main():
     create_env_fn = getattr(module, "create_env")
     train_env = create_env_fn("train", config.environment)
 
+    print(f"Loading policy using module YRC.envs.{benchmark}")
     # Load the policy directly using the environment-specific load function
     load_policy_fn = getattr(module, "load_policy")
     policy = load_policy_fn(model_file, train_env)
     policy.eval()
 
+    
     logging.info("Policy loaded successfully")
 
     # Number of episodes to evaluate
