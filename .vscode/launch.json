@@ -591,44 +591,6 @@
             "env": {
                 "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
             }
-        },
-        {
-            "name": "Eval Policy - Alternative Loader",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/eval_policy.py",
-            "args": [
-                "-c",
-                "configs/eval/coinrun_bg_timestep_random.yaml",
-                "-n",
-                "debug_eval_alternative",
-                "--model_file",
-                "YRC/checkpoints/procgen/coinrun/strong/model_200015872.pth",
-                "-loader_type",
-                "alternative",
-                "-num_rollouts",
-                "20",
-                "-experiment_group",
-                "debug_eval_alternative",
-                "-num_envs",
-                "4",
-                "-num_levels",
-                "20",
-                "-random_percent",
-                "25",
-                "-use_bg",
-                "True",
-                "-wandb_project",
-                "yrc-debug",
-                "-wandb_mode",
-                "offline",
-            ],
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "cwd": "${workspaceFolder}",
-            "env": {
-                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
-            }
         }
     ]
 }
