@@ -31,9 +31,9 @@ Output:
     - Prints mean return statistics to console
     - Saves results to <experiment_dir>/policy_eval_results.json
 """
+
 import flags
 import YRC.core.configs.utils as config_utils
-import YRC.core.environment as env_factory
 from YRC.core.configs.global_configs import get_global_variable
 from pathlib import Path
 import importlib
@@ -53,7 +53,7 @@ def main():
             "Must provide --model_file argument with path to model checkpoint.\n"
             "Example: python eval_policy.py -c config.yaml --model_file /path/to/model.pth"
         )
-    
+
     model_file = args.model_file
     logging.info(f"Loading policy from: {model_file}")
 
@@ -61,57 +61,63 @@ def main():
     # We'll use the raw environment creation to avoid loading coordination agents
     benchmark = get_global_variable("benchmark")
     module = importlib.import_module(f"YRC.envs.{benchmark}")
-    
+
     # Create just the train environment for policy loading
     create_env_fn = getattr(module, "create_env")
     train_env = create_env_fn("train", config.environment)
-    
+
     # Load the policy directly using the environment-specific load function
     load_policy_fn = getattr(module, "load_policy")
     policy = load_policy_fn(model_file, train_env)
     policy.eval()
-    
+
     logging.info("Policy loaded successfully")
 
     # Number of episodes to evaluate
-    num_episodes = config.algorithm.num_rollouts if hasattr(config.algorithm, "num_rollouts") else 100
-    
+    num_episodes = (
+        config.algorithm.num_rollouts
+        if hasattr(config.algorithm, "num_rollouts")
+        else 100
+    )
+
     # Determine which environment split to use (train/test/val)
     eval_split = getattr(args, "eval_split", "test")
     logging.info(f"Creating {eval_split} environment for evaluation")
-    
+
     # Create the evaluation environment
     env = create_env_fn(eval_split, config.environment)
-    
-    logging.info(f"Evaluating policy on {num_episodes} episodes using {eval_split} environment")
+
+    logging.info(
+        f"Evaluating policy on {num_episodes} episodes using {eval_split} environment"
+    )
     logging.info(f"Number of parallel environments: {env.num_envs}")
-    
+
     # Run evaluation
     returns = rollout_and_get_returns(policy, env, num_episodes)
-    
+
     # Calculate statistics
     mean_return = np.mean(returns)
     std_return = np.std(returns)
     median_return = np.median(returns)
     min_return = np.min(returns)
     max_return = np.max(returns)
-    
+
     # Print results
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Policy Evaluation Results")
-    print("="*60)
+    print("=" * 60)
     print(f"Number of episodes: {len(returns)}")
     print(f"Mean return: {mean_return:.4f}")
     print(f"Std return: {std_return:.4f}")
     print(f"Median return: {median_return:.4f}")
     print(f"Min return: {min_return:.4f}")
     print(f"Max return: {max_return:.4f}")
-    print("="*60 + "\n")
-    
+    print("=" * 60 + "\n")
+
     # Save results
     save_dir = Path(str(get_global_variable("experiment_dir")))
     save_dir.mkdir(parents=True, exist_ok=True)
-    
+
     results = {
         "num_episodes": len(returns),
         "mean_return": float(mean_return),
@@ -123,67 +129,69 @@ def main():
         "eval_split": eval_split,
         "model_file": model_file,
     }
-    
+
     results_path = save_dir / "policy_eval_results.json"
     with results_path.open("w") as f:
         json.dump(results, f, indent=2)
-    
+
     logging.info(f"Results saved to {results_path}")
 
 
 def rollout_and_get_returns(policy, env, num_episodes):
     """
     Rollout the policy on the environment and collect episode returns.
-    
+
     Args:
         policy: The policy to evaluate (underlying agent)
         env: The raw environment to evaluate on
         num_episodes: Number of episodes to run
-    
+
     Returns:
         List of episode returns
     """
-    assert num_episodes % env.num_envs == 0, \
+    assert num_episodes % env.num_envs == 0, (
         f"num_episodes ({num_episodes}) must be divisible by num_envs ({env.num_envs})"
-    
+    )
+
     returns = []
     num_completed = 0
     target_episodes = num_episodes
-    
+
     # Track cumulative reward for each parallel environment
     cumulative_rewards = [0.0] * env.num_envs
-    
+
     # Reset environment
     obs = env.reset()
-    
+
     logging.info(f"Starting rollouts for {num_episodes} episodes...")
-    
+
     while num_completed < target_episodes:
         # Get action from policy (pass observation directly to underlying agent)
         action = policy.act(obs, greedy=True)
-        
+
         # Step environment
         obs, reward, done, info = env.step(action)
-        
+
         # Accumulate rewards
         for i in range(env.num_envs):
             cumulative_rewards[i] += reward[i]
-            
+
             # If episode is done, save the return and reset
             if done[i]:
                 if num_completed < target_episodes:
                     returns.append(cumulative_rewards[i])
                     num_completed += 1
-                    
+
                     if num_completed % 10 == 0 or num_completed == target_episodes:
-                        logging.info(f"Completed {num_completed}/{target_episodes} episodes. "
-                                   f"Current mean return: {np.mean(returns):.4f}")
-                
+                        logging.info(
+                            f"Completed {num_completed}/{target_episodes} episodes. "
+                            f"Current mean return: {np.mean(returns):.4f}"
+                        )
+
                 cumulative_rewards[i] = 0.0
-    
+
     return returns
 
 
 if __name__ == "__main__":
     main()
-

@@ -12,6 +12,7 @@ SRC_FILES=(
     "YRC/core/video_utils.py"
     "YRC/coverage/coverage_search.py"
     "eval_afhp.py"
+    "eval_policy.py"
     "YRC/policies/mahalanobis_ae.py"
     "analyzing/coinrun_counterfactual_analysis.py"
     "analyzing/plot_policy_training_curves.py"
