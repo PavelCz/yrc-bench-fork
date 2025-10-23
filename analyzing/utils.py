@@ -81,6 +81,7 @@ def plot_afhp(
     disable_horizontal_lines: bool = False,
     key_filter: Optional[List[str]] = None,
     ablation_key: Optional[List[str]] = None,
+    separate_figures: bool = False,
 ):
     """
     Plot AFHP (Ask for Help Percentage) vs performance.
@@ -89,6 +90,7 @@ def plot_afhp(
         name_order: List of method names to plot in order. If None, uses all available
         names.
         ablation_key: Config key(s) to differentiate multiple runs from the same method.
+        separate_figures: If True, plot each curve in a separate figure in a grid layout.
     """
     results = extract_results(eval_dir, prefix_filter, ablation_key)
 
@@ -112,59 +114,126 @@ def plot_afhp(
     if key_filter is not None:
         name_order = [name for name in name_order if name not in key_filter]
 
-    # Clear previous plot
-    plt.clf()
-
+    # Filter out methods that don't exist in results
+    valid_names = []
     for name in name_order:
         if name not in results:
             print(f"Warning: {name} not found in evals, skipping...")
             continue
+        valid_names.append(name)
 
-        data_path = results[name]
+    if not valid_names:
+        print("No valid methods found to plot.")
+        return
 
-        eval_data = np.load(data_path, allow_pickle=True)
-        x, y = extract_x_and_y_values(eval_data, x_data_key, y_data_key)
+    if separate_figures:
+        # Create a grid layout for separate figures
+        n_plots = len(valid_names)
+        n_cols = min(3, n_plots)  # Maximum 3 columns
+        n_rows = (n_plots + n_cols - 1) // n_cols  # Ceiling division
 
-        # desired_percentiles = eval_data["desired_percentiles"]
-
-        # Store first and last performance values
-        first_performances.append(y[0])
-        last_performances.append(y[-1])
-
-        if name in name_map:
-            label = name_map[name]
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(6*n_cols, 5*n_rows))
+        if n_plots == 1:
+            axes = [axes]
+        elif n_rows == 1:
+            axes = axes.flatten()
         else:
-            label = name
+            axes = axes.flatten()
 
-        sns.lineplot(x=x, y=y, label=label, marker="o")
+        for idx, name in enumerate(valid_names):
+            ax = axes[idx]
+            data_path = results[name]
 
-    # Calculate means
-    mean_first_performance = np.mean(first_performances)
-    mean_last_performance = np.mean(last_performances)
+            eval_data = np.load(data_path, allow_pickle=True)
+            x, y = extract_x_and_y_values(eval_data, x_data_key, y_data_key)
 
-    # Add horizontal lines
-    if not disable_horizontal_lines:
-        plt.axhline(
-            y=mean_first_performance,
-            color="red",
-            linestyle="--",
-            alpha=0.7,
-            label="Weak Agent",
-        )
-        plt.axhline(
-            y=mean_last_performance,
-            color="blue",
-            linestyle="--",
-            alpha=0.7,
-            label="Oracle",
-        )
+            # Store first and last performance values
+            first_performances.append(y[0])
+            last_performances.append(y[-1])
 
-    plt.xlabel(x_data_key)
-    plt.ylabel(y_data_key)
-    plt.title(f"{y_data_key} over {x_data_key}")
-    plt.legend()
-    # plt.savefig("afhp_plot.png", dpi=300, bbox_inches="tight")
-    plt.show()
+            if name in name_map:
+                label = name_map[name]
+            else:
+                label = name
+
+            sns.lineplot(x=x, y=y, ax=ax, marker="o")
+            ax.set_title(f"{label}")
+            ax.set_xlabel(x_data_key)
+            ax.set_ylabel(y_data_key)
+
+            # Add horizontal lines for this individual plot
+            if not disable_horizontal_lines:
+                ax.axhline(
+                    y=y[0],
+                    color="red",
+                    linestyle="--",
+                    alpha=0.7,
+                    label="Weak Agent",
+                )
+                ax.axhline(
+                    y=y[-1],
+                    color="blue",
+                    linestyle="--",
+                    alpha=0.7,
+                    label="Oracle",
+                )
+                ax.legend()
+
+        # Hide unused subplots
+        for idx in range(n_plots, len(axes)):
+            axes[idx].set_visible(False)
+
+        plt.tight_layout()
+        plt.show()
+    else:
+        # Original behavior: all curves in one figure
+        # Clear previous plot
+        plt.clf()
+
+        for name in valid_names:
+            data_path = results[name]
+
+            eval_data = np.load(data_path, allow_pickle=True)
+            x, y = extract_x_and_y_values(eval_data, x_data_key, y_data_key)
+
+            # Store first and last performance values
+            first_performances.append(y[0])
+            last_performances.append(y[-1])
+
+            if name in name_map:
+                label = name_map[name]
+            else:
+                label = name
+
+            sns.lineplot(x=x, y=y, label=label, marker="o")
+
+        # Calculate means
+        mean_first_performance = np.mean(first_performances)
+        mean_last_performance = np.mean(last_performances)
+
+        # Add horizontal lines
+        if not disable_horizontal_lines:
+            plt.axhline(
+                y=mean_first_performance,
+                color="red",
+                linestyle="--",
+                alpha=0.7,
+                label="Weak Agent",
+            )
+            plt.axhline(
+                y=mean_last_performance,
+                color="blue",
+                linestyle="--",
+                alpha=0.7,
+                label="Oracle",
+            )
+
+        plt.xlabel(x_data_key)
+        plt.ylabel(y_data_key)
+        plt.title(f"{y_data_key} over {x_data_key}")
+        plt.legend()
+        # plt.savefig("afhp_plot.png", dpi=300, bbox_inches="tight")
+        plt.show()
 
 
 def eval_result_plotter():
@@ -234,6 +303,12 @@ def eval_result_plotter():
         ),
     )
 
+    parser.add_argument(
+        "--separate_figures",
+        action="store_true",
+        help="Show each curve in a separate subplot in a grid layout instead of all in one figure.",
+    )
+
     args = parser.parse_args()
 
     eval_dir = Path(args.eval_dir)
@@ -258,6 +333,7 @@ def eval_result_plotter():
         args.disable_horizontal_lines,
         args.key_filter,
         args.ablation_key,
+        args.separate_figures,
     )
 
 
