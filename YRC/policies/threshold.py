@@ -60,7 +60,7 @@ class ThresholdPolicy(Policy):
             score = self._compute_score(weak_logit)
         # NOTE: Originally, higher score = more certain
         # I inverted score, so it is in line with other OOD scores.
-        action = (score > self.params["threshold"]).int()
+        action = (score >= self.params["threshold"]).int()
 
         if return_scores_and_recons:
             return action.cpu().numpy(), score.cpu().numpy(), None
@@ -113,6 +113,7 @@ class ThresholdPolicy(Policy):
             )
         elif metric == "max_prob":
             # Softmax probability -> how certain are we about that action?
+            # Max returns values, indices, which is why we index into the values.
             score = logit.softmax(dim=-1).max(dim=-1)[0]
             # Invert the score such that higher score = more ood.
             score = 1.0 - score
