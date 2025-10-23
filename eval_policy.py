@@ -72,7 +72,6 @@ def main():
     policy = load_policy_fn(model_file, train_env)
     policy.eval()
 
-    
     logging.info("Policy loaded successfully")
 
     # Number of episodes to evaluate

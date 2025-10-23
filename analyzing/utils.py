@@ -90,7 +90,8 @@ def plot_afhp(
         name_order: List of method names to plot in order. If None, uses all available
         names.
         ablation_key: Config key(s) to differentiate multiple runs from the same method.
-        separate_figures: If True, plot each curve in a separate figure in a grid layout.
+        separate_figures: If True, plot each curve in a separate figure in a grid 
+        layout.
     """
     results = extract_results(eval_dir, prefix_filter, ablation_key)
 
@@ -132,7 +133,7 @@ def plot_afhp(
         n_cols = min(3, n_plots)  # Maximum 3 columns
         n_rows = (n_plots + n_cols - 1) // n_cols  # Ceiling division
 
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(6*n_cols, 5*n_rows))
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 5 * n_rows))
         if n_plots == 1:
             axes = [axes]
         elif n_rows == 1:
