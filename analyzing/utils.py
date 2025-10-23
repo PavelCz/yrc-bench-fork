@@ -395,12 +395,58 @@ def extract_from_data(data, key: str) -> np.ndarray:
         raise ValueError(f"Invalid key: {key}")
 
 
+def filter_duplicate_x_values(
+    x: np.ndarray, y: np.ndarray, order: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Filter out duplicate x-values, keeping only the point with the lowest order value.
+    
+    Args:
+        x: Array of x-values
+        y: Array of y-values
+        order: Array of order values that determine which point to keep
+        
+    Returns:
+        Filtered x and y arrays with duplicate x-values removed
+    """
+    if len(x) == 0:
+        return x, y
+    
+    # Find unique x-values and group indices by x-value
+    unique_x = np.unique(x)
+    keep_indices = []
+    
+    for ux in unique_x:
+        # Find all indices with this x-value
+        indices = np.where(x == ux)[0]
+        if len(indices) == 1:
+            # No duplicate, keep it
+            keep_indices.append(indices[0])
+        else:
+            # Multiple points with same x-value, keep the one with lowest order
+            orders_at_x = order[indices]
+            min_order_idx = indices[np.argmin(orders_at_x)]
+            keep_indices.append(min_order_idx)
+    
+    # Sort indices to maintain original order
+    keep_indices = np.sort(keep_indices)
+    
+    return x[keep_indices], y[keep_indices]
+
+
 def extract_x_and_y_values(
     data, x_data_key: str, y_data_key: str
 ) -> tuple[np.ndarray, np.ndarray]:
     # x = data["afhps"]
     x = extract_from_data(data, x_data_key)
     y = extract_from_data(data, y_data_key)
+    
+    # Extract order data for filtering duplicates
+    order = data["order"] if "order" in data else np.arange(len(x))
+    
+    # Filter out duplicate x-values, keeping only the point with the lowest order
+    x, y = filter_duplicate_x_values(x, y, order)
+    
     return x, y
 
 
