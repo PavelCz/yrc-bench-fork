@@ -139,6 +139,7 @@ def main():
         performances=np.array([pt.performance for pt in sorted_points]),
         desired_percentiles=np.array([pt.desired_percentile for pt in sorted_points]),
         meta=np.array([pt.meta for pt in sorted_points]),
+        order=np.array([pt.order for pt in sorted_points]),
     )
 
     end_time = time.time()
