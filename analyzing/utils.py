@@ -15,6 +15,8 @@ import seaborn as sns  # type: ignore
 
 import argparse
 import json
+import re
+from datetime import datetime
 
 
 # Add YRC to path for imports
@@ -82,6 +84,7 @@ def plot_afhp(
     key_filter: Optional[List[str]] = None,
     ablation_key: Optional[List[str]] = None,
     separate_figures: bool = False,
+    min_timestamp: Optional[str] = None,
 ):
     """
     Plot AFHP (Ask for Help Percentage) vs performance.
@@ -92,8 +95,10 @@ def plot_afhp(
         ablation_key: Config key(s) to differentiate multiple runs from the same method.
         separate_figures: If True, plot each curve in a separate figure in a grid 
         layout.
+        min_timestamp: Minimum timestamp to filter runs. Only runs with timestamps >= 
+        this value will be included.
     """
-    results = extract_results(eval_dir, prefix_filter, ablation_key)
+    results = extract_results(eval_dir, prefix_filter, ablation_key, min_timestamp)
 
     # Collect first and last performance values for all curves
     first_performances = []
@@ -310,6 +315,16 @@ def eval_result_plotter():
         help="Show each curve in a separate subplot in a grid layout instead of all in one figure.",
     )
 
+    parser.add_argument(
+        "--min_timestamp",
+        default=None,
+        type=str,
+        help=(
+            "Minimum timestamp to filter runs. Only runs with timestamps >= this value "
+            "will be included. Format: YYYYMMDD_HHMMSS or YYYY-MM-DD_HH-MM-SS"
+        ),
+    )
+
     args = parser.parse_args()
 
     eval_dir = Path(args.eval_dir)
@@ -335,6 +350,7 @@ def eval_result_plotter():
         args.key_filter,
         args.ablation_key,
         args.separate_figures,
+        args.min_timestamp,
     )
 
 
@@ -471,12 +487,76 @@ def get_nested_config_value(config: dict, key_path: str):
     return value
 
 
+def parse_timestamp_from_folder(folder_name: str) -> Optional[datetime]:
+    """
+    Parse timestamp from folder name.
+    
+    Expects timestamps in various formats commonly used in folder names:
+    - YYYYMMDD_HHMMSS
+    - YYYY-MM-DD_HH-MM-SS
+    - YYYYMMDDHHMMSS
+    
+    Args:
+        folder_name: Name of the folder that may contain a timestamp
+        
+    Returns:
+        datetime object if timestamp found, None otherwise
+    """
+    # Try different timestamp patterns
+    patterns = [
+        r'(\d{8}_\d{6})',  # YYYYMMDD_HHMMSS
+        r'(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})',  # YYYY-MM-DD_HH-MM-SS
+        r'(\d{14})',  # YYYYMMDDHHMMSS
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, folder_name)
+        if match:
+            timestamp_str = match.group(1)
+            try:
+                # Try parsing with different formats
+                if '_' in timestamp_str and '-' in timestamp_str:
+                    # YYYY-MM-DD_HH-MM-SS format
+                    return datetime.strptime(timestamp_str, '%Y-%m-%d_%H-%M-%S')
+                elif '_' in timestamp_str:
+                    # YYYYMMDD_HHMMSS format
+                    return datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
+                else:
+                    # YYYYMMDDHHMMSS format
+                    return datetime.strptime(timestamp_str, '%Y%m%d%H%M%S')
+            except ValueError:
+                continue
+    
+    return None
+
+
 def extract_results(
     eval_dir: Path,
     prefix_filter: Optional[str],
     ablation_key: Optional[List[str]] = None,
+    min_timestamp: Optional[str] = None,
 ) -> dict[str, Path]:
+    """
+    Extract evaluation results from directory structure.
+    
+    Args:
+        eval_dir: Directory containing evaluation results
+        prefix_filter: Only include runs with this prefix in the name
+        ablation_key: Config key(s) to differentiate multiple runs
+        min_timestamp: Minimum timestamp in format YYYYMMDD_HHMMSS or YYYY-MM-DD_HH-MM-SS.
+                      Only include runs with timestamps >= this value.
+    
+    Returns:
+        Dictionary mapping method names to result file paths
+    """
     evals = {}
+    
+    # Parse min_timestamp if provided
+    min_dt = None
+    if min_timestamp is not None:
+        min_dt = parse_timestamp_from_folder(min_timestamp)
+        if min_dt is None:
+            print(f"Warning: Could not parse min_timestamp '{min_timestamp}', ignoring filter")
 
     for child in eval_dir.iterdir():
         # Every child of the eval_dir is a different "grouped run".
@@ -489,6 +569,13 @@ def extract_results(
                     # The runs_dirs are different runs with different
                     # timestamps. Potentially, they might have different
                     # hyperparameters.
+                    
+                    # Filter by timestamp if min_timestamp is provided
+                    if min_dt is not None:
+                        run_dt = parse_timestamp_from_folder(run_dir.name)
+                        if run_dt is None or run_dt < min_dt:
+                            continue  # Skip this run
+                    
                     for run_file in run_dir.iterdir():
                         if run_file.is_file() and run_file.suffix == ".npz":
                             # If ablation_key is provided, differentiate runs by config value
