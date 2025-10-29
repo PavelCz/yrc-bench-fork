@@ -60,7 +60,7 @@ class ThresholdPolicy(Policy):
             score = self._compute_score(weak_logit)
         # NOTE: Originally, higher score = more certain
         # I inverted score, so it is in line with other OOD scores.
-        action = (score >= self.params["threshold"]).int()
+        action = (score > self.params["threshold"]).int()
 
         if return_scores_and_recons:
             return action.cpu().numpy(), score.cpu().numpy(), None
