@@ -108,7 +108,10 @@ def make():
         "--policy.greedy",
         type=bool,
         default=True,
-        help="use greedy action selection during evaluation (default: True)",
+        help=(
+            "use greedy action selection during evaluation (default: True)"
+            "Only used in eval_policy.py"
+        ),
     )
     parser.add_argument(
         "-cp_feature",
