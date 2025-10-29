@@ -14,6 +14,9 @@ import numpy as np
 import seaborn as sns  # type: ignore
 
 import argparse
+import json
+import re
+from datetime import datetime
 
 
 # Add YRC to path for imports
@@ -73,12 +76,15 @@ def create_env(random_percent: int = 100, start_level: int = 0, num_levels: int 
 
 def plot_afhp(
     name_order: Optional[List[str]],
-    eval_file_dir: Path,
+    eval_dir: Path,
     prefix_filter: Optional[str],
     x_data_key: str,
     y_data_key: str,
     disable_horizontal_lines: bool = False,
     key_filter: Optional[List[str]] = None,
+    ablation_key: Optional[List[str]] = None,
+    separate_figures: bool = False,
+    min_timestamp: Optional[str] = None,
 ):
     """
     Plot AFHP (Ask for Help Percentage) vs performance.
@@ -86,8 +92,13 @@ def plot_afhp(
     Args:
         name_order: List of method names to plot in order. If None, uses all available
         names.
+        ablation_key: Config key(s) to differentiate multiple runs from the same method.
+        separate_figures: If True, plot each curve in a separate figure in a grid 
+        layout.
+        min_timestamp: Minimum timestamp to filter runs. Only runs with timestamps >= 
+        this value will be included.
     """
-    results = extract_results(eval_file_dir, prefix_filter)
+    results = extract_results(eval_dir, prefix_filter, ablation_key, min_timestamp)
 
     # Collect first and last performance values for all curves
     first_performances = []
@@ -109,59 +120,126 @@ def plot_afhp(
     if key_filter is not None:
         name_order = [name for name in name_order if name not in key_filter]
 
-    # Clear previous plot
-    plt.clf()
-
+    # Filter out methods that don't exist in results
+    valid_names = []
     for name in name_order:
         if name not in results:
             print(f"Warning: {name} not found in evals, skipping...")
             continue
+        valid_names.append(name)
 
-        data_path = results[name]
+    if not valid_names:
+        print("No valid methods found to plot.")
+        return
 
-        eval_data = np.load(data_path, allow_pickle=True)
-        x, y = extract_x_and_y_values(eval_data, x_data_key, y_data_key)
+    if separate_figures:
+        # Create a grid layout for separate figures
+        n_plots = len(valid_names)
+        n_cols = min(3, n_plots)  # Maximum 3 columns
+        n_rows = (n_plots + n_cols - 1) // n_cols  # Ceiling division
 
-        # desired_percentiles = eval_data["desired_percentiles"]
-
-        # Store first and last performance values
-        first_performances.append(y[0])
-        last_performances.append(y[-1])
-
-        if name in name_map:
-            label = name_map[name]
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 5 * n_rows))
+        if n_plots == 1:
+            axes = [axes]
+        elif n_rows == 1:
+            axes = axes.flatten()
         else:
-            label = name
+            axes = axes.flatten()
 
-        sns.lineplot(x=x, y=y, label=label, marker="o")
+        for idx, name in enumerate(valid_names):
+            ax = axes[idx]
+            data_path = results[name]
 
-    # Calculate means
-    mean_first_performance = np.mean(first_performances)
-    mean_last_performance = np.mean(last_performances)
+            eval_data = np.load(data_path, allow_pickle=True)
+            x, y = extract_x_and_y_values(eval_data, x_data_key, y_data_key)
 
-    # Add horizontal lines
-    if not disable_horizontal_lines:
-        plt.axhline(
-            y=mean_first_performance,
-            color="red",
-            linestyle="--",
-            alpha=0.7,
-            label="Weak Agent",
-        )
-        plt.axhline(
-            y=mean_last_performance,
-            color="blue",
-            linestyle="--",
-            alpha=0.7,
-            label="Oracle",
-        )
+            # Store first and last performance values
+            first_performances.append(y[0])
+            last_performances.append(y[-1])
 
-    plt.xlabel(x_data_key)
-    plt.ylabel(y_data_key)
-    plt.title(f"{y_data_key} over {x_data_key}")
-    plt.legend()
-    # plt.savefig("afhp_plot.png", dpi=300, bbox_inches="tight")
-    plt.show()
+            if name in name_map:
+                label = name_map[name]
+            else:
+                label = name
+
+            sns.lineplot(x=x, y=y, ax=ax, marker="o")
+            ax.set_title(f"{label}")
+            ax.set_xlabel(x_data_key)
+            ax.set_ylabel(y_data_key)
+
+            # Add horizontal lines for this individual plot
+            if not disable_horizontal_lines:
+                ax.axhline(
+                    y=y[0],
+                    color="red",
+                    linestyle="--",
+                    alpha=0.7,
+                    label="Weak Agent",
+                )
+                ax.axhline(
+                    y=y[-1],
+                    color="blue",
+                    linestyle="--",
+                    alpha=0.7,
+                    label="Oracle",
+                )
+                ax.legend()
+
+        # Hide unused subplots
+        for idx in range(n_plots, len(axes)):
+            axes[idx].set_visible(False)
+
+        plt.tight_layout()
+        plt.show()
+    else:
+        # Original behavior: all curves in one figure
+        # Clear previous plot
+        plt.clf()
+
+        for name in valid_names:
+            data_path = results[name]
+
+            eval_data = np.load(data_path, allow_pickle=True)
+            x, y = extract_x_and_y_values(eval_data, x_data_key, y_data_key)
+
+            # Store first and last performance values
+            first_performances.append(y[0])
+            last_performances.append(y[-1])
+
+            if name in name_map:
+                label = name_map[name]
+            else:
+                label = name
+
+            sns.lineplot(x=x, y=y, label=label, marker="o")
+
+        # Calculate means
+        mean_first_performance = np.mean(first_performances)
+        mean_last_performance = np.mean(last_performances)
+
+        # Add horizontal lines
+        if not disable_horizontal_lines:
+            plt.axhline(
+                y=mean_first_performance,
+                color="red",
+                linestyle="--",
+                alpha=0.7,
+                label="Weak Agent",
+            )
+            plt.axhline(
+                y=mean_last_performance,
+                color="blue",
+                linestyle="--",
+                alpha=0.7,
+                label="Oracle",
+            )
+
+        plt.xlabel(x_data_key)
+        plt.ylabel(y_data_key)
+        plt.title(f"{y_data_key} over {x_data_key}")
+        plt.legend()
+        # plt.savefig("afhp_plot.png", dpi=300, bbox_inches="tight")
+        plt.show()
 
 
 def eval_result_plotter():
@@ -180,7 +258,7 @@ def eval_result_plotter():
     )  # type: ignore[arg-type]
 
     parser.add_argument(
-        "--eval_file_dir",
+        "--eval_dir",
         type=str,
         help="Directory containing the evaluation files.",
     )
@@ -219,9 +297,37 @@ def eval_result_plotter():
         help="Filter out these keys.",
     )
 
+    parser.add_argument(
+        "--ablation_key",
+        default=None,
+        type=str,
+        nargs="+",
+        help=(
+            "Config key(s) (with dots for nested keys) to differentiate multiple runs "
+            "from the same method. Can specify multiple keys to use all of them. "
+            "E.g., 'evaluation.coverage_fraction' or 'general.seed' or both"
+        ),
+    )
+
+    parser.add_argument(
+        "--separate_figures",
+        action="store_true",
+        help="Show each curve in a separate subplot in a grid layout instead of all in one figure.",
+    )
+
+    parser.add_argument(
+        "--min_timestamp",
+        default=None,
+        type=str,
+        help=(
+            "Minimum timestamp to filter runs. Only runs with timestamps >= this value "
+            "will be included. Format: YYYYMMDD_HHMMSS or YYYY-MM-DD_HH-MM-SS"
+        ),
+    )
+
     args = parser.parse_args()
 
-    eval_file_dir = Path(args.eval_file_dir)
+    eval_dir = Path(args.eval_dir)
     prefix_filter = args.prefix_filter
     x_data_key = args.x_data_key
     y_data_key = args.y_data_key
@@ -236,12 +342,15 @@ def eval_result_plotter():
 
     plot_afhp(
         name_order,
-        eval_file_dir,
+        eval_dir,
         prefix_filter,
         x_data_key,
         y_data_key,
         args.disable_horizontal_lines,
         args.key_filter,
+        args.ablation_key,
+        args.separate_figures,
+        args.min_timestamp,
     )
 
 
@@ -302,32 +411,198 @@ def extract_from_data(data, key: str) -> np.ndarray:
         raise ValueError(f"Invalid key: {key}")
 
 
+def filter_duplicate_x_values(
+    x: np.ndarray, y: np.ndarray, order: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Filter out duplicate x-values, keeping only the point with the lowest order value.
+    
+    Args:
+        x: Array of x-values
+        y: Array of y-values
+        order: Array of order values that determine which point to keep
+        
+    Returns:
+        Filtered x and y arrays with duplicate x-values removed
+    """
+    if len(x) == 0:
+        return x, y
+    
+    # Find unique x-values and group indices by x-value
+    unique_x = np.unique(x)
+    keep_indices = []
+    
+    for ux in unique_x:
+        # Find all indices with this x-value
+        indices = np.where(x == ux)[0]
+        if len(indices) == 1:
+            # No duplicate, keep it
+            keep_indices.append(indices[0])
+        else:
+            # Multiple points with same x-value, keep the one with lowest order
+            orders_at_x = order[indices]
+            min_order_idx = indices[np.argmin(orders_at_x)]
+            keep_indices.append(min_order_idx)
+    
+    # Sort indices to maintain original order
+    keep_indices = np.sort(keep_indices)
+    
+    return x[keep_indices], y[keep_indices]
+
+
 def extract_x_and_y_values(
     data, x_data_key: str, y_data_key: str
 ) -> tuple[np.ndarray, np.ndarray]:
     # x = data["afhps"]
     x = extract_from_data(data, x_data_key)
     y = extract_from_data(data, y_data_key)
+    
+    # Extract order data for filtering duplicates
+    order = data["order"] if "order" in data else np.arange(len(x))
+    
+    # Filter out duplicate x-values, keeping only the point with the lowest order
+    x, y = filter_duplicate_x_values(x, y, order)
+    
     return x, y
 
 
-def extract_results(
-    eval_file_dir: Path, prefix_filter: Optional[str]
-) -> dict[str, Path]:
-    evals = {}
+def get_nested_config_value(config: dict, key_path: str):
+    """
+    Get a value from a nested config dictionary using dot notation.
 
-    for child in eval_file_dir.iterdir():
-        if child.is_dir():
-            method_name = child.name
-            if (child / "eval_runs").exists():
-                for grandchild in (child / "eval_runs").iterdir():
-                    for grandgrandchild in grandchild.iterdir():
-                        if (
-                            grandgrandchild.is_file()
-                            and grandgrandchild.suffix == ".npz"
-                        ):
-                            if prefix_filter is None or grandchild.stem.startswith(
-                                f"{prefix_filter}"
-                            ):
-                                evals[method_name] = grandgrandchild
+    Args:
+        config: Configuration dictionary
+        key_path: Dot-separated path to the value (e.g., "general.seed")
+
+    Returns:
+        The value at the key path, or None if not found
+    """
+    keys = key_path.split(".")
+    value = config
+    for key in keys:
+        if isinstance(value, dict) and key in value:
+            value = value[key]
+        else:
+            return None
+    return value
+
+
+def parse_timestamp_from_folder(folder_name: str) -> Optional[datetime]:
+    """
+    Parse timestamp from folder name.
+    
+    Expects timestamps in various formats commonly used in folder names:
+    - YYYYMMDD_HHMMSS
+    - YYYY-MM-DD_HH-MM-SS
+    - YYYYMMDDHHMMSS
+    
+    Args:
+        folder_name: Name of the folder that may contain a timestamp
+        
+    Returns:
+        datetime object if timestamp found, None otherwise
+    """
+    # Try different timestamp patterns
+    patterns = [
+        r'(\d{8}_\d{6})',  # YYYYMMDD_HHMMSS
+        r'(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})',  # YYYY-MM-DD_HH-MM-SS
+        r'(\d{14})',  # YYYYMMDDHHMMSS
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, folder_name)
+        if match:
+            timestamp_str = match.group(1)
+            try:
+                # Try parsing with different formats
+                if '_' in timestamp_str and '-' in timestamp_str:
+                    # YYYY-MM-DD_HH-MM-SS format
+                    return datetime.strptime(timestamp_str, '%Y-%m-%d_%H-%M-%S')
+                elif '_' in timestamp_str:
+                    # YYYYMMDD_HHMMSS format
+                    return datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
+                else:
+                    # YYYYMMDDHHMMSS format
+                    return datetime.strptime(timestamp_str, '%Y%m%d%H%M%S')
+            except ValueError:
+                continue
+    
+    return None
+
+
+def extract_results(
+    eval_dir: Path,
+    prefix_filter: Optional[str],
+    ablation_key: Optional[List[str]] = None,
+    min_timestamp: Optional[str] = None,
+) -> dict[str, Path]:
+    """
+    Extract evaluation results from directory structure.
+    
+    Args:
+        eval_dir: Directory containing evaluation results
+        prefix_filter: Only include runs with this prefix in the name
+        ablation_key: Config key(s) to differentiate multiple runs
+        min_timestamp: Minimum timestamp in format YYYYMMDD_HHMMSS or YYYY-MM-DD_HH-MM-SS.
+                      Only include runs with timestamps >= this value.
+    
+    Returns:
+        Dictionary mapping method names to result file paths
+    """
+    evals = {}
+    
+    # Parse min_timestamp if provided
+    min_dt = None
+    if min_timestamp is not None:
+        min_dt = parse_timestamp_from_folder(min_timestamp)
+        if min_dt is None:
+            print(f"Warning: Could not parse min_timestamp '{min_timestamp}', ignoring filter")
+
+    for child in eval_dir.iterdir():
+        # Every child of the eval_dir is a different "grouped run".
+        # We want to only select the runs that support the prefix_filter.
+        if child.is_dir() and prefix_filter is not None and prefix_filter in child.name:
+            for grandchild in child.iterdir():
+                # Every grandchild is a different method.
+                method_name = grandchild.name
+                for run_dir in grandchild.iterdir():
+                    # The runs_dirs are different runs with different
+                    # timestamps. Potentially, they might have different
+                    # hyperparameters.
+                    
+                    # Filter by timestamp if min_timestamp is provided
+                    if min_dt is not None:
+                        run_dt = parse_timestamp_from_folder(run_dir.name)
+                        if run_dt is None or run_dt < min_dt:
+                            continue  # Skip this run
+                    
+                    for run_file in run_dir.iterdir():
+                        if run_file.is_file() and run_file.suffix == ".npz":
+                            # If ablation_key is provided, differentiate runs by config value
+                            if ablation_key is not None and len(ablation_key) > 0:
+                                config_file = run_dir / "config.json"
+                                if config_file.exists():
+                                    with open(config_file, "r") as f:
+                                        config = json.load(f)
+
+                                    # Build unique key from all ablation keys
+                                    key_parts = []
+                                    for key in ablation_key:
+                                        ablation_value = get_nested_config_value(
+                                            config, key
+                                        )
+                                        # Use only the final element of the key path for cleaner labels
+                                        key_label = key.split(".")[-1]
+                                        key_parts.append(
+                                            f"{key_label}={ablation_value}"
+                                        )
+
+                                    # Combine method name with all ablation key-value pairs
+                                    unique_key = f"{method_name}_{'_'.join(key_parts)}"
+                                    evals[unique_key] = run_file
+                                else:
+                                    # Fallback if config.json doesn't exist
+                                    evals[method_name] = run_file
+                            else:
+                                evals[method_name] = run_file
     return evals

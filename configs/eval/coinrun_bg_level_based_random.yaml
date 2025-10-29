@@ -1,7 +1,7 @@
 # General settings
 general:
     benchmark: 'procgen'
-    algorithm: 'random'
+    algorithm: 'level_based_random'
     seed: 1
 
 # Wandb settings
@@ -52,5 +52,5 @@ environment:
         random_percent: 50
 coord_env: null
 coord_policy:
-    cls: OneCheckRandomPolicy
+    cls: LevelBasedRandomPolicy
 algorithm: null

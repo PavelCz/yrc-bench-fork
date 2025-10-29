@@ -98,6 +98,22 @@ def make():
         help="agent to evaluate",
     )
     parser.add_argument(
+        "-model_file",
+        "--model_file",
+        type=str,
+        help="path to model file to evaluate (for eval_policy.py)",
+    )
+    parser.add_argument(
+        "-greedy",
+        "--policy.greedy",
+        type=bool,
+        default=True,
+        help=(
+            "use greedy action selection during evaluation (default: True)"
+            "Only used in eval_policy.py"
+        ),
+    )
+    parser.add_argument(
         "-cp_feature",
         "--coord_policy.feature_type",
         type=str,
@@ -160,7 +176,7 @@ def make():
         "--coord_policy.rolling_average",
         type=str,
         help="rolling average for the threshold policy",
-        choices=["mean", "median"],
+        choices=["mean", "median", "none"],
     )
     parser.add_argument(
         "-cp_rolling_average_size",

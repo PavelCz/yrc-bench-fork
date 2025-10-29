@@ -1,13 +1,14 @@
 import os
-from re import A
 import sys
 import logging
 import time
 import traceback
 import wandb
+import json
 
 import yaml
 from datetime import datetime
+from pathlib import Path
 
 import torch
 import numpy as np
@@ -15,6 +16,33 @@ import numpy as np
 
 from YRC.core.configs import ConfigDict
 from YRC.core.configs.global_configs import set_global_variable
+
+
+def make_json_serializable(obj):
+    """Convert config dict values to JSON-serializable format."""
+    if isinstance(obj, dict):
+        return {k: make_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [make_json_serializable(item) for item in obj]
+    elif isinstance(obj, torch.device):
+        return str(obj)
+    elif isinstance(obj, Path):
+        return str(obj)
+    elif isinstance(obj, (np.integer, np.floating)):
+        return obj.item()
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        return obj
+
+
+def save_config_json(config: ConfigDict, output_path: Path):
+    """Save config as JSON file for later filtering and grouping."""
+    config_dict = config.as_dict()
+    serializable_config = make_json_serializable(config_dict)
+
+    with open(output_path, "w") as f:
+        json.dump(serializable_config, f, indent=2, sort_keys=True)
 
 
 def load(yaml_file_or_str, flags=None) -> ConfigDict:
@@ -45,43 +73,60 @@ def load(yaml_file_or_str, flags=None) -> ConfigDict:
     if flags is not None:
         config_dict = config.as_dict()
         flags_dict = flags.as_dict()
-        
+
         # Handle experiment_group special logic
-        if "experiment_group" in flags_dict and flags_dict["experiment_group"] is not None:
+        if (
+            "experiment_group" in flags_dict
+            and flags_dict["experiment_group"] is not None
+        ):
             experiment_group = flags_dict["experiment_group"]
-            
+
             # Set wandb group if not already set
             if "wandb" not in flags_dict:
                 flags_dict["wandb"] = {}
-            if "group" not in flags_dict["wandb"] or flags_dict["wandb"]["group"] is None:
+            if (
+                "group" not in flags_dict["wandb"]
+                or flags_dict["wandb"]["group"] is None
+            ):
                 flags_dict["wandb"]["group"] = experiment_group
-            
+
             # Set eval_run_name as prefix if not already set
             if "eval_run_name" not in flags_dict or flags_dict["eval_run_name"] is None:
                 flags_dict["eval_run_name"] = experiment_group
-        
+
         update_config(flags_dict, config_dict)
         config = ConfigDict(**config_dict)
 
     # Only copy env_name_suffix for environments that use it (e.g., minigrid)
-    if hasattr(config.environment.train, 'env_name_suffix') and config.environment.val_sim is not None:
-        config.environment.val_sim.env_name_suffix = config.environment.train.env_name_suffix
-    if hasattr(config.environment.test, 'env_name_suffix') and config.environment.val_true is not None:
-        config.environment.val_true.env_name_suffix = config.environment.test.env_name_suffix
+    if (
+        hasattr(config.environment.train, "env_name_suffix")
+        and config.environment.val_sim is not None
+    ):
+        config.environment.val_sim.env_name_suffix = (
+            config.environment.train.env_name_suffix
+        )
+    if (
+        hasattr(config.environment.test, "env_name_suffix")
+        and config.environment.val_true is not None
+    ):
+        config.environment.val_true.env_name_suffix = (
+            config.environment.test.env_name_suffix
+        )
 
     config.data_dir = os.getenv("SM_DATA_DIR", config.data_dir)
-    output_dir = os.getenv("SM_OUTPUT_DIR", "experiments")
-    config.experiment_dir = "%s/%s" % (output_dir, config.name)
+    output_dir = Path(os.getenv("SM_OUTPUT_DIR", "experiments"))
+    if config.name is None:
+        raise ValueError("config.name is None. A name must be provided.")
+    config.experiment_dir = str(output_dir / config.name)
 
     if not config.eval_mode and (config.overwrite is None or not config.overwrite):
         try:
-            os.makedirs(config.experiment_dir)
-        except:
+            Path(config.experiment_dir).mkdir(parents=True, exist_ok=False)
+        except FileExistsError:
             raise FileExistsError(
                 "Experiment directory %s probably exists!" % config.experiment_dir
             )
-    if not os.path.exists(config.experiment_dir):
-        os.makedirs(config.experiment_dir)
+    Path(config.experiment_dir).mkdir(parents=True, exist_ok=True)
 
     seed = config.general.seed
     torch.manual_seed(seed)
@@ -100,47 +145,69 @@ def load(yaml_file_or_str, flags=None) -> ConfigDict:
     config.start_time = time.time()
 
     if config.eval_mode:
+        # Require experiment_group to be set for eval mode
+        experiment_group = None
+        if hasattr(config, "experiment_group") and config.experiment_group:
+            experiment_group = config.experiment_group
+        elif (
+            hasattr(config, "wandb")
+            and hasattr(config.wandb, "group")
+            and config.wandb.group
+        ):
+            experiment_group = config.wandb.group
+
+        if not experiment_group:
+            raise ValueError(
+                "experiment_group must be set for eval mode. "
+                "Use --experiment_group flag or --wandb.group flag."
+            )
+
         # Generate timestamp for eval run
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        # Create eval run name with timestamp
-        if hasattr(config, 'eval_run_name') and config.eval_run_name:
-            eval_dir_name = f"{config.eval_run_name}_{timestamp}"
-        else:
-            eval_dir_name = f"eval_{timestamp}"
-        
-        # Create eval runs subdirectory
-        eval_runs_dir = os.path.join(config.experiment_dir, "eval_runs")
-        eval_run_dir = os.path.join(eval_runs_dir, eval_dir_name)
-        
+
+        # Extract model name from experiment_dir (last component of path)
+        model_name = Path(config.experiment_dir).name
+
+        # Build new eval directory structure:
+        # experiments/evals/<experiment_group>/<model_name>/<timestamp>/
+        output_dir = Path(os.getenv("SM_OUTPUT_DIR", "experiments"))
+        eval_run_dir = output_dir / "evals" / experiment_group / model_name / timestamp
+
         # Create the directory if it doesn't exist
-        if not os.path.exists(eval_run_dir):
-            os.makedirs(eval_run_dir)
-        
+        eval_run_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save config as JSON for later filtering and grouping
+        config_json_path = eval_run_dir / "config.json"
+        save_config_json(config, config_json_path)
+
         # Set log file path based on file_name type
         if config.file_name is None or "trained" in config.file_name:
-            log_file = os.path.join(eval_run_dir, f"eval_seed_{seed}.log")
+            log_file = str(eval_run_dir / f"eval_seed_{seed}.log")
         elif config.file_name.__contains__("sim"):
-            log_file = os.path.join(eval_run_dir, f"eval_sim_seed_{seed}.log")
+            log_file = str(eval_run_dir / f"eval_sim_seed_{seed}.log")
         elif config.file_name.__contains__("true"):
-            log_file = os.path.join(eval_run_dir, f"eval_true_seed_{seed}.log")
+            log_file = str(eval_run_dir / f"eval_true_seed_{seed}.log")
         else:
             raise ValueError(
                 f"Unrecognized eval setting with file name: {config.file_name}"
             )
-        
+
         # Store eval run directory in config for potential use by other components
-        config.eval_run_dir = eval_run_dir
+        config.eval_run_dir = str(eval_run_dir)
     else:
-        log_file = os.path.join(config.experiment_dir, "run.log")
+        log_file = str(Path(config.experiment_dir) / "run.log")
     set_global_variable("log_file", log_file)
 
-    if os.path.isfile(log_file):
-        os.remove(log_file)
+    log_file_path = Path(log_file)
+    if log_file_path.is_file():
+        log_file_path.unlink()
     config_logging(log_file)
     logging.info(str(datetime.now()))
     logging.info("python -u " + " ".join(sys.argv))
     logging.info("Write log to %s" % log_file)
+    if config.eval_mode:
+        config_json_path = Path(config.eval_run_dir) / "config.json"
+        logging.info("Saved eval config to %s" % config_json_path)
     logging.info(str(config))
 
     wandb.init(
@@ -180,7 +247,7 @@ def config_logging(log_file):
     sys.excepthook = handler
 
 
-class ElapsedFormatter:
+class ElapsedFormatter(logging.Formatter):
     def __init__(self):
         self.start_time = datetime.now()
 

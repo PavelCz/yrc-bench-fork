@@ -48,7 +48,10 @@ class Evaluator:
         # Check if we should skip score normalization (for max_prob metric)
         # max_prob outputs probabilities in [0, 1] range, so normalization would be misleading
         metric = getattr(config.coord_policy, "metric", None)
-        self.skip_score_normalization = metric == "max_prob"
+        alg_cls = getattr(config.algorithm, "cls", None)
+        self.skip_score_normalization = (
+            metric == "max_prob" or alg_cls == "RandomAlgorithm"
+        )
 
     def eval(
         self,
@@ -197,7 +200,7 @@ class Evaluator:
             num_episodes < max_episodes or not self.done_saving_actions_for_vid
         ):
             # Add the episode timestep to the obs. This is necessary for
-            # OneCheckRandomPolicy to know whether a new episode has started.
+            # LevelBasedRandomPolicy to know whether a new episode has started.
             obs["episode_timestep"] = episode_log["episode_length"]
             # For most policies I have seen, the greedy flag is ignored. These include
             # random, lightning_ae, and ood.

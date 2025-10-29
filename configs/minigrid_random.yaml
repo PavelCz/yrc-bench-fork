@@ -1,7 +1,7 @@
 name: 'minigrid_random'
 general:
     benchmark: 'minigrid'
-    algorithm: 'random'
+    algorithm: 'timestep_random'
     device: 0
     skyline: 0
     seed: 10

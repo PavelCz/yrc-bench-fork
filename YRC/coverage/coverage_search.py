@@ -11,7 +11,7 @@ from typing import Tuple, Any, Dict
 from acs import BinarySearchSampler
 from YRC.policies.ood import OODPolicy
 from YRC.policies.lightning_ae import LightningAEPolicy
-from YRC.policies.base import RandomPolicy, OneCheckRandomPolicy
+from YRC.policies.base import TimestepRandomPolicy, LevelBasedRandomPolicy
 from YRC.policies.threshold import ThresholdPolicy
 from YRC.core import Evaluator
 import numpy as np
@@ -178,7 +178,9 @@ def update_policy_params(policy, threshold):
         params["threshold"] = threshold
 
         policy.update_params(params)
-    elif isinstance(policy, RandomPolicy) or isinstance(policy, OneCheckRandomPolicy):
+    elif isinstance(policy, TimestepRandomPolicy) or isinstance(
+        policy, LevelBasedRandomPolicy
+    ):
         if threshold == float("inf"):
             # An infinite threshold means that the policy will never ask for help.
             # We need to set the probability to 0.

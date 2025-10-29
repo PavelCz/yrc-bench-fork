@@ -1,7 +1,7 @@
 name: 'cliport_random'
 general:
     benchmark: 'cliport'
-    algorithm: 'random'
+    algorithm: 'timestep_random'
     device: 0
     skyline: 0
     seed: 10

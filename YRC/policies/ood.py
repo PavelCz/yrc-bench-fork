@@ -2,12 +2,15 @@ import os
 import numpy as np
 from copy import deepcopy as dc
 import logging
+import collections
+import torch
 from YRC.core import Policy
 from lib.pyod.pyod.models import deep_svdd
 from joblib import dump, load
 from YRC.core.configs.global_configs import get_global_variable
 from YRC.models.utils import AutoEncoderWithVal
 from YRC.core.utils import to_tensor
+from typing import Optional
 
 
 
@@ -23,6 +26,29 @@ class OODPolicy(Policy):
         self.clf_name = None
         self.device = get_global_variable("device")
         self.feature_type = config.coord_policy.feature_type
+        
+        # Rolling average setup
+        self.rolling_average: Optional[str] = getattr(self.args, 'rolling_average', None)
+        if self.rolling_average == "none":
+            self.rolling_average = None
+        
+        if (
+            self.rolling_average is not None
+            and self.rolling_average != "mean"
+            and self.rolling_average != "median"
+        ):
+            raise ValueError(f"Rolling average {self.rolling_average} not supported")
+        
+        self.rolling_average_size: int = getattr(self.args, 'rolling_average_size', 10)
+        self.rolling_average_buffers = []
+        
+        if self.rolling_average is not None:
+            for _ in range(env.num_envs):
+                self.rolling_average_buffers.append(
+                    collections.deque(
+                        self.rolling_average_size * [float("-inf")], self.rolling_average_size
+                    )
+                )
 
 
     def update_params(self, params):
@@ -83,6 +109,25 @@ class OODPolicy(Policy):
             observation = observation.to(self.device)
 
         score = self.clf.decision_function(observation)
+        
+        # Store original scores before applying rolling average
+        score_original = score.copy() if self.rolling_average is not None else None
+        
+        # Apply rolling average if enabled
+        if self.rolling_average is not None:
+            for i in range(len(self.rolling_average_buffers)):
+                self.rolling_average_buffers[i].append(score[i])
+                
+                if self.rolling_average == "mean":
+                    score[i] = np.mean(self.rolling_average_buffers[i])
+                elif self.rolling_average == "median":
+                    score[i] = np.median(self.rolling_average_buffers[i])
+                else:
+                    raise NotImplementedError(f"Unrecognized rolling average: {self.rolling_average}")
+        
+        # Store the scores for potential retrieval (used by evaluator for histograms)
+        self.last_scores_original = score_original
+        self.last_scores_rolling_avg = score if self.rolling_average is not None else None
 
         action = 1 - (score < self.clf.threshold_).astype(int)
         if 0 not in action and 1 not in action:
@@ -171,6 +216,15 @@ class OODPolicy(Policy):
         self.clf_name = state_dict['clf_name']
 
         return self
+
+    def reset_rolling_average_buffer(self, index: int) -> None:
+        """Reset the rolling average buffer for a given index. The index corresponds 
+        to the environment index.
+        """
+        if self.rolling_average is not None:
+            self.rolling_average_buffers[index] = collections.deque(
+                self.rolling_average_size * [float("-inf")], self.rolling_average_size
+            )
 
     def train_percentile(
         self, percentile: float

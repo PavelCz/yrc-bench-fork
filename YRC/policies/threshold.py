@@ -19,6 +19,9 @@ class ThresholdPolicy(Policy):
         self.device = get_global_variable("device")
         self.rolling_average: Optional[str] = self.args.rolling_average
 
+        if self.rolling_average == "none":
+            self.rolling_average = None
+
         if (
             self.rolling_average is not None
             and self.rolling_average != "mean"
@@ -110,6 +113,7 @@ class ThresholdPolicy(Policy):
             )
         elif metric == "max_prob":
             # Softmax probability -> how certain are we about that action?
+            # Max returns values, indices, which is why we index into the values.
             score = logit.softmax(dim=-1).max(dim=-1)[0]
             # Invert the score such that higher score = more ood.
             score = 1.0 - score

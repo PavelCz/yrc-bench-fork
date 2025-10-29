@@ -1,7 +1,7 @@
 # General settings
 general:
     benchmark: 'procgen'
-    algorithm: 'random'
+    algorithm: 'timestep_random'
     seed: 1
 
 # Wandb settings

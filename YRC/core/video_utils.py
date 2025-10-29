@@ -344,7 +344,9 @@ def generate_caption(threshold: float, afhp: float, video_data: Dict[str, Any]) 
     else:
         caption += " - Original observations"
 
-    if video_data["scores"] is not None:
+    if video_data["scores"] is not None and any(
+        score is not None for score in video_data["scores"]
+    ):
         score_min, score_max = ScoreBarRenderer.calculate_score_bounds_static(
             video_data["scores"]
         )
@@ -504,8 +506,10 @@ def process_and_log_video(
 
     combined_video = processor.add_repeated_frames(combined_video)
 
-    # Add score bars if available
-    if video_data["scores"] is not None:
+    # Add score bars if available and scores contain valid values
+    if video_data["scores"] is not None and any(
+        score is not None for score in video_data["scores"]
+    ):
         score_renderer = ScoreBarRenderer(video_config)
         text_renderer = TextRenderer(video_config)
 
