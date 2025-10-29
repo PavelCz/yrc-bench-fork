@@ -25,6 +25,7 @@ Options:
     -num_rollouts: Number of episodes to evaluate (default: from config)
     -num_envs: Number of parallel environments
     -seed: Random seed
+    -greedy: Use greedy action selection (default: True)
     See flags.py for more options.
 
 Output:
@@ -93,8 +94,12 @@ def main():
     )
     logging.info(f"Number of parallel environments: {env.num_envs}")
 
+    # Get greedy flag from args (default to True if not set)
+    greedy = getattr(config.policy, "greedy", True) if hasattr(config, "policy") else True
+    logging.info(f"Using greedy action selection: {greedy}")
+
     # Run evaluation
-    returns = rollout_and_get_returns(policy, env, num_episodes)
+    returns = rollout_and_get_returns(policy, env, num_episodes, greedy=greedy)
 
     # Calculate statistics
     mean_return = np.mean(returns)
@@ -138,7 +143,7 @@ def main():
     logging.info(f"Results saved to {results_path}")
 
 
-def rollout_and_get_returns(policy, env, num_episodes):
+def rollout_and_get_returns(policy, env, num_episodes, greedy=True):
     """
     Rollout the policy on the environment and collect episode returns.
 
@@ -146,6 +151,7 @@ def rollout_and_get_returns(policy, env, num_episodes):
         policy: The policy to evaluate (underlying agent)
         env: The raw environment to evaluate on
         num_episodes: Number of episodes to run
+        greedy: Whether to use greedy action selection (default: True)
 
     Returns:
         List of episode returns
@@ -168,7 +174,7 @@ def rollout_and_get_returns(policy, env, num_episodes):
 
     while num_completed < target_episodes:
         # Get action from policy (pass observation directly to underlying agent)
-        action = policy.act(obs, greedy=True)
+        action = policy.act(obs, greedy=greedy)
 
         # Step environment
         obs, reward, done, info = env.step(action)

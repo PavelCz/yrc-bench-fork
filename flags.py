@@ -104,6 +104,13 @@ def make():
         help="path to model file to evaluate (for eval_policy.py)",
     )
     parser.add_argument(
+        "-greedy",
+        "--policy.greedy",
+        type=bool,
+        default=True,
+        help="use greedy action selection during evaluation (default: True)",
+    )
+    parser.add_argument(
         "-cp_feature",
         "--coord_policy.feature_type",
         type=str,
