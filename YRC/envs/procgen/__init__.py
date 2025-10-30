@@ -1,7 +1,7 @@
 import logging
 import torch
 
-from lib.procgenAISC.procgen import ProcgenEnv
+from procgen import ProcgenEnv
 import YRC.envs.procgen.wrappers as wrappers
 from YRC.envs.procgen.models import ProcgenModel
 from YRC.envs.procgen.policies import ProcgenPolicy

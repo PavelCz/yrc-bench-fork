@@ -22,7 +22,7 @@ from datetime import datetime
 # Add YRC to path for imports
 # sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 
-from lib.procgenAISC.procgen import ProcgenEnv
+from procgen import ProcgenEnv
 from YRC.envs.procgen.wrappers import (
     VecExtractDictObs,
     TransposeFrame,
