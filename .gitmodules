@@ -9,7 +9,7 @@
 	url = https://github.com/modanesh/Minigrid.git
 [submodule "lib/procgenAISC"]
 	path = lib/procgenAISC
-	url = https://github.com/JacobPfau/procgenAISC.git
+	url = git@github.com:PavelCz/procgen-afh.git
 [submodule "lib/pytorch_vae"]
 	path = lib/pytorch_vae
 	url = https://github.com/PavelCz/PyTorch-VAE
