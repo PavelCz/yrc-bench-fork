@@ -413,6 +413,22 @@ def extract_from_data(data, key: str) -> np.ndarray:
             episode_lengths = element["summary"]["test"]["episode_lengths"]
             means.append(np.mean(episode_lengths))
         return np.array(means)
+    elif key == "episode_length_success_mean":
+        success_means = []
+        for element in data["meta"]:
+            episode_lengths = element["summary"]["test"]["episode_lengths"]
+            returns = element["summary"]["test"]["raw_returns"]
+
+            success_lengths = [
+                length for length, ret in zip(episode_lengths, returns) if ret > 0
+            ]
+
+            if success_lengths:
+                success_means.append(np.mean(success_lengths))
+            else:
+                success_means.append(np.nan)
+
+        return np.array(success_means)
     else:
         raise ValueError(f"Invalid key: {key}")
 
