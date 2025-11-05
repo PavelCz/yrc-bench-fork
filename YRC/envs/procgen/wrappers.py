@@ -432,11 +432,23 @@ class TimeLimitWrapper(VecEnvWrapper):
     
     Args:
         venv: The vectorized environment to wrap
-        max_steps: Maximum number of timesteps per episode
+        max_steps: Maximum number of timesteps per episode (must be <= 1000 for Procgen)
+    
+    Raises:
+        ValueError: If max_steps is greater than 1000, since Procgen environments
+                   have a built-in hard limit of 1000 steps per episode.
     """
     
     def __init__(self, venv, max_steps):
         super().__init__(venv=venv)
+        
+        if max_steps > 1000:
+            raise ValueError(
+                f"max_steps ({max_steps}) cannot be greater than 1000. "
+                f"Procgen environments have a built-in limit of 1000 timesteps per episode, "
+                f"so setting a higher limit would have no effect."
+            )
+        
         self.max_steps = max_steps
         self.step_count = np.zeros(venv.num_envs, dtype=np.int32)
     

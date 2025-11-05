@@ -257,7 +257,7 @@ def make():
         "-max_steps",
         "--environment.common.max_steps",
         type=int,
-        help="maximum number of timesteps per episode - only for procgen envs",
+        help="maximum number of timesteps per episode (max: 1000) - only for procgen envs",
     )
 
     parser.add_argument("-seed", "--general.seed", type=int, help="random seed")
