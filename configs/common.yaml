@@ -63,6 +63,7 @@ environment:
             use_backgrounds: True
             use_monochrome_assets: False
             restrict_themes: False
+            max_steps: null  # Maximum timesteps per episode (null = no limit)
         train:
             distribution_mode: 'hard'
             seed: 0

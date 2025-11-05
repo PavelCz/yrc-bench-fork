@@ -425,6 +425,47 @@ class HardResetWrapper(VecEnvWrapper):
         return self.venv.reset()
 
 
+class TimeLimitWrapper(VecEnvWrapper):
+    """
+    A wrapper that enforces a maximum number of timesteps per episode.
+    When the limit is reached, the episode is terminated (done=True).
+    
+    Args:
+        venv: The vectorized environment to wrap
+        max_steps: Maximum number of timesteps per episode
+    """
+    
+    def __init__(self, venv, max_steps):
+        super().__init__(venv=venv)
+        self.max_steps = max_steps
+        self.step_count = np.zeros(venv.num_envs, dtype=np.int32)
+    
+    def reset(self):
+        self.step_count = np.zeros(self.num_envs, dtype=np.int32)
+        return self.venv.reset()
+    
+    def step_wait(self):
+        obs, rews, dones, infos = self.venv.step_wait()
+        self.step_count += 1
+        
+        # Check if any environment has reached the time limit
+        time_limit_exceeded = self.step_count >= self.max_steps
+        
+        # Mark episodes as done if they exceed the time limit
+        dones = np.logical_or(dones, time_limit_exceeded)
+        
+        # Add time limit info to the info dict
+        for i in range(self.num_envs):
+            if time_limit_exceeded[i]:
+                infos[i]["TimeLimit.truncated"] = True
+            
+            # Reset step count for completed episodes
+            if dones[i]:
+                self.step_count[i] = 0
+        
+        return obs, rews, dones, infos
+
+
 class RandomEnvSwitchWrapper(VecEnvWrapper):
     """
     A wrapper that randomly switches between two procgen environments on reset.

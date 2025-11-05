@@ -37,6 +37,11 @@ def create_env(name, config):
         )  # normalizing returns, but not the img frames
     env = wrappers.TransposeFrame(env)
     env = wrappers.ScaledFloatFrame(env)
+    
+    # Apply time limit wrapper if max_steps is specified
+    if hasattr(common_config, 'max_steps') and common_config.max_steps is not None:
+        env = wrappers.TimeLimitWrapper(env, common_config.max_steps)
+    
     # NOTE: this must be done last
     env = wrappers.HardResetWrapper(env)
     env.obs_shape = env.observation_space.shape
