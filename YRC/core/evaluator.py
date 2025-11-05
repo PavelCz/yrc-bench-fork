@@ -429,6 +429,7 @@ class Evaluator:
             "episode_length_mean": float(np.mean(log["episode_length"])),
             "episode_length_min": int(np.min(log["episode_length"])),
             "episode_length_max": int(np.max(log["episode_length"])),
+            "episode_lengths": log["episode_length"],  # Raw episode lengths per episode
             "return_mean": float(np.mean(log["returns"])),
             "raw_returns": log["returns"],
             "return_std": float(np.std(log["returns"])),
