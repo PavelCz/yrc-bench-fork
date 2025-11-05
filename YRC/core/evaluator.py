@@ -165,6 +165,8 @@ class Evaluator:
             # Original scores (before rolling average)
             "scores_original_in_domain": [],
             "scores_original_out_of_domain": [],
+            # Episode outcome information
+            "invisible_coin_collected": [],  # Whether coin was collected this episode
         }
 
         # A temporary log that only contains stats for the current episode.
@@ -180,6 +182,8 @@ class Evaluator:
         current_level_ood_pred = [False] * env.num_envs
         # For every env, whether the current level is actually ood.
         current_level_ood_gt = [False] * env.num_envs
+        # For every env, whether the coin was collected in the current episode.
+        current_invisible_coin_collected = [False] * env.num_envs
 
         obs = env.reset()
         prev_obs = obs
@@ -233,6 +237,11 @@ class Evaluator:
             for i in range(env.num_envs):
                 if "env_reward" in info[i]:
                     episode_log["cumulative_env_reward"][i] += info[i]["env_reward"]
+
+                # Track if the invisible coin was collected in this step
+                if "invisible_coin_collected" in info[i]:
+                    if info[i]["invisible_coin_collected"] == 1:
+                        current_invisible_coin_collected[i] = True
 
                 episode_log["cumulative_reward"][i] += reward[i]
                 episode_log["episode_length"][i] += 1
@@ -303,6 +312,11 @@ class Evaluator:
                             episode_log[f"action_{self.LOGGED_ACTION}"][i]
                         )
                         log["level_ood_gt"].append(current_level_ood_gt[i])
+                        
+                        # Log episode outcome information
+                        log["invisible_coin_collected"].append(
+                            current_invisible_coin_collected[i]
+                        )
 
                     # Always increment episode counter (for upper bound check)
                     num_episodes += 1
@@ -325,6 +339,8 @@ class Evaluator:
 
                     # Reset the level_ood_pred for the next episode.
                     current_level_ood_pred[i] = False
+                    # Reset the coin collected status for the next episode.
+                    current_invisible_coin_collected[i] = False
 
                     filter_results = self._check_episode_filters(
                         episode_data, level_info
@@ -425,6 +441,8 @@ class Evaluator:
             "ood_accuracy": ood_accuracy,
             "level_ood_gt": log["level_ood_gt"],
             "level_ood_pred": log["level_ood_pred"],
+            # Episode outcome information
+            "invisible_coin_collected": log["invisible_coin_collected"],
         }
 
     def write_summary(self, split, summary):
