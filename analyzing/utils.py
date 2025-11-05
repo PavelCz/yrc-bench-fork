@@ -407,6 +407,12 @@ def extract_from_data(data, key: str) -> np.ndarray:
         return data["performances"]
     elif key == "afhp":
         return data["afhps"]
+    elif key == "episode_length_mean":
+        means = []
+        for element in data["meta"]:
+            episode_lengths = element["summary"]["test"]["episode_lengths"]
+            means.append(np.mean(episode_lengths))
+        return np.array(means)
     else:
         raise ValueError(f"Invalid key: {key}")
 
