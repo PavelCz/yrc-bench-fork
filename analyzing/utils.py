@@ -429,6 +429,17 @@ def extract_from_data(data, key: str) -> np.ndarray:
                 success_means.append(np.nan)
 
         return np.array(success_means)
+    elif key == "first_ood_timestep_mean":
+        means = []
+        for element in data["meta"]:
+            first_ood_timesteps = element["summary"]["test"]["first_ood_timestep"]
+            # Filter out None values (episodes where OOD was never predicted)
+            valid_timesteps = [t for t in first_ood_timesteps if t is not None]
+            if valid_timesteps:
+                means.append(np.mean(valid_timesteps))
+            else:
+                means.append(np.nan)
+        return np.array(means)
     else:
         raise ValueError(f"Invalid key: {key}")
 

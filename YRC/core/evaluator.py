@@ -167,6 +167,8 @@ class Evaluator:
             "scores_original_out_of_domain": [],
             # Episode outcome information
             "invisible_coin_collected": [],  # Whether coin was collected this episode
+            # First timestep when OOD was predicted (None if never predicted)
+            "first_ood_timestep": [],
         }
 
         # A temporary log that only contains stats for the current episode.
@@ -184,6 +186,8 @@ class Evaluator:
         current_level_ood_gt = [False] * env.num_envs
         # For every env, whether the coin was collected in the current episode.
         current_invisible_coin_collected = [False] * env.num_envs
+        # For every env, the first timestep when OOD was predicted (None if never predicted)
+        first_ood_timestep = [None] * env.num_envs
 
         obs = env.reset()
         prev_obs = obs
@@ -211,6 +215,9 @@ class Evaluator:
             action, scores, recons = policy.act(
                 obs, greedy=args.act_greedy, return_scores_and_recons=True
             )
+
+            # Store original action before it might be modified by defer_to_oracle
+            original_action = action.copy()
 
             # if not all(has_done):
             #     self.collected_states.append({
@@ -245,6 +252,11 @@ class Evaluator:
 
                 episode_log["cumulative_reward"][i] += reward[i]
                 episode_log["episode_length"][i] += 1
+                
+                # Track the first timestep when OOD was predicted (after incrementing episode_length)
+                # Use original_action to check the actual OOD prediction, not the potentially modified action
+                if original_action[i] == self.LOGGED_ACTION and first_ood_timestep[i] is None:
+                    first_ood_timestep[i] = episode_log["episode_length"][i]
                 episode_log[f"action_{self.LOGGED_ACTION}"][i] += (
                     action[i] == self.LOGGED_ACTION
                 ).sum()
@@ -317,6 +329,8 @@ class Evaluator:
                         log["invisible_coin_collected"].append(
                             current_invisible_coin_collected[i]
                         )
+                        # Log first OOD timestep (None if never predicted)
+                        log["first_ood_timestep"].append(first_ood_timestep[i])
 
                     # Always increment episode counter (for upper bound check)
                     num_episodes += 1
@@ -341,6 +355,8 @@ class Evaluator:
                     current_level_ood_pred[i] = False
                     # Reset the coin collected status for the next episode.
                     current_invisible_coin_collected[i] = False
+                    # Reset the first OOD timestep for the next episode.
+                    first_ood_timestep[i] = None
 
                     filter_results = self._check_episode_filters(
                         episode_data, level_info
@@ -444,6 +460,7 @@ class Evaluator:
             "level_ood_pred": log["level_ood_pred"],
             # Episode outcome information
             "invisible_coin_collected": log["invisible_coin_collected"],
+            "first_ood_timestep": log["first_ood_timestep"],
         }
 
     def write_summary(self, split, summary):
