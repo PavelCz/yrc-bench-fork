@@ -169,6 +169,11 @@ def rollout_and_get_returns(policy, env, num_episodes, greedy=True):
 
     # Reset environment
     obs = env.reset()
+    
+    # Reset episode counter for heuristic policies at the start
+    for i in range(env.num_envs):
+        if hasattr(policy, 'reset_episode'):
+            policy.reset_episode()
 
     logging.info(f"Starting rollouts for {num_episodes} episodes...")
 
@@ -196,6 +201,10 @@ def rollout_and_get_returns(policy, env, num_episodes, greedy=True):
                         )
 
                 cumulative_rewards[i] = 0.0
+                
+                # Reset episode counter for heuristic policies
+                if hasattr(policy, 'reset_episode'):
+                    policy.reset_episode()
 
     return returns
 
