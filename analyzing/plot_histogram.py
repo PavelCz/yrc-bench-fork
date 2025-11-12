@@ -169,7 +169,11 @@ def interactive_histogram_plotter():
     print(f"  Max: {np.max(values):.2f}")
     
     plt.figure(figsize=(10, 6))
-    plt.hist(values, bins=args.bins, edgecolor='black', alpha=0.7)
+    counts, bin_edges, patches = plt.hist(values, bins=args.bins, edgecolor='black', alpha=0.7)
+    
+    # Set x-axis ticks to show bin edges
+    plt.xticks(bin_edges, rotation=45, ha='right')
+    
     plt.xlabel(args.key.replace('_', ' ').title())
     plt.ylabel('Frequency')
     plt.title(
