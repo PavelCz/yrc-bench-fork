@@ -55,24 +55,25 @@ environment:
         seed: 0
         start_level: 0
         num_levels: 100000
-        random_percent: 0
+        random_percent: 100
     val_sim:
         distribution_mode: 'hard'
         seed: 100000
         start_level: 100000
         num_levels: 256
-        random_percent: 50
+        random_percent: 100
     val_true:
         distribution_mode: 'hard'
         seed: 200000
         start_level: 200000
         num_levels: 256
-        random_percent: 50
+        random_percent: 100
     test:
         distribution_mode: 'hard'
         seed: 300000
         start_level: 300000
         num_levels: 5120
+        random_percent: 100
 coord_env: null
 coord_policy:
     cls: ThresholdPolicy
