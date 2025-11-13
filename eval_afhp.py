@@ -20,6 +20,62 @@ from pytorch_lightning.loggers import WandbLogger
 import wandb
 from acs.types import CurvePoint
 
+# Import RandomEnvSwitchWrapper for multi-env switching
+from YRC.envs.procgen.wrappers import RandomEnvSwitchWrapper
+import importlib
+
+
+def create_raw_env_from_config(env_config, base_config):
+    """Create a raw (base) environment from custom configuration.
+    
+    Args:
+        env_config: Configuration dict with gym_name and environment settings
+        base_config: Base config object to get common settings from
+    """
+    benchmark = get_global_variable('benchmark')
+    
+    if benchmark == 'procgen':
+        from procgen import ProcgenEnv
+        import YRC.envs.procgen.wrappers as wrappers
+        
+        # Get common config settings or use defaults
+        common_config = base_config.environment.common
+        
+        # Create environment with custom settings
+        env = ProcgenEnv(
+            env_name=env_config.get('gym_name', common_config.env_name),
+            num_envs=env_config.get('num_envs', common_config.num_envs),
+            num_threads=env_config.get('num_threads', common_config.num_threads),
+            num_levels=env_config.get('num_levels', 0),
+            start_level=env_config.get('start_level', 0),
+            distribution_mode=env_config.get('distribution_mode', 'easy'),
+            rand_seed=env_config.get('seed', 0),
+            use_backgrounds=env_config.get('use_backgrounds', common_config.use_backgrounds),
+            use_monochrome_assets=env_config.get('use_monochrome_assets', common_config.use_monochrome_assets),
+            restrict_themes=env_config.get('restrict_themes', common_config.restrict_themes),
+            random_percent=env_config.get('random_percent', 100),
+        )
+        
+        # Apply standard wrappers
+        env = wrappers.VecExtractDictObs(env, "rgb")
+        if common_config.normalize_rew:
+            env = wrappers.VecNormalize(env, ob=False)
+        env = wrappers.TransposeFrame(env)
+        env = wrappers.ScaledFloatFrame(env)
+        
+        # Apply time limit wrapper if specified
+        if hasattr(common_config, 'max_steps') and common_config.max_steps is not None:
+            env = wrappers.TimeLimitWrapper(env, common_config.max_steps)
+        
+        # Must be done last
+        env = wrappers.HardResetWrapper(env)
+        env.obs_shape = env.observation_space.shape
+        env.name = env_config.get('gym_name', common_config.env_name)
+        
+        return env
+    else:
+        raise NotImplementedError(f"Random env switching not yet implemented for benchmark: {benchmark}")
+
 
 def main():
     args = flags.make()
@@ -29,7 +85,48 @@ def main():
     # Record time for profiling purposes
     start_time = time.time()
 
-    envs = env_factory.make(config)
+    # Check if we should use RandomEnvSwitchWrapper
+    use_random_env_switch = (
+        hasattr(config.evaluation, 'use_random_env_switch') and 
+        config.evaluation.use_random_env_switch
+    )
+    
+    if use_random_env_switch:
+        # Get configuration for random env switching
+        env1_config = config.evaluation.random_env_switch.env1
+        env2_config = config.evaluation.random_env_switch.env2
+        random_percent = config.evaluation.random_env_switch.random_percent
+        
+        env1_name = env1_config.get('gym_name', 'env1')
+        env2_name = env2_config.get('gym_name', 'env2')
+        
+        print(f"Using RandomEnvSwitchWrapper with {env1_name} and {env2_name} "
+              f"(random_percent={random_percent})")
+        
+        # Create the two base environments with custom configurations
+        base_env1 = create_raw_env_from_config(env1_config, config)
+        base_env2 = create_raw_env_from_config(env2_config, config)
+        
+        # Wrap them with RandomEnvSwitchWrapper
+        wrapped_test_env = RandomEnvSwitchWrapper(base_env1, base_env2, random_percent)
+        
+        # Create normal envs for train/val
+        envs = env_factory.make(config)
+        
+        # Replace the test env with our wrapped version
+        envs["test"] = envs["train"].__class__(
+            config.coord_env, 
+            wrapped_test_env, 
+            envs["train"].weak_agent, 
+            envs["train"].strong_agent
+        )
+        # Copy over costs
+        envs["test"].strong_query_cost_per_action = envs["train"].strong_query_cost_per_action
+        envs["test"].switch_agent_cost_per_action = envs["train"].switch_agent_cost_per_action
+        envs["test"].reset()
+    else:
+        envs = env_factory.make(config)
+    
     policy = policy_factory.make(config, envs["train"])
     if config.general.algorithm != "always" and not config.coord_policy.baseline:
         # The following algorithms do not need to load a model, because they do not
