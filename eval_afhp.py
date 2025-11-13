@@ -41,20 +41,25 @@ def create_raw_env_from_config(env_config, base_config):
         # Get common config settings or use defaults
         common_config = base_config.environment.common
         
+        # Helper function to get attribute with fallback for None values
+        def get_config_value(obj, attr, default):
+            value = getattr(obj, attr, None)
+            return default if value is None else value
+        
         # Create environment with custom settings
         # Use getattr for config objects (not .get() which is for dicts)
         env = ProcgenEnv(
-            env_name=getattr(env_config, 'gym_name', common_config.env_name),
-            num_envs=getattr(env_config, 'num_envs', common_config.num_envs),
-            num_threads=getattr(env_config, 'num_threads', common_config.num_threads),
-            num_levels=getattr(env_config, 'num_levels', 0),
-            start_level=getattr(env_config, 'start_level', 0),
-            distribution_mode=getattr(env_config, 'distribution_mode', 'easy'),
-            rand_seed=getattr(env_config, 'seed', 0),
-            use_backgrounds=getattr(env_config, 'use_backgrounds', common_config.use_backgrounds),
-            use_monochrome_assets=getattr(env_config, 'use_monochrome_assets', common_config.use_monochrome_assets),
-            restrict_themes=getattr(env_config, 'restrict_themes', common_config.restrict_themes),
-            random_percent=getattr(env_config, 'random_percent', 100),
+            env_name=get_config_value(env_config, 'gym_name', common_config.env_name),
+            num_envs=get_config_value(env_config, 'num_envs', common_config.num_envs),
+            num_threads=get_config_value(env_config, 'num_threads', common_config.num_threads),
+            num_levels=get_config_value(env_config, 'num_levels', 0),
+            start_level=get_config_value(env_config, 'start_level', 0),
+            distribution_mode=get_config_value(env_config, 'distribution_mode', 'easy'),
+            rand_seed=get_config_value(env_config, 'seed', 0),
+            use_backgrounds=get_config_value(env_config, 'use_backgrounds', common_config.use_backgrounds),
+            use_monochrome_assets=get_config_value(env_config, 'use_monochrome_assets', common_config.use_monochrome_assets),
+            restrict_themes=get_config_value(env_config, 'restrict_themes', common_config.restrict_themes),
+            random_percent=get_config_value(env_config, 'random_percent', 100),
         )
         
         # Apply standard wrappers
@@ -71,7 +76,7 @@ def create_raw_env_from_config(env_config, base_config):
         # Must be done last
         env = wrappers.HardResetWrapper(env)
         env.obs_shape = env.observation_space.shape
-        env.name = getattr(env_config, 'gym_name', common_config.env_name)
+        env.name = get_config_value(env_config, 'gym_name', common_config.env_name)
         
         return env
     else:
@@ -98,9 +103,14 @@ def main():
         env2_config = config.evaluation.random_env_switch.env2
         random_percent = config.evaluation.random_env_switch.random_percent
         
+        # Helper function to get attribute with fallback for None values
+        def get_config_value(obj, attr, default):
+            value = getattr(obj, attr, None)
+            return default if value is None else value
+        
         # Use getattr for config objects (not .get() which is for dicts)
-        env1_name = getattr(env1_config, 'gym_name', 'env1')
-        env2_name = getattr(env2_config, 'gym_name', 'env2')
+        env1_name = get_config_value(env1_config, 'gym_name', 'env1')
+        env2_name = get_config_value(env2_config, 'gym_name', 'env2')
         
         print(f"Using RandomEnvSwitchWrapper with {env1_name} and {env2_name} "
               f"(random_percent={random_percent})")
