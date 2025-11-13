@@ -77,7 +77,7 @@ def create_env(random_percent: int = 100, start_level: int = 0, num_levels: int 
 def plot_afhp(
     name_order: Optional[List[str]],
     eval_dir: Path,
-    prefix_filter: Optional[str],
+    prefix_filter: Optional[List[str]],
     x_data_key: str,
     y_data_key: str,
     disable_horizontal_lines: bool = False,
@@ -267,7 +267,11 @@ def eval_result_plotter():
         "--prefix_filter",
         default=None,
         type=str,
-        help="Prefix filter for the evaluation files.",
+        nargs="+",
+        help=(
+            "Prefix filter(s) for the evaluation files. Can specify one or more "
+            "prefixes to combine runs from multiple groups."
+        ),
     )
 
     parser.add_argument(
@@ -328,7 +332,6 @@ def eval_result_plotter():
     args = parser.parse_args()
 
     eval_dir = Path(args.eval_dir)
-    prefix_filter = args.prefix_filter
     x_data_key = args.x_data_key
     y_data_key = args.y_data_key
 
@@ -339,6 +342,11 @@ def eval_result_plotter():
         print(f"Using specified order: {name_order}")
     else:
         print("Using all available method names")
+
+    # Handle prefix_filter (argparse provides a list if nargs is used)
+    prefix_filter = args.prefix_filter
+    if prefix_filter:
+        print(f"Using prefix filter(s): {prefix_filter}")
 
     plot_afhp(
         name_order,
@@ -565,7 +573,7 @@ def parse_timestamp_from_folder(folder_name: str) -> Optional[datetime]:
 
 def extract_results(
     eval_dir: Path,
-    prefix_filter: Optional[str],
+    prefix_filter: Optional[List[str]],
     ablation_key: Optional[List[str]] = None,
     min_timestamp: Optional[str] = None,
 ) -> dict[str, Path]:
@@ -574,7 +582,9 @@ def extract_results(
     
     Args:
         eval_dir: Directory containing evaluation results
-        prefix_filter: Only include runs with this prefix in the name
+        prefix_filter: List of prefixes to filter runs. Only include runs with any of these
+                      prefixes in the name. Multiple prefixes will combine results from all
+                      matching runs. If None, include all runs.
         ablation_key: Config key(s) to differentiate multiple runs
         min_timestamp: Minimum timestamp in format YYYYMMDD_HHMMSS or YYYY-MM-DD_HH-MM-SS.
                       Only include runs with timestamps >= this value.
@@ -594,7 +604,15 @@ def extract_results(
     for child in eval_dir.iterdir():
         # Every child of the eval_dir is a different "grouped run".
         # We want to only select the runs that support the prefix_filter.
-        if child.is_dir() and prefix_filter is not None and prefix_filter in child.name:
+        # If multiple prefixes are provided, include runs matching any of them.
+        should_include = False
+        if child.is_dir():
+            if prefix_filter is None:
+                should_include = True
+            else:
+                should_include = any(prefix in child.name for prefix in prefix_filter)
+        
+        if should_include:
             for grandchild in child.iterdir():
                 # Every grandchild is a different method.
                 method_name = grandchild.name
