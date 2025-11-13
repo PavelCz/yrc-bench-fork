@@ -331,7 +331,7 @@ def interactive_histogram_plotter():
     
     # Step 1: Extract all runs
     print("Extracting available runs...")
-    results = extract_results(eval_dir, args.prefix_filter)
+    results = extract_results(eval_dir, [args.prefix_filter])
     
     if not results:
         print("No runs found!")
