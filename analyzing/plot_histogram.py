@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from analyzing.utils import extract_results
 
 
-def plot_single_run(run_names: list, results: dict, key: str, bins: int):
+def plot_single_run(run_names: list, results: dict, key: str, bins: int, success_only: bool = False):
     """Plot histogram for a single selected run and checkpoint."""
     # Step 2: Display runs and let user select
     print("\nAvailable runs:")
@@ -71,17 +71,19 @@ def plot_single_run(run_names: list, results: dict, key: str, bins: int):
     selected_element = eval_data["meta"][checkpoint_idx]
     
     try:
-        values = get_episode_level_data(selected_element, key)
+        values = get_episode_level_data(selected_element, key, success_only)
     except ValueError as e:
         print(f"Error: {e}")
         return
     
     if len(values) == 0:
-        print(f"No data available for key '{key}' at checkpoint {checkpoint_idx}")
+        filter_msg = " (success only)" if success_only else ""
+        print(f"No data available for key '{key}' at checkpoint {checkpoint_idx}{filter_msg}")
         return
     
     # Step 7: Plot histogram
-    print(f"\nPlotting histogram for '{key}' at checkpoint {checkpoint_idx}")
+    filter_msg = " (success only)" if success_only else ""
+    print(f"\nPlotting histogram for '{key}' at checkpoint {checkpoint_idx}{filter_msg}")
     print(f"  OOD prediction percentage: {ood_percentages[checkpoint_idx]:.2f}%")
     print(f"  Number of episodes: {len(values)}")
     print(f"  Mean: {np.mean(values):.2f}")
@@ -97,8 +99,9 @@ def plot_single_run(run_names: list, results: dict, key: str, bins: int):
     
     plt.xlabel(key.replace('_', ' ').title())
     plt.ylabel('Frequency')
+    title_suffix = " (Success Only)" if success_only else ""
     plt.title(
-        f'{key.replace("_", " ").title()} Distribution\n'
+        f'{key.replace("_", " ").title()} Distribution{title_suffix}\n'
         f'Run: {selected_run}, Checkpoint: {checkpoint_idx}, '
         f'OOD%: {ood_percentages[checkpoint_idx]:.1f}%'
     )
@@ -107,10 +110,11 @@ def plot_single_run(run_names: list, results: dict, key: str, bins: int):
     plt.show()
 
 
-def plot_compare_runs(run_names: list, results: dict, key: str, bins: int):
+def plot_compare_runs(run_names: list, results: dict, key: str, bins: int, success_only: bool = False):
     """Plot histograms for selected checkpoints from multiple runs."""
     print("\n=== Multi-Run Comparison Mode ===")
-    print("You will select a checkpoint for each run to compare.\n")
+    filter_msg = " (success only)" if success_only else ""
+    print(f"You will select a checkpoint for each run to compare{filter_msg}.\n")
     
     # Collect data for each run
     all_data = []
@@ -155,13 +159,14 @@ def plot_compare_runs(run_names: list, results: dict, key: str, bins: int):
         selected_element = eval_data["meta"][checkpoint_idx]
         
         try:
-            values = get_episode_level_data(selected_element, key)
+            values = get_episode_level_data(selected_element, key, success_only)
         except ValueError as e:
             print(f"Error: {e}")
             continue
         
         if len(values) == 0:
-            print(f"No data available for key '{key}' at checkpoint {checkpoint_idx}")
+            filter_msg = " (success only)" if success_only else ""
+            print(f"No data available for key '{key}' at checkpoint {checkpoint_idx}{filter_msg}")
             continue
         
         # Store data and label
@@ -198,46 +203,67 @@ def plot_compare_runs(run_names: list, results: dict, key: str, bins: int):
     
     plt.xlabel(key.replace('_', ' ').title())
     plt.ylabel('Frequency')
-    plt.title(f'{key.replace("_", " ").title()} Distribution Comparison')
+    title_suffix = " (Success Only)" if success_only else ""
+    plt.title(f'{key.replace("_", " ").title()} Distribution Comparison{title_suffix}')
     plt.legend(loc='best')
     plt.grid(axis='y', alpha=0.3)
     plt.tight_layout()
     plt.show()
 
 
-def get_episode_level_data(element: dict, key: str) -> np.ndarray:
+def get_episode_level_data(element: dict, key: str, success_only: bool = False) -> np.ndarray:
     """
     Extract episode-level data for a given key from an evaluation checkpoint.
     
     Args:
         element: A single element from data["meta"] representing one checkpoint
         key: The metric key to extract
+        success_only: If True, only return values for episodes with reward > 0
         
     Returns:
-        Array of values, one per episode
+        Array of values, one per episode (filtered if success_only=True)
     """
     test_summary = element["summary"]["test"]
     
+    # Get the requested data
     if key == "episode_length":
-        return np.array(test_summary["episode_lengths"])
+        values = np.array(test_summary["episode_lengths"])
     elif key == "raw_return":
-        return np.array(test_summary["raw_returns"])
+        values = np.array(test_summary["raw_returns"])
     elif key == "level_ood_gt":
-        return np.array(test_summary["level_ood_gt"])
+        values = np.array(test_summary["level_ood_gt"])
     elif key == "level_ood_pred":
-        return np.array(test_summary["level_ood_pred"])
+        values = np.array(test_summary["level_ood_pred"])
     elif key == "first_ood_timestep":
         # Filter out None values for timesteps where OOD was never predicted
         timesteps = test_summary["first_ood_timestep"]
         valid_timesteps = [t for t in timesteps if t is not None]
-        return np.array(valid_timesteps)
+        values = np.array(valid_timesteps)
     elif key == "ood_prediction_correctness":
         # Whether the OOD prediction matches ground truth (per episode)
         preds = np.array(test_summary["level_ood_pred"])
         gts = np.array(test_summary["level_ood_gt"])
-        return (preds == gts).astype(int)
+        values = (preds == gts).astype(int)
     else:
         raise ValueError(f"Unknown key: {key}")
+    
+    # Filter by success if requested
+    if success_only and key != "first_ood_timestep":
+        # For first_ood_timestep, we already filtered out None values, 
+        # and we can't easily map back to returns
+        raw_returns = np.array(test_summary["raw_returns"])
+        success_mask = raw_returns > 0
+        values = values[success_mask]
+    elif success_only and key == "first_ood_timestep":
+        # For first_ood_timestep, we need to handle differently
+        # Get returns and first_ood_timestep in parallel
+        raw_returns = np.array(test_summary["raw_returns"])
+        timesteps = test_summary["first_ood_timestep"]
+        # Only keep timesteps where return > 0 and timestep is not None
+        valid_timesteps = [t for t, r in zip(timesteps, raw_returns) if t is not None and r > 0]
+        values = np.array(valid_timesteps)
+    
+    return values
 
 
 def interactive_histogram_plotter():
@@ -277,6 +303,11 @@ def interactive_histogram_plotter():
         action="store_true",
         help="Compare multiple runs by plotting histograms for selected checkpoints from each run",
     )
+    parser.add_argument(
+        "--success_only",
+        action="store_true",
+        help="Only include episodes where the reward was greater than 0",
+    )
     
     args = parser.parse_args()
     
@@ -294,10 +325,10 @@ def interactive_histogram_plotter():
     
     if args.compare_runs:
         # Multi-run comparison mode
-        plot_compare_runs(run_names, results, args.key, args.bins)
+        plot_compare_runs(run_names, results, args.key, args.bins, args.success_only)
     else:
         # Single run mode (original behavior)
-        plot_single_run(run_names, results, args.key, args.bins)
+        plot_single_run(run_names, results, args.key, args.bins, args.success_only)
 
 
 if __name__ == "__main__":
