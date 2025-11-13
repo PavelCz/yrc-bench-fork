@@ -192,11 +192,27 @@ def plot_compare_runs(run_names: list, results: dict, key: str, bins: int, succe
     print(f"\nPlotting {len(all_data)} histograms...")
     plt.figure(figsize=(12, 7))
     
-    colors = plt.cm.tab10(np.linspace(0, 1, len(all_data)))
+    # Use a combination of distinct colormaps for better color distinction
+    if len(all_data) <= 10:
+        # Use tab10 for up to 10 runs - very distinct colors
+        colors = plt.cm.tab10(np.arange(len(all_data)) / 10)
+    elif len(all_data) <= 20:
+        # Use tab20 for up to 20 runs
+        colors = plt.cm.tab20(np.arange(len(all_data)) / 20)
+    else:
+        # For more than 20, combine tab20b and tab20c
+        colors = []
+        for i in range(len(all_data)):
+            if i < 20:
+                colors.append(plt.cm.tab20(i / 20))
+            elif i < 40:
+                colors.append(plt.cm.tab20b((i - 20) / 20))
+            else:
+                colors.append(plt.cm.tab20c((i - 40) / 20))
     
     for idx, (values, label) in enumerate(zip(all_data, all_labels)):
         plt.hist(values, bins=bin_edges, alpha=0.5, label=label, 
-                edgecolor='black', linewidth=0.5, color=colors[idx])
+                edgecolor='black', linewidth=0.8, color=colors[idx])
     
     # Set x-axis ticks to show bin edges
     plt.xticks(bin_edges, rotation=45, ha='right')
