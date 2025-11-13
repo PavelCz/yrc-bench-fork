@@ -11,6 +11,9 @@ coord_policy:
     level_based_random:
         cls: LevelBasedRandomPolicy
         baseline: False
+    heuristic:
+        cls: ExponentialHeuristicPolicy
+        baseline: False
     ppo:
         cls: PPOPolicy
     ood:
@@ -140,6 +143,8 @@ algorithm:
     timestep_random:
         cls: RandomAlgorithm
     level_based_random:
+        cls: RandomAlgorithm
+    heuristic:
         cls: RandomAlgorithm
     threshold:
         cls: ThresholdAlgorithm

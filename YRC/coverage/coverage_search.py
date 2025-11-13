@@ -13,6 +13,7 @@ from YRC.policies.ood import OODPolicy
 from YRC.policies.lightning_ae import LightningAEPolicy
 from YRC.policies.base import TimestepRandomPolicy, LevelBasedRandomPolicy
 from YRC.policies.threshold import ThresholdPolicy
+from YRC.policies.heuristic import ExponentialHeuristicPolicy
 from YRC.core import Evaluator
 import numpy as np
 
@@ -178,8 +179,10 @@ def update_policy_params(policy, threshold):
         params["threshold"] = threshold
 
         policy.update_params(params)
-    elif isinstance(policy, TimestepRandomPolicy) or isinstance(
-        policy, LevelBasedRandomPolicy
+    elif (
+        isinstance(policy, TimestepRandomPolicy)
+        or isinstance(policy, LevelBasedRandomPolicy)
+        or isinstance(policy, ExponentialHeuristicPolicy)
     ):
         if threshold == float("inf"):
             # An infinite threshold means that the policy will never ask for help.

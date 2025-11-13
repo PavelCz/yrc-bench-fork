@@ -195,6 +195,9 @@ class Evaluator:
         for i in range(env.num_envs):
             # Maker sure there are no stale scores in the rolling average buffer.
             policy.reset_rolling_average_buffer(i)
+            # Reset episode counter for heuristic policies
+            if hasattr(policy, 'reset_episode'):
+                policy.reset_episode()
 
         # This tracks the very first done and is only used to determine whether to keep
         # collecting observations that are later used to generate the video.
@@ -421,6 +424,9 @@ class Evaluator:
                     # In case we are using a rolling average for the score, we need to
                     # reset the buffer for the next episode.
                     policy.reset_rolling_average_buffer(i)
+                    # Reset episode counter for heuristic policies
+                    if hasattr(policy, 'reset_episode'):
+                        policy.reset_episode()
 
                 # We update this after we (potentially) save this to log. This is
                 # because gym3 automatically resets the environment at the end of an
