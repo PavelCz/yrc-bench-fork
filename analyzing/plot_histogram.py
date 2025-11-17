@@ -15,6 +15,11 @@ from typing import Union
 from analyzing.utils import extract_results, get_episode_level_metric
 
 
+import matplotlib
+
+matplotlib.use("TkAgg")
+
+
 def plot_single_run(
     run_names: list, results: dict, key: str, bins: int, success_only: bool = False
 ):

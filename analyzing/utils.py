@@ -15,6 +15,10 @@ import json
 import re
 from datetime import datetime
 
+import matplotlib
+
+matplotlib.use("TkAgg")
+
 
 # Add YRC to path for imports
 # sys.path.append(os.path.join(os.path.dirname(__file__), "."))
@@ -67,7 +71,7 @@ def create_env(random_percent: int = 100, start_level: int = 0, num_levels: int 
 
 
 def get_episode_level_metric(
-    test_summary: dict, key: str, success_only: bool = False
+    test_summary: dict, key: str, success_only: bool = False, bins: Optional[int] = None
 ) -> np.ndarray:
     """
     Extract episode-level data for a given key from a test summary.
@@ -83,7 +87,11 @@ def get_episode_level_metric(
     if success_only:
         raw_returns = np.array(test_summary["raw_returns"])
         success_mask = raw_returns > 0
-        test_summary = {k: v[success_mask] for k, v in test_summary.items()}
+        for key in test_summary.keys():
+            if key == "raw_returns":
+                continue
+            if isinstance(test_summary[key], np.ndarray):
+                test_summary[key] = test_summary[key][success_mask]
 
     # Get the requested data
     if key == "episode_length" or key == "episode_lengths":
@@ -104,6 +112,27 @@ def get_episode_level_metric(
         preds = np.array(test_summary["level_ood_pred"])
         gts = np.array(test_summary["level_ood_gt"])
         values = (preds == gts).astype(int)
+    elif key == "survival_rate":
+        if bins is None:
+            raise ValueError("bins must be provided for survival_rate")
+        first_ood_timesteps = test_summary["first_ood_timestep"]
+        ep_lengths = test_summary["episode_lengths"]
+        # Bin based on first_ood_timesteps
+        min_ts = 0
+        max_ts = max(first_ood_timesteps)
+        bin_edges = np.linspace(min_ts, max_ts, bins + 1)
+
+        values = []
+        # For each bin, calculate how many episodes had their first OOD timestep in that
+        # bin, out of all the episodes that went up to that bin or longer.
+        for i in range(len(bin_edges) - 1):
+            bin_start = bin_edges[i]
+            bin_end = bin_edges[i + 1]
+            num_bin_episodes = len([ep_length for ep_length in ep_lengths if ep_length >= bin_start])
+            num_first_ood_episodes = len([first_ood_ts for first_ood_ts in first_ood_timesteps if first_ood_ts >= bin_start and first_ood_ts < bin_end])
+            bin_survival_rate = num_first_ood_episodes / num_bin_episodes
+            values.append(bin_survival_rate)
+        values = np.array(values)
     else:
         raise ValueError(f"Unknown key: {key}")
 
