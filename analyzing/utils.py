@@ -93,9 +93,9 @@ def plot_afhp(
         name_order: List of method names to plot in order. If None, uses all available
         names.
         ablation_key: Config key(s) to differentiate multiple runs from the same method.
-        separate_figures: If True, plot each curve in a separate figure in a grid 
+        separate_figures: If True, plot each curve in a separate figure in a grid
         layout.
-        min_timestamp: Minimum timestamp to filter runs. Only runs with timestamps >= 
+        min_timestamp: Minimum timestamp to filter runs. Only runs with timestamps >=
         this value will be included.
     """
     results = extract_results(eval_dir, prefix_filter, ablation_key, min_timestamp)
@@ -457,22 +457,22 @@ def filter_duplicate_x_values(
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Filter out duplicate x-values, keeping only the point with the lowest order value.
-    
+
     Args:
         x: Array of x-values
         y: Array of y-values
         order: Array of order values that determine which point to keep
-        
+
     Returns:
         Filtered x and y arrays with duplicate x-values removed
     """
     if len(x) == 0:
         return x, y
-    
+
     # Find unique x-values and group indices by x-value
     unique_x = np.unique(x)
     keep_indices = []
-    
+
     for ux in unique_x:
         # Find all indices with this x-value
         indices = np.where(x == ux)[0]
@@ -484,10 +484,10 @@ def filter_duplicate_x_values(
             orders_at_x = order[indices]
             min_order_idx = indices[np.argmin(orders_at_x)]
             keep_indices.append(min_order_idx)
-    
+
     # Sort indices to maintain original order
     keep_indices = np.sort(keep_indices)
-    
+
     return x[keep_indices], y[keep_indices]
 
 
@@ -497,13 +497,13 @@ def extract_x_and_y_values(
     # x = data["afhps"]
     x = extract_from_data(data, x_data_key)
     y = extract_from_data(data, y_data_key)
-    
+
     # Extract order data for filtering duplicates
     order = data["order"] if "order" in data else np.arange(len(x))
-    
+
     # Filter out duplicate x-values, keeping only the point with the lowest order
     x, y = filter_duplicate_x_values(x, y, order)
-    
+
     return x, y
 
 
@@ -531,43 +531,43 @@ def get_nested_config_value(config: dict, key_path: str):
 def parse_timestamp_from_folder(folder_name: str) -> Optional[datetime]:
     """
     Parse timestamp from folder name.
-    
+
     Expects timestamps in various formats commonly used in folder names:
     - YYYYMMDD_HHMMSS
     - YYYY-MM-DD_HH-MM-SS
     - YYYYMMDDHHMMSS
-    
+
     Args:
         folder_name: Name of the folder that may contain a timestamp
-        
+
     Returns:
         datetime object if timestamp found, None otherwise
     """
     # Try different timestamp patterns
     patterns = [
-        r'(\d{8}_\d{6})',  # YYYYMMDD_HHMMSS
-        r'(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})',  # YYYY-MM-DD_HH-MM-SS
-        r'(\d{14})',  # YYYYMMDDHHMMSS
+        r"(\d{8}_\d{6})",  # YYYYMMDD_HHMMSS
+        r"(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})",  # YYYY-MM-DD_HH-MM-SS
+        r"(\d{14})",  # YYYYMMDDHHMMSS
     ]
-    
+
     for pattern in patterns:
         match = re.search(pattern, folder_name)
         if match:
             timestamp_str = match.group(1)
             try:
                 # Try parsing with different formats
-                if '_' in timestamp_str and '-' in timestamp_str:
+                if "_" in timestamp_str and "-" in timestamp_str:
                     # YYYY-MM-DD_HH-MM-SS format
-                    return datetime.strptime(timestamp_str, '%Y-%m-%d_%H-%M-%S')
-                elif '_' in timestamp_str:
+                    return datetime.strptime(timestamp_str, "%Y-%m-%d_%H-%M-%S")
+                elif "_" in timestamp_str:
                     # YYYYMMDD_HHMMSS format
-                    return datetime.strptime(timestamp_str, '%Y%m%d_%H%M%S')
+                    return datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S")
                 else:
                     # YYYYMMDDHHMMSS format
-                    return datetime.strptime(timestamp_str, '%Y%m%d%H%M%S')
+                    return datetime.strptime(timestamp_str, "%Y%m%d%H%M%S")
             except ValueError:
                 continue
-    
+
     return None
 
 
@@ -579,7 +579,7 @@ def extract_results(
 ) -> dict[str, Path]:
     """
     Extract evaluation results from directory structure.
-    
+
     Args:
         eval_dir: Directory containing evaluation results
         prefix_filter: List of prefixes to filter runs. Only include runs with any of these
@@ -588,18 +588,20 @@ def extract_results(
         ablation_key: Config key(s) to differentiate multiple runs
         min_timestamp: Minimum timestamp in format YYYYMMDD_HHMMSS or YYYY-MM-DD_HH-MM-SS.
                       Only include runs with timestamps >= this value.
-    
+
     Returns:
         Dictionary mapping method names to result file paths
     """
     evals = {}
-    
+
     # Parse min_timestamp if provided
     min_dt = None
     if min_timestamp is not None:
         min_dt = parse_timestamp_from_folder(min_timestamp)
         if min_dt is None:
-            print(f"Warning: Could not parse min_timestamp '{min_timestamp}', ignoring filter")
+            print(
+                f"Warning: Could not parse min_timestamp '{min_timestamp}', ignoring filter"
+            )
 
     for child in eval_dir.iterdir():
         # Every child of the eval_dir is a different "grouped run".
@@ -611,7 +613,7 @@ def extract_results(
                 should_include = True
             else:
                 should_include = any(prefix in child.name for prefix in prefix_filter)
-        
+
         if should_include:
             for grandchild in child.iterdir():
                 # Every grandchild is a different method.
@@ -620,13 +622,13 @@ def extract_results(
                     # The runs_dirs are different runs with different
                     # timestamps. Potentially, they might have different
                     # hyperparameters.
-                    
+
                     # Filter by timestamp if min_timestamp is provided
                     if min_dt is not None:
                         run_dt = parse_timestamp_from_folder(run_dir.name)
                         if run_dt is None or run_dt < min_dt:
                             continue  # Skip this run
-                    
+
                     for run_file in run_dir.iterdir():
                         if run_file.is_file() and run_file.suffix == ".npz":
                             # If ablation_key is provided, differentiate runs by config value

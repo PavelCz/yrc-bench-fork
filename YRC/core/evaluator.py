@@ -196,7 +196,7 @@ class Evaluator:
             # Maker sure there are no stale scores in the rolling average buffer.
             policy.reset_rolling_average_buffer(i)
             # Reset episode counter for heuristic policies
-            if hasattr(policy, 'reset_episode'):
+            if hasattr(policy, "reset_episode"):
                 policy.reset_episode()
 
         # This tracks the very first done and is only used to determine whether to keep
@@ -255,10 +255,13 @@ class Evaluator:
 
                 episode_log["cumulative_reward"][i] += reward[i]
                 episode_log["episode_length"][i] += 1
-                
+
                 # Track the first timestep when OOD was predicted (after incrementing episode_length)
                 # Use original_action to check the actual OOD prediction, not the potentially modified action
-                if original_action[i] == self.LOGGED_ACTION and first_ood_timestep[i] is None:
+                if (
+                    original_action[i] == self.LOGGED_ACTION
+                    and first_ood_timestep[i] is None
+                ):
                     first_ood_timestep[i] = episode_log["episode_length"][i]
                 episode_log[f"action_{self.LOGGED_ACTION}"][i] += (
                     action[i] == self.LOGGED_ACTION
@@ -327,7 +330,7 @@ class Evaluator:
                             episode_log[f"action_{self.LOGGED_ACTION}"][i]
                         )
                         log["level_ood_gt"].append(current_level_ood_gt[i])
-                        
+
                         # Log episode outcome information
                         log["invisible_coin_collected"].append(
                             current_invisible_coin_collected[i]
@@ -425,7 +428,7 @@ class Evaluator:
                     # reset the buffer for the next episode.
                     policy.reset_rolling_average_buffer(i)
                     # Reset episode counter for heuristic policies
-                    if hasattr(policy, 'reset_episode'):
+                    if hasattr(policy, "reset_episode"):
                         policy.reset_episode()
 
                 # We update this after we (potentially) save this to log. This is
