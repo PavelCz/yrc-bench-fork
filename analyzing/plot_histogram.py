@@ -240,6 +240,11 @@ def get_episode_level_data(element: dict, key: str, success_only: bool = False) 
         Array of values, one per episode (filtered if success_only=True)
     """
     test_summary = element["summary"]["test"]
+
+    if success_only:
+        raw_returns = np.array(test_summary["raw_returns"])
+        success_mask = raw_returns > 0
+        test_summary = {k: v[success_mask] for k, v in test_summary.items()}
     
     # Get the requested data
     if key == "episode_length":
@@ -262,22 +267,6 @@ def get_episode_level_data(element: dict, key: str, success_only: bool = False) 
         values = (preds == gts).astype(int)
     else:
         raise ValueError(f"Unknown key: {key}")
-    
-    # Filter by success if requested
-    if success_only and key != "first_ood_timestep":
-        # For first_ood_timestep, we already filtered out None values, 
-        # and we can't easily map back to returns
-        raw_returns = np.array(test_summary["raw_returns"])
-        success_mask = raw_returns > 0
-        values = values[success_mask]
-    elif success_only and key == "first_ood_timestep":
-        # For first_ood_timestep, we need to handle differently
-        # Get returns and first_ood_timestep in parallel
-        raw_returns = np.array(test_summary["raw_returns"])
-        timesteps = test_summary["first_ood_timestep"]
-        # Only keep timesteps where return > 0 and timestep is not None
-        valid_timesteps = [t for t, r in zip(timesteps, raw_returns) if t is not None and r > 0]
-        values = np.array(valid_timesteps)
     
     return values
 
