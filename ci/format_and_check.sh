@@ -18,6 +18,7 @@ SRC_FILES=(
     "analyzing/plot_policy_training_curves.py"
     "analyzing/utils.py"
     "analyzing/plot_ood.py"
+    "analyzing/plot_histogram.py"
     "YRC/core/configs/utils.py"
     "flags.py"
 )
@@ -27,8 +28,8 @@ EXCLUDED_FILES=("")
 set -e  # quit immediately on error
 
 # Run ruff as formatter (black-ish and isort-ish).
-ruff format "${SRC_FILES[@]}" --exclude "${EXCLUDED_FILES[@]}"
+ruff format "${SRC_FILES[@]}" #--exclude "${EXCLUDED_FILES[@]}"
 # Run ruff as linter (flake8-ish).
-ruff check "${SRC_FILES[@]}" --exclude "${EXCLUDED_FILES[@]}"
+ruff check "${SRC_FILES[@]}" #--exclude "${EXCLUDED_FILES[@]}"
 # Run pytype with suppressed debug logging
-pytype "${SRC_FILES[@]}" --exclude "${EXCLUDED_FILES[@]}"
+pytype "${SRC_FILES[@]}" #--exclude "${EXCLUDED_FILES[@]}"
