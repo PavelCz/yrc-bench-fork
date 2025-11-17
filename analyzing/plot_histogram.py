@@ -10,6 +10,7 @@ import argparse
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
+from typing import Union
 
 from analyzing.utils import extract_results
 
@@ -215,7 +216,7 @@ def get_episode_level_data(
 
 def select_and_load_checkpoint_data(
     run_name: str, data_path: Path, key: str, success_only: bool
-) -> tuple[np.ndarray, int, float] | None:
+) -> Union[tuple[np.ndarray, int, float], None]:
     """
     Load data, display checkpoints, get user selection, and extract data.
 
