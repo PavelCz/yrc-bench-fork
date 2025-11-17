@@ -168,24 +168,6 @@ def plot_compare_runs(
     plt.show()
 
 
-def get_episode_level_data(
-    element: dict, key: str, success_only: bool = False
-) -> np.ndarray:
-    """
-    Extract episode-level data for a given key from an evaluation checkpoint.
-
-    Args:
-        element: A single element from data["meta"] representing one checkpoint
-        key: The metric key to extract
-        success_only: If True, only return values for episodes with reward > 0
-
-    Returns:
-        Array of values, one per episode (filtered if success_only=True)
-    """
-    test_summary = element["summary"]["test"]
-    return get_episode_level_metric(test_summary, key, success_only)
-
-
 def select_and_load_checkpoint_data(
     run_name: str, data_path: Path, key: str, success_only: bool
 ) -> Union[tuple[np.ndarray, int, float], None]:
@@ -241,9 +223,10 @@ def select_and_load_checkpoint_data(
 
     # Extract data for the selected checkpoint
     selected_element = eval_data["meta"][checkpoint_idx]
+    test_summary = selected_element["summary"]["test"]
 
     try:
-        values = get_episode_level_data(selected_element, key, success_only)
+        values = get_episode_level_metric(test_summary, key, success_only)
     except ValueError as e:
         print(f"Error: {e}")
         return None
