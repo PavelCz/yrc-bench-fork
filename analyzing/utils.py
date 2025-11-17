@@ -362,6 +362,50 @@ def eval_result_plotter():
     )
 
 
+def get_episode_level_metric(
+    test_summary: dict, key: str, success_only: bool = False
+) -> np.ndarray:
+    """
+    Extract episode-level data for a given key from a test summary.
+
+    Args:
+        test_summary: The test summary dict from element["summary"]["test"]
+        key: The metric key to extract
+        success_only: If True, only return values for episodes with reward > 0
+
+    Returns:
+        Array of values, one per episode (filtered if success_only=True)
+    """
+    if success_only:
+        raw_returns = np.array(test_summary["raw_returns"])
+        success_mask = raw_returns > 0
+        test_summary = {k: v[success_mask] for k, v in test_summary.items()}
+
+    # Get the requested data
+    if key == "episode_length" or key == "episode_lengths":
+        values = np.array(test_summary["episode_lengths"])
+    elif key == "raw_return" or key == "raw_returns":
+        values = np.array(test_summary["raw_returns"])
+    elif key == "level_ood_gt":
+        values = np.array(test_summary["level_ood_gt"])
+    elif key == "level_ood_pred":
+        values = np.array(test_summary["level_ood_pred"])
+    elif key == "first_ood_timestep":
+        # Filter out None values for timesteps where OOD was never predicted
+        timesteps = test_summary["first_ood_timestep"]
+        valid_timesteps = [t for t in timesteps if t is not None]
+        values = np.array(valid_timesteps)
+    elif key == "ood_prediction_correctness":
+        # Whether the OOD prediction matches ground truth (per episode)
+        preds = np.array(test_summary["level_ood_pred"])
+        gts = np.array(test_summary["level_ood_gt"])
+        values = (preds == gts).astype(int)
+    else:
+        raise ValueError(f"Unknown key: {key}")
+
+    return values
+
+
 def extract_from_data(data, key: str) -> np.ndarray:
     # Canonicalize these values by turning them into integers.
     level_ood_gt = [
@@ -418,20 +462,19 @@ def extract_from_data(data, key: str) -> np.ndarray:
     elif key == "episode_length_mean":
         means = []
         for element in data["meta"]:
-            episode_lengths = element["summary"]["test"]["episode_lengths"]
+            test_summary = element["summary"]["test"]
+            episode_lengths = get_episode_level_metric(test_summary, "episode_lengths")
             means.append(np.mean(episode_lengths))
         return np.array(means)
     elif key == "episode_length_success_mean":
         success_means = []
         for element in data["meta"]:
-            episode_lengths = element["summary"]["test"]["episode_lengths"]
-            returns = element["summary"]["test"]["raw_returns"]
+            test_summary = element["summary"]["test"]
+            success_lengths = get_episode_level_metric(
+                test_summary, "episode_lengths", success_only=True
+            )
 
-            success_lengths = [
-                length for length, ret in zip(episode_lengths, returns) if ret > 0
-            ]
-
-            if success_lengths:
+            if len(success_lengths) > 0:
                 success_means.append(np.mean(success_lengths))
             else:
                 success_means.append(np.nan)
@@ -440,10 +483,11 @@ def extract_from_data(data, key: str) -> np.ndarray:
     elif key == "first_ood_timestep_mean":
         means = []
         for element in data["meta"]:
-            first_ood_timesteps = element["summary"]["test"]["first_ood_timestep"]
-            # Filter out None values (episodes where OOD was never predicted)
-            valid_timesteps = [t for t in first_ood_timesteps if t is not None]
-            if valid_timesteps:
+            test_summary = element["summary"]["test"]
+            valid_timesteps = get_episode_level_metric(
+                test_summary, "first_ood_timestep"
+            )
+            if len(valid_timesteps) > 0:
                 means.append(np.mean(valid_timesteps))
             else:
                 means.append(np.nan)

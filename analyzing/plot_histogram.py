@@ -12,7 +12,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Union
 
-from analyzing.utils import extract_results
+from analyzing.utils import extract_results, get_episode_level_metric
 
 
 def plot_single_run(
@@ -183,35 +183,7 @@ def get_episode_level_data(
         Array of values, one per episode (filtered if success_only=True)
     """
     test_summary = element["summary"]["test"]
-
-    if success_only:
-        raw_returns = np.array(test_summary["raw_returns"])
-        success_mask = raw_returns > 0
-        test_summary = {k: v[success_mask] for k, v in test_summary.items()}
-
-    # Get the requested data
-    if key == "episode_length":
-        values = np.array(test_summary["episode_lengths"])
-    elif key == "raw_return":
-        values = np.array(test_summary["raw_returns"])
-    elif key == "level_ood_gt":
-        values = np.array(test_summary["level_ood_gt"])
-    elif key == "level_ood_pred":
-        values = np.array(test_summary["level_ood_pred"])
-    elif key == "first_ood_timestep":
-        # Filter out None values for timesteps where OOD was never predicted
-        timesteps = test_summary["first_ood_timestep"]
-        valid_timesteps = [t for t in timesteps if t is not None]
-        values = np.array(valid_timesteps)
-    elif key == "ood_prediction_correctness":
-        # Whether the OOD prediction matches ground truth (per episode)
-        preds = np.array(test_summary["level_ood_pred"])
-        gts = np.array(test_summary["level_ood_gt"])
-        values = (preds == gts).astype(int)
-    else:
-        raise ValueError(f"Unknown key: {key}")
-
-    return values
+    return get_episode_level_metric(test_summary, key, success_only)
 
 
 def select_and_load_checkpoint_data(
