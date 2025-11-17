@@ -35,56 +35,18 @@ def plot_single_run(run_names: list, results: dict, key: str, bins: int, success
     selected_run = run_names[run_idx]
     data_path = results[selected_run]
     
-    print(f"\nLoading data from: {data_path}")
+    # Step 3-6: Load data, select checkpoint, and extract values
+    result = select_and_load_checkpoint_data(selected_run, data_path, key, success_only)
     
-    # Step 3: Load the data
-    eval_data = np.load(data_path, allow_pickle=True)
-    
-    # Step 4: Display ood_pred_percentage for each checkpoint
-    print("\nCheckpoints with OOD prediction percentages:")
-    ood_percentages = []
-    
-    for idx, element in enumerate(eval_data["meta"]):
-        level_ood_pred = element["summary"]["test"]["level_ood_pred"]
-        percentage = sum(level_ood_pred) / len(level_ood_pred) * 100
-        ood_percentages.append(percentage)
-        
-        # Also show AFHP and performance if available
-        afhp = eval_data["afhps"][idx] if idx < len(eval_data["afhps"]) else "N/A"
-        perf = eval_data["performances"][idx] if idx < len(eval_data["performances"]) else "N/A"
-        
-        print(f"  [{idx}] OOD%: {percentage:.2f}%, AFHP: {afhp}, Performance: {perf}")
-    
-    # Step 5: Let user select a checkpoint
-    while True:
-        try:
-            selection = input(f"\nSelect a checkpoint (0-{len(ood_percentages)-1}): ")
-            checkpoint_idx = int(selection)
-            if 0 <= checkpoint_idx < len(ood_percentages):
-                break
-            else:
-                print(f"Please enter a number between 0 and {len(ood_percentages)-1}")
-        except ValueError:
-            print("Please enter a valid number")
-    
-    # Step 6: Extract data for the selected checkpoint and key
-    selected_element = eval_data["meta"][checkpoint_idx]
-    
-    try:
-        values = get_episode_level_data(selected_element, key, success_only)
-    except ValueError as e:
-        print(f"Error: {e}")
+    if result is None:
         return
     
-    if len(values) == 0:
-        filter_msg = " (success only)" if success_only else ""
-        print(f"No data available for key '{key}' at checkpoint {checkpoint_idx}{filter_msg}")
-        return
+    values, checkpoint_idx, ood_percentage = result
     
     # Step 7: Plot histogram
     filter_msg = " (success only)" if success_only else ""
     print(f"\nPlotting histogram for '{key}' at checkpoint {checkpoint_idx}{filter_msg}")
-    print(f"  OOD prediction percentage: {ood_percentages[checkpoint_idx]:.2f}%")
+    print(f"  OOD prediction percentage: {ood_percentage:.2f}%")
     print(f"  Number of episodes: {len(values)}")
     print(f"  Mean: {np.mean(values):.2f}")
     print(f"  Std: {np.std(values):.2f}")
@@ -103,7 +65,7 @@ def plot_single_run(run_names: list, results: dict, key: str, bins: int, success
     plt.title(
         f'{key.replace("_", " ").title()} Distribution{title_suffix}\n'
         f'Run: {selected_run}, Checkpoint: {checkpoint_idx}, '
-        f'OOD%: {ood_percentages[checkpoint_idx]:.1f}%'
+        f'OOD%: {ood_percentage:.1f}%'
     )
     plt.grid(axis='y', alpha=0.3)
     plt.tight_layout()
@@ -123,55 +85,18 @@ def plot_compare_runs(run_names: list, results: dict, key: str, bins: int, succe
     for run_name in run_names:
         data_path = results[run_name]
         print(f"\n--- Run: {run_name} ---")
-        print(f"Loading data from: {data_path}")
         
-        # Load the data
-        eval_data = np.load(data_path, allow_pickle=True)
+        # Load data, select checkpoint, and extract values
+        result = select_and_load_checkpoint_data(run_name, data_path, key, success_only)
         
-        # Display ood_pred_percentage for each checkpoint
-        print("\nCheckpoints with OOD prediction percentages:")
-        ood_percentages = []
-        
-        for idx, element in enumerate(eval_data["meta"]):
-            level_ood_pred = element["summary"]["test"]["level_ood_pred"]
-            percentage = sum(level_ood_pred) / len(level_ood_pred) * 100
-            ood_percentages.append(percentage)
-            
-            # Also show AFHP and performance if available
-            afhp = eval_data["afhps"][idx] if idx < len(eval_data["afhps"]) else "N/A"
-            perf = eval_data["performances"][idx] if idx < len(eval_data["performances"]) else "N/A"
-            
-            print(f"  [{idx}] OOD%: {percentage:.2f}%, AFHP: {afhp}, Performance: {perf}")
-        
-        # Let user select a checkpoint
-        while True:
-            try:
-                selection = input(f"\nSelect a checkpoint for '{run_name}' (0-{len(ood_percentages)-1}): ")
-                checkpoint_idx = int(selection)
-                if 0 <= checkpoint_idx < len(ood_percentages):
-                    break
-                else:
-                    print(f"Please enter a number between 0 and {len(ood_percentages)-1}")
-            except ValueError:
-                print("Please enter a valid number")
-        
-        # Extract data for the selected checkpoint
-        selected_element = eval_data["meta"][checkpoint_idx]
-        
-        try:
-            values = get_episode_level_data(selected_element, key, success_only)
-        except ValueError as e:
-            print(f"Error: {e}")
+        if result is None:
             continue
         
-        if len(values) == 0:
-            filter_msg = " (success only)" if success_only else ""
-            print(f"No data available for key '{key}' at checkpoint {checkpoint_idx}{filter_msg}")
-            continue
+        values, checkpoint_idx, ood_percentage = result
         
         # Store data and label
         all_data.append(values)
-        label = f"{run_name} (OOD: {ood_percentages[checkpoint_idx]:.1f}%)"
+        label = f"{run_name} (OOD: {ood_percentage:.1f}%)"
         all_labels.append(label)
         
         print(f"  Selected checkpoint {checkpoint_idx}")
@@ -269,6 +194,73 @@ def get_episode_level_data(element: dict, key: str, success_only: bool = False) 
         raise ValueError(f"Unknown key: {key}")
     
     return values
+
+
+def select_and_load_checkpoint_data(
+    run_name: str, 
+    data_path: Path, 
+    key: str, 
+    success_only: bool
+) -> tuple[np.ndarray, int, float] | None:
+    """
+    Load data, display checkpoints, get user selection, and extract data.
+    
+    Args:
+        run_name: Name of the run being processed
+        data_path: Path to the evaluation data file
+        key: The metric key to extract
+        success_only: If True, only return values for episodes with reward > 0
+        
+    Returns:
+        Tuple of (values, checkpoint_idx, ood_percentage) or None if error/no data
+    """
+    print(f"\nLoading data from: {data_path}")
+    
+    # Load the evaluation data
+    eval_data = np.load(data_path, allow_pickle=True)
+    
+    # Display ood_pred_percentage for each checkpoint
+    print("\nCheckpoints with OOD prediction percentages:")
+    ood_percentages = []
+    
+    for idx, element in enumerate(eval_data["meta"]):
+        level_ood_pred = element["summary"]["test"]["level_ood_pred"]
+        percentage = sum(level_ood_pred) / len(level_ood_pred) * 100
+        ood_percentages.append(percentage)
+        
+        # Also show AFHP and performance if available
+        afhp = eval_data["afhps"][idx] if idx < len(eval_data["afhps"]) else "N/A"
+        perf = eval_data["performances"][idx] if idx < len(eval_data["performances"]) else "N/A"
+        
+        print(f"  [{idx}] OOD%: {percentage:.2f}%, AFHP: {afhp}, Performance: {perf}")
+    
+    # Let user select a checkpoint
+    while True:
+        try:
+            selection = input(f"\nSelect a checkpoint for '{run_name}' (0-{len(ood_percentages)-1}): ")
+            checkpoint_idx = int(selection)
+            if 0 <= checkpoint_idx < len(ood_percentages):
+                break
+            else:
+                print(f"Please enter a number between 0 and {len(ood_percentages)-1}")
+        except ValueError:
+            print("Please enter a valid number")
+    
+    # Extract data for the selected checkpoint
+    selected_element = eval_data["meta"][checkpoint_idx]
+    
+    try:
+        values = get_episode_level_data(selected_element, key, success_only)
+    except ValueError as e:
+        print(f"Error: {e}")
+        return None
+    
+    if len(values) == 0:
+        filter_msg = " (success only)" if success_only else ""
+        print(f"No data available for key '{key}' at checkpoint {checkpoint_idx}{filter_msg}")
+        return None
+    
+    return values, checkpoint_idx, ood_percentages[checkpoint_idx]
 
 
 def interactive_histogram_plotter():
