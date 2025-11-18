@@ -229,39 +229,22 @@ def plot_barplot_single(
     )
     print(f"  OOD prediction percentage: {ood_percentage:.2f}%")
     print(f"  Number of episodes: {len(values)}")
+    print(f"  Mean: {np.mean(values):.2f}")
+    print(f"  Std: {np.std(values):.2f}")
+    print(f"  Min: {np.min(values):.2f}")
+    print(f"  Max: {np.max(values):.2f}")
     
-    # Group episodes into bins and calculate mean value per bin
-    bin_size = max(1, len(values) // bins)
-    bin_labels = []
-    bin_means = []
-    
-    for i in range(bins):
-        start_idx = i * bin_size
-        end_idx = min((i + 1) * bin_size, len(values))
-        
-        if start_idx >= len(values):
-            break
-            
-        bin_values = values[start_idx:end_idx]
-        mean_value = np.mean(bin_values) if len(bin_values) > 0 else 0
-        bin_means.append(mean_value)
-        bin_labels.append(f"{start_idx}-{end_idx-1}")
-    
-    print(f"  Overall mean: {np.mean(values):.2f}")
-    print(f"  Overall std: {np.std(values):.2f}")
-    
-    # Plot as bar chart
+    # Plot each individual value as a bar
     plt.figure(figsize=(12, 6))
-    x_pos = np.arange(len(bin_means))
-    plt.bar(x_pos, bin_means, edgecolor="black", alpha=0.7)
+    x_pos = np.arange(len(values))
+    plt.bar(x_pos, values, edgecolor="black", alpha=0.7, linewidth=0.5)
     
-    plt.xticks(x_pos, bin_labels, rotation=45, ha="right")
-    plt.xlabel("Episode Range")
+    plt.xlabel("Episode Index")
     plt.ylabel(key.replace("_", " ").title())
     
     title_suffix = " (Success Only)" if success_only else ""
     plt.title(
-        f"{key.replace('_', ' ').title()} by Episode Bin{title_suffix}\n"
+        f"{key.replace('_', ' ').title()} by Episode{title_suffix}\n"
         f"Run: {selected_run}, Checkpoint: {checkpoint_idx}, "
         f"OOD%: {ood_percentage:.1f}%"
     )
@@ -280,30 +263,19 @@ def plot_barplot_compare(
     """Plot metric values as barplots for multiple runs."""
     print(f"\nPlotting {len(all_data)} barplots for comparison...")
     
-    # Calculate mean values for each run
-    all_bin_means = []
+    # Find the maximum number of episodes across all runs
     max_episodes = max(len(data) for data in all_data)
-    bin_size = max(1, max_episodes // bins)
     
+    # Pad shorter runs with NaN to align them
+    padded_data = []
     for values in all_data:
-        bin_means = []
-        for i in range(bins):
-            start_idx = i * bin_size
-            end_idx = min((i + 1) * bin_size, len(values))
-            
-            if start_idx >= len(values):
-                bin_means.append(0)
-                continue
-                
-            bin_values = values[start_idx:end_idx]
-            mean_value = np.mean(bin_values) if len(bin_values) > 0 else 0
-            bin_means.append(mean_value)
-        
-        all_bin_means.append(bin_means)
+        padded = np.full(max_episodes, np.nan)
+        padded[:len(values)] = values
+        padded_data.append(padded)
     
     # Plot grouped bar chart
     plt.figure(figsize=(14, 7))
-    x_pos = np.arange(bins)
+    x_pos = np.arange(max_episodes)
     bar_width = 0.8 / len(all_data)
     
     # Use same color scheme as histogram
@@ -321,11 +293,11 @@ def plot_barplot_compare(
             else:
                 colors.append(plt.cm.tab20c((i - 40) / 20))
     
-    for idx, (bin_means, label) in enumerate(zip(all_bin_means, all_labels)):
+    for idx, (values, label) in enumerate(zip(padded_data, all_labels)):
         offset = (idx - len(all_data) / 2) * bar_width + bar_width / 2
         plt.bar(
             x_pos + offset,
-            bin_means,
+            values,
             bar_width,
             label=label,
             edgecolor="black",
@@ -334,19 +306,11 @@ def plot_barplot_compare(
             alpha=0.8,
         )
     
-    # Generate bin labels
-    bin_labels = []
-    for i in range(bins):
-        start_idx = i * bin_size
-        end_idx = min((i + 1) * bin_size, max_episodes)
-        bin_labels.append(f"{start_idx}-{end_idx-1}")
-    
-    plt.xticks(x_pos, bin_labels, rotation=45, ha="right")
-    plt.xlabel("Episode Range")
+    plt.xlabel("Episode Index")
     plt.ylabel(key.replace("_", " ").title())
     
     title_suffix = " (Success Only)" if success_only else ""
-    plt.title(f"{key.replace('_', ' ').title()} Comparison by Episode Bin{title_suffix}")
+    plt.title(f"{key.replace('_', ' ').title()} Comparison by Episode{title_suffix}")
     plt.legend(loc="best")
     plt.grid(axis="y", alpha=0.3)
     plt.tight_layout()
@@ -456,7 +420,7 @@ def plot_episode_metrics_main():
         "--bins",
         type=int,
         default=30,
-        help="Number of bins for histogram or episode groups for barplot (default: 30)",
+        help="Number of bins for histogram (ignored for barplot) (default: 30)",
     )
     parser.add_argument(
         "--compare_runs",
@@ -475,7 +439,7 @@ def plot_episode_metrics_main():
         default="histogram",
         help=(
             "Type of plot to generate. 'histogram' shows distribution of values, "
-            "'barplot' shows mean value per episode bin (default: histogram)"
+            "'barplot' shows individual values per episode (default: histogram)"
         ),
     )
 
