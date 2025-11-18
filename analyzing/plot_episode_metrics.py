@@ -13,7 +13,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Union
 
-from analyzing.utils import extract_results, get_episode_level_metric
+from analyzing.utils import extract_results, get_episode_level_metric, select_run_interactive
 
 
 import matplotlib
@@ -40,23 +40,7 @@ def plot_single_run(
         plot_type: Type of plot - "histogram" or "barplot"
     """
     # Step 2: Display runs and let user select
-    print("\nAvailable runs:")
-    for idx, name in enumerate(run_names):
-        print(f"  [{idx}] {name}")
-
-    while True:
-        try:
-            selection = input(f"\nSelect a run (0-{len(run_names) - 1}): ")
-            run_idx = int(selection)
-            if 0 <= run_idx < len(run_names):
-                break
-            else:
-                print(f"Please enter a number between 0 and {len(run_names) - 1}")
-        except ValueError:
-            print("Please enter a valid number")
-
-    selected_run = run_names[run_idx]
-    data_path = results[selected_run]
+    selected_run, data_path = select_run_interactive(run_names, results)
 
     # Step 3-6: Load data, select checkpoint, and extract values
     result = select_and_load_checkpoint_data(selected_run, data_path, key, success_only)

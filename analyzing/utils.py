@@ -348,6 +348,38 @@ def parse_timestamp_from_folder(folder_name: str) -> Optional[datetime]:
     return None
 
 
+def select_run_interactive(run_names: List[str], results: dict) -> tuple[str, Path]:
+    """
+    Interactively select a run from available runs.
+    
+    Args:
+        run_names: List of available run names
+        results: Dictionary mapping run names to data file paths
+        
+    Returns:
+        Tuple of (selected_run_name, data_path)
+    """
+    print("\nAvailable runs:")
+    for idx, name in enumerate(run_names):
+        print(f"  [{idx}] {name}")
+    
+    while True:
+        try:
+            selection = input(f"\nSelect a run (0-{len(run_names) - 1}): ")
+            run_idx = int(selection)
+            if 0 <= run_idx < len(run_names):
+                break
+            else:
+                print(f"Please enter a number between 0 and {len(run_names) - 1}")
+        except ValueError:
+            print("Please enter a valid number")
+    
+    selected_run = run_names[run_idx]
+    data_path = results[selected_run]
+    
+    return selected_run, data_path
+
+
 def extract_results(
     eval_dir: Path,
     prefix_filter: Optional[List[str]],
