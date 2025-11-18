@@ -19,6 +19,7 @@ SRC_FILES=(
     "analyzing/utils.py"
     "analyzing/plot_ood.py"
     "analyzing/plot_histogram.py"
+    "analyzing/plot_survival_rate.py"
     "YRC/core/configs/utils.py"
     "flags.py"
 )

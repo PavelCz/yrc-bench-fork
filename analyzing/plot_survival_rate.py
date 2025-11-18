@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Interactive script to plot survival rate (metric values per episode) as barplots.
+Interactive script to plot survival rate (fraction of episodes surviving up to each timestep bin).
 """
 
 # TODO Remove after this program no longer supports Python 3.8.*
@@ -12,48 +12,122 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Union
 
-from analyzing.utils import (
-    extract_results,
-    get_episode_level_metric,
-    select_run_interactive,
-)
+from analyzing.utils import extract_results, select_run_interactive
 
 import matplotlib
 
 matplotlib.use("TkAgg")
 
 
+def calculate_survival_rate(
+    test_summary: dict, bins: int = 30, success_only: bool = False
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Calculate survival rate based on first OOD timesteps.
+
+    For each bin, calculates the fraction of episodes that had their first OOD
+    timestep in that bin, out of all episodes that survived up to that bin.
+
+    Args:
+        test_summary: The test summary dict from element["summary"]["test"]
+        bins: Number of bins for survival rate calculation
+        success_only: If True, only include episodes with reward > 0
+
+    Returns:
+        Tuple of (bin_centers, survival_rates)
+    """
+    # Filter out episodes where first_ood_timestep is None
+    filtered_data = [
+        (ts, length, return_value)
+        for ts, length, return_value in zip(
+            test_summary["first_ood_timestep"],
+            test_summary["episode_lengths"],
+            test_summary["raw_returns"],
+        )
+        if ts is not None
+    ]
+    if not filtered_data:
+        return np.array([]), np.array([])
+    first_ood_timesteps, ep_lengths, raw_returns = zip(*filtered_data)
+
+    # Apply success filter if requested
+    if success_only:
+        success_mask = np.array(raw_returns) > 0
+        first_ood_timesteps = np.array(first_ood_timesteps)[success_mask]
+        ep_lengths = np.array(ep_lengths)[success_mask]
+        raw_returns = np.array(raw_returns)[success_mask]
+
+    # Bin based on first_ood_timesteps
+    min_ts = 0
+    max_ts = max(first_ood_timesteps)
+    bin_edges = np.linspace(min_ts, max_ts, bins + 1)
+
+    survival_rates = []
+    x_values = []
+
+    # For each bin, calculate how many episodes had their first OOD timestep in that
+    # bin, out of all the episodes that went up to that bin or longer.
+    for i in range(len(bin_edges) - 1):
+        bin_start = bin_edges[i]
+        bin_end = bin_edges[i + 1]
+
+        num_surviving_episodes = len(
+            [ep_length for ep_length in ep_lengths if ep_length >= bin_start]
+        )
+        num_first_ood = len(
+            [
+                first_ood_ts
+                for first_ood_ts in first_ood_timesteps
+                if first_ood_ts >= bin_start and first_ood_ts < bin_end
+            ]
+        )
+
+        if num_surviving_episodes > 0:
+            survival_rate = num_first_ood / num_surviving_episodes
+        else:
+            survival_rate = 0.0
+
+        survival_rates.append(survival_rate)
+        x_values.append(bin_end)
+
+    return np.array(x_values), np.array(survival_rates)
+
+
 def plot_barplot_single(
-    values: np.ndarray,
+    bin_centers: np.ndarray,
+    survival_rates: np.ndarray,
     selected_run: str,
     checkpoint_idx: int,
     ood_percentage: float,
-    key: str,
-    success_only: bool,
+    bins: int,
+    success_only: bool = False,
 ):
-    """Plot metric values as a barplot for a single run."""
+    """Plot survival rate as a barplot for a single run."""
     filter_msg = " (success only)" if success_only else ""
-    print(
-        f"\nPlotting barplot for '{key}' at checkpoint {checkpoint_idx}{filter_msg}"
-    )
+    print(f"\nPlotting survival rate at checkpoint {checkpoint_idx}{filter_msg}")
     print(f"  OOD prediction percentage: {ood_percentage:.2f}%")
-    print(f"  Number of episodes: {len(values)}")
-    print(f"  Mean: {np.mean(values):.2f}")
-    print(f"  Std: {np.std(values):.2f}")
-    print(f"  Min: {np.min(values):.2f}")
-    print(f"  Max: {np.max(values):.2f}")
+    print(f"  Number of bins: {bins}")
+    print(f"  Mean survival rate: {np.mean(survival_rates):.2%}")
 
-    # Plot each individual value as a bar
+    # Plot as bar chart
     plt.figure(figsize=(12, 6))
-    x_pos = np.arange(len(values))
-    plt.bar(x_pos, values, edgecolor="black", alpha=0.7, linewidth=0.5)
+    bar_width = bin_centers[1] - bin_centers[0] if len(bin_centers) > 1 else 1
+    plt.bar(
+        bin_centers,
+        survival_rates,
+        width=bar_width,
+        edgecolor="black",
+        alpha=0.7,
+        linewidth=0.5,
+    )
 
-    plt.xlabel("Episode Index")
-    plt.ylabel(key.replace("_", " ").title())
+    plt.xlabel("Timestep")
+    plt.ylabel("Survival Rate")
+    plt.ylim(0, 1.0)
 
     title_suffix = " (Success Only)" if success_only else ""
     plt.title(
-        f"{key.replace('_', ' ').title()} by Episode{title_suffix}\n"
+        f"Survival Rate by Timestep{title_suffix}\n"
         f"Run: {selected_run}, Checkpoint: {checkpoint_idx}, "
         f"OOD%: {ood_percentage:.1f}%"
     )
@@ -63,37 +137,28 @@ def plot_barplot_single(
 
 
 def plot_barplot_compare(
-    all_data: list,
+    all_bin_centers: list,
+    all_survival_rates: list,
     all_labels: list,
-    key: str,
-    success_only: bool,
+    success_only: bool = False,
 ):
-    """Plot metric values as barplots for multiple runs."""
-    print(f"\nPlotting {len(all_data)} barplots for comparison...")
+    """Plot survival rates as barplots for multiple runs."""
+    filter_msg = " (success only)" if success_only else ""
+    print(
+        f"\nPlotting {len(all_survival_rates)} survival rate curves for comparison{filter_msg}..."
+    )
 
-    # Find the maximum number of episodes across all runs
-    max_episodes = max(len(data) for data in all_data)
-
-    # Pad shorter runs with NaN to align them
-    padded_data = []
-    for values in all_data:
-        padded = np.full(max_episodes, np.nan)
-        padded[:len(values)] = values
-        padded_data.append(padded)
-
-    # Plot grouped bar chart
+    # Plot all curves
     plt.figure(figsize=(14, 7))
-    x_pos = np.arange(max_episodes)
-    bar_width = 0.8 / len(all_data)
 
-    # Use same color scheme as histogram
-    if len(all_data) <= 10:
-        colors = plt.cm.tab10(np.arange(len(all_data)) / 10)
-    elif len(all_data) <= 20:
-        colors = plt.cm.tab20(np.arange(len(all_data)) / 20)
+    # Use same color scheme as other plots
+    if len(all_survival_rates) <= 10:
+        colors = plt.cm.tab10(np.arange(len(all_survival_rates)) / 10)
+    elif len(all_survival_rates) <= 20:
+        colors = plt.cm.tab20(np.arange(len(all_survival_rates)) / 20)
     else:
         colors = []
-        for i in range(len(all_data)):
+        for i in range(len(all_survival_rates)):
             if i < 20:
                 colors.append(plt.cm.tab20(i / 20))
             elif i < 40:
@@ -101,26 +166,28 @@ def plot_barplot_compare(
             else:
                 colors.append(plt.cm.tab20c((i - 40) / 20))
 
-    for idx, (values, label) in enumerate(zip(padded_data, all_labels)):
-        offset = (idx - len(all_data) / 2) * bar_width + bar_width / 2
-        plt.bar(
-            x_pos + offset,
-            values,
-            bar_width,
+    for idx, (bin_centers, survival_rates, label) in enumerate(
+        zip(all_bin_centers, all_survival_rates, all_labels)
+    ):
+        plt.plot(
+            bin_centers,
+            survival_rates,
+            marker="o",
             label=label,
-            edgecolor="black",
-            linewidth=0.5,
             color=colors[idx],
+            linewidth=2,
+            markersize=4,
             alpha=0.8,
         )
 
-    plt.xlabel("Episode Index")
-    plt.ylabel(key.replace("_", " ").title())
+    plt.xlabel("Timestep")
+    plt.ylabel("Survival Rate")
+    plt.ylim(0, 1.0)
 
     title_suffix = " (Success Only)" if success_only else ""
-    plt.title(f"{key.replace('_', ' ').title()} Comparison by Episode{title_suffix}")
+    plt.title(f"Survival Rate Comparison by Timestep{title_suffix}")
     plt.legend(loc="best")
-    plt.grid(axis="y", alpha=0.3)
+    plt.grid(alpha=0.3)
     plt.tight_layout()
     plt.show()
 
@@ -128,7 +195,7 @@ def plot_barplot_compare(
 def plot_single_run(
     run_names: list,
     results: dict,
-    key: str,
+    bins: int = 30,
     success_only: bool = False,
 ):
     """Plot survival rate for a single selected run and checkpoint.
@@ -136,30 +203,38 @@ def plot_single_run(
     Args:
         run_names: List of available run names
         results: Dictionary mapping run names to data file paths
-        key: Metric key to plot
+        bins: Number of bins for survival rate calculation
         success_only: If True, only include episodes with reward > 0
     """
     # Display runs and let user select
     selected_run, data_path = select_run_interactive(run_names, results)
 
-    # Load data, select checkpoint, and extract values
-    result = select_and_load_checkpoint_data(selected_run, data_path, key, success_only)
+    # Load data, select checkpoint, and extract survival rate
+    result = select_and_load_checkpoint_data(
+        selected_run, data_path, bins, success_only
+    )
 
     if result is None:
         return
 
-    values, checkpoint_idx, ood_percentage = result
+    bin_centers, survival_rates, checkpoint_idx, ood_percentage = result
 
     # Plot barplot
     plot_barplot_single(
-        values, selected_run, checkpoint_idx, ood_percentage, key, success_only
+        bin_centers,
+        survival_rates,
+        selected_run,
+        checkpoint_idx,
+        ood_percentage,
+        bins,
+        success_only,
     )
 
 
 def plot_compare_runs(
     run_names: list,
     results: dict,
-    key: str,
+    bins: int = 30,
     success_only: bool = False,
 ):
     """Plot survival rates for selected checkpoints from multiple runs.
@@ -167,60 +242,62 @@ def plot_compare_runs(
     Args:
         run_names: List of available run names
         results: Dictionary mapping run names to data file paths
-        key: Metric key to plot
+        bins: Number of bins for survival rate calculation
         success_only: If True, only include episodes with reward > 0
     """
     print("\n=== Multi-Run Comparison Mode ===")
-    filter_msg = " (success only)" if success_only else ""
-    print(f"You will select a checkpoint for each run to compare{filter_msg}.\n")
+    print("You will select a checkpoint for each run to compare.\n")
 
     # Collect data for each run
-    all_data = []
+    all_bin_centers = []
+    all_survival_rates = []
     all_labels = []
 
     for run_name in run_names:
         data_path = results[run_name]
         print(f"\n--- Run: {run_name} ---")
 
-        # Load data, select checkpoint, and extract values
-        result = select_and_load_checkpoint_data(run_name, data_path, key, success_only)
+        # Load data, select checkpoint, and extract survival rate
+        result = select_and_load_checkpoint_data(
+            run_name, data_path, bins, success_only
+        )
 
         if result is None:
             continue
 
-        values, checkpoint_idx, ood_percentage = result
+        bin_centers, survival_rates, checkpoint_idx, ood_percentage = result
 
         # Store data and label
-        all_data.append(values)
+        all_bin_centers.append(bin_centers)
+        all_survival_rates.append(survival_rates)
         label = f"{run_name} (OOD: {ood_percentage:.1f}%)"
         all_labels.append(label)
 
         print(f"  Selected checkpoint {checkpoint_idx}")
-        print(f"  Number of episodes: {len(values)}")
-        print(f"  Mean: {np.mean(values):.2f}, Std: {np.std(values):.2f}")
+        print(f"  Mean survival rate: {np.mean(survival_rates):.2%}")
 
-    if len(all_data) == 0:
+    if len(all_survival_rates) == 0:
         print("\nNo valid data collected. Exiting.")
         return
 
-    # Plot barplots
-    plot_barplot_compare(all_data, all_labels, key, success_only)
+    # Plot survival rates
+    plot_barplot_compare(all_bin_centers, all_survival_rates, all_labels, success_only)
 
 
 def select_and_load_checkpoint_data(
-    run_name: str, data_path: Path, key: str, success_only: bool
-) -> Union[tuple[np.ndarray, int, float], None]:
+    run_name: str, data_path: Path, bins: int, success_only: bool = False
+) -> Union[tuple[np.ndarray, np.ndarray, int, float], None]:
     """
-    Load data, display checkpoints, get user selection, and extract data.
+    Load data, display checkpoints, get user selection, and calculate survival rate.
 
     Args:
         run_name: Name of the run being processed
         data_path: Path to the evaluation data file
-        key: The metric key to extract
-        success_only: If True, only return values for episodes with reward > 0
+        bins: Number of bins for survival rate calculation
+        success_only: If True, only include episodes with reward > 0
 
     Returns:
-        Tuple of (values, checkpoint_idx, ood_percentage) or None if error/no data
+        Tuple of (bin_centers, survival_rates, checkpoint_idx, ood_percentage) or None if error/no data
     """
     print(f"\nLoading data from: {data_path}")
 
@@ -264,26 +341,21 @@ def select_and_load_checkpoint_data(
     selected_element = eval_data["meta"][checkpoint_idx]
     test_summary = selected_element["summary"]["test"]
 
-    try:
-        values = get_episode_level_metric(test_summary, key, success_only)
-    except ValueError as e:
-        print(f"Error: {e}")
+    bin_centers, survival_rates = calculate_survival_rate(
+        test_summary, bins, success_only
+    )
+
+    if len(survival_rates) == 0:
+        print(f"No data available for survival rate at checkpoint {checkpoint_idx}")
         return None
 
-    if len(values) == 0:
-        filter_msg = " (success only)" if success_only else ""
-        print(
-            f"No data available for key '{key}' at checkpoint {checkpoint_idx}{filter_msg}"
-        )
-        return None
-
-    return values, checkpoint_idx, ood_percentages[checkpoint_idx]
+    return bin_centers, survival_rates, checkpoint_idx, ood_percentages[checkpoint_idx]
 
 
 def plot_survival_rate_main():
     """Main function for interactive survival rate visualization."""
     parser = argparse.ArgumentParser(
-        description="Interactive plotter for survival rate (metric values per episode)"
+        description="Interactive plotter for survival rate (fraction of episodes surviving to each timestep)"
     )
     parser.add_argument(
         "--eval_dir",
@@ -298,30 +370,27 @@ def plot_survival_rate_main():
         help="Prefix filter for the evaluation files.",
     )
     parser.add_argument(
-        "--key",
-        type=str,
-        required=True,
-        help=(
-            "Metric key to plot. Options: episode_length, raw_return, level_ood_gt, "
-            "level_ood_pred, first_ood_timestep, ood_prediction_correctness"
-        ),
+        "--bins",
+        type=int,
+        default=30,
+        help="Number of bins for survival rate calculation (default: 30)",
     )
     parser.add_argument(
         "--compare_runs",
         action="store_true",
-        help="Compare multiple runs by plotting for selected checkpoints from each run",
+        help="Compare multiple runs by plotting survival rates for selected checkpoints from each run",
     )
     parser.add_argument(
         "--success_only",
         action="store_true",
-        help="Only include episodes where the reward was greater than 0",
+        help="Only include episodes with reward > 0 in survival rate calculation",
     )
 
     args = parser.parse_args()
 
     eval_dir = Path(args.eval_dir)
 
-    # Step 1: Extract all runs
+    # Extract all runs
     print("Extracting available runs...")
     results = extract_results(eval_dir, [args.prefix_filter])
 
@@ -333,12 +402,11 @@ def plot_survival_rate_main():
 
     if args.compare_runs:
         # Multi-run comparison mode
-        plot_compare_runs(run_names, results, args.key, args.success_only)
+        plot_compare_runs(run_names, results, args.bins, args.success_only)
     else:
         # Single run mode
-        plot_single_run(run_names, results, args.key, args.success_only)
+        plot_single_run(run_names, results, args.bins, args.success_only)
 
 
 if __name__ == "__main__":
     plot_survival_rate_main()
-
