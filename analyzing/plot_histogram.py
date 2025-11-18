@@ -12,7 +12,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Union
 
-from analyzing.utils import extract_results, get_episode_level_metric, select_run_interactive
+from analyzing.utils import (
+    extract_results,
+    get_episode_level_metric,
+    select_run_interactive,
+)
 
 
 import matplotlib
@@ -28,7 +32,7 @@ def plot_single_run(
     success_only: bool = False,
 ):
     """Plot histogram for a single selected run and checkpoint.
-    
+
     Args:
         run_names: List of available run names
         results: Dictionary mapping run names to data file paths
@@ -88,7 +92,7 @@ def plot_compare_runs(
     success_only: bool = False,
 ):
     """Plot histograms for selected checkpoints from multiple runs.
-    
+
     Args:
         run_names: List of available run names
         results: Dictionary mapping run names to data file paths
@@ -313,14 +317,10 @@ def plot_episode_metrics_main():
 
     if args.compare_runs:
         # Multi-run comparison mode
-        plot_compare_runs(
-            run_names, results, args.key, args.bins, args.success_only
-        )
+        plot_compare_runs(run_names, results, args.key, args.bins, args.success_only)
     else:
         # Single run mode
-        plot_single_run(
-            run_names, results, args.key, args.bins, args.success_only
-        )
+        plot_single_run(run_names, results, args.key, args.bins, args.success_only)
 
 
 if __name__ == "__main__":
