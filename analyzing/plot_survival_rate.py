@@ -88,7 +88,7 @@ def calculate_survival_rate(
             survival_rate = 0.0
 
         survival_rates.append(survival_rate)
-        x_values.append(bin_end)
+        x_values.append(bin_start)
 
     return np.array(x_values), np.array(survival_rates)
 
