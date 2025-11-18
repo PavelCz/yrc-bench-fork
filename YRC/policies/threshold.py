@@ -41,6 +41,9 @@ class ThresholdPolicy(Policy):
                     )
                 )
 
+        # Store training scores for percentile computation (used in AFHP eval)
+        self._train_scores = None
+
     def act(self, obs, greedy=False, return_scores_and_recons=False):
         if get_global_variable("benchmark") == "cliport":
             attention_size = 3  # todo: get this shape automatically
@@ -72,6 +75,8 @@ class ThresholdPolicy(Policy):
         scores = []
         for i in range(num_rollouts // env.num_envs):
             scores.extend(self._rollout_once(env))
+        # Store scores for percentile computation (used in AFHP eval)
+        self._train_scores = np.array(scores)
         return scores
 
     def _rollout_once(self, env):
@@ -108,9 +113,8 @@ class ThresholdPolicy(Policy):
         logit = logit / self.params["score_temp"]
         if metric == "max_logit":
             score = logit.max(dim=-1)[0]
-            raise NotImplementedError(
-                f"Max logit metric not implemented for threshold policy"
-            )
+            # Invert the score such that higher score = more ood.
+            score = -score
         elif metric == "max_prob":
             # Softmax probability -> how certain are we about that action?
             # Max returns values, indices, which is why we index into the values.
@@ -191,6 +195,13 @@ class ThresholdPolicy(Policy):
             # we are working with probabilities. 
             # percentile 0 -> vice versa
             return percentile * 0.01
+        elif metric == "max_logit":
+            # For max_logit, we need the actual training score distribution
+            if self._train_scores is None:
+                raise ValueError(
+                    "Training scores not available. Call generate_scores() first."
+                )
+            return np.percentile(self._train_scores, percentile)
         else:
             raise NotImplementedError(
                 f"Getting training percentiles not implemented for {metric} metric"
