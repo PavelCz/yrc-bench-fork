@@ -222,7 +222,7 @@ def plot_barplot_single(
     key: str,
     success_only: bool,
 ):
-    """Plot success rate as a barplot for a single run."""
+    """Plot metric values as a barplot for a single run."""
     filter_msg = " (success only)" if success_only else ""
     print(
         f"\nPlotting barplot for '{key}' at checkpoint {checkpoint_idx}{filter_msg}"
@@ -230,10 +230,10 @@ def plot_barplot_single(
     print(f"  OOD prediction percentage: {ood_percentage:.2f}%")
     print(f"  Number of episodes: {len(values)}")
     
-    # Group episodes into bins and calculate success rate per bin
+    # Group episodes into bins and calculate mean value per bin
     bin_size = max(1, len(values) // bins)
     bin_labels = []
-    success_rates = []
+    bin_means = []
     
     for i in range(bins):
         start_idx = i * bin_size
@@ -243,25 +243,25 @@ def plot_barplot_single(
             break
             
         bin_values = values[start_idx:end_idx]
-        success_rate = np.mean(bin_values > 0) if len(bin_values) > 0 else 0
-        success_rates.append(success_rate)
+        mean_value = np.mean(bin_values) if len(bin_values) > 0 else 0
+        bin_means.append(mean_value)
         bin_labels.append(f"{start_idx}-{end_idx-1}")
     
-    print(f"  Overall success rate: {np.mean(values > 0):.2%}")
+    print(f"  Overall mean: {np.mean(values):.2f}")
+    print(f"  Overall std: {np.std(values):.2f}")
     
     # Plot as bar chart
     plt.figure(figsize=(12, 6))
-    x_pos = np.arange(len(success_rates))
-    plt.bar(x_pos, success_rates, edgecolor="black", alpha=0.7)
+    x_pos = np.arange(len(bin_means))
+    plt.bar(x_pos, bin_means, edgecolor="black", alpha=0.7)
     
     plt.xticks(x_pos, bin_labels, rotation=45, ha="right")
     plt.xlabel("Episode Range")
-    plt.ylabel("Success Rate")
-    plt.ylim(0, 1.0)
+    plt.ylabel(key.replace("_", " ").title())
     
     title_suffix = " (Success Only)" if success_only else ""
     plt.title(
-        f"Success Rate by Episode Bin{title_suffix}\n"
+        f"{key.replace('_', ' ').title()} by Episode Bin{title_suffix}\n"
         f"Run: {selected_run}, Checkpoint: {checkpoint_idx}, "
         f"OOD%: {ood_percentage:.1f}%"
     )
@@ -277,29 +277,29 @@ def plot_barplot_compare(
     key: str,
     success_only: bool,
 ):
-    """Plot success rates as barplots for multiple runs."""
+    """Plot metric values as barplots for multiple runs."""
     print(f"\nPlotting {len(all_data)} barplots for comparison...")
     
-    # Calculate success rates for each run
-    all_success_rates = []
+    # Calculate mean values for each run
+    all_bin_means = []
     max_episodes = max(len(data) for data in all_data)
     bin_size = max(1, max_episodes // bins)
     
     for values in all_data:
-        success_rates = []
+        bin_means = []
         for i in range(bins):
             start_idx = i * bin_size
             end_idx = min((i + 1) * bin_size, len(values))
             
             if start_idx >= len(values):
-                success_rates.append(0)
+                bin_means.append(0)
                 continue
                 
             bin_values = values[start_idx:end_idx]
-            success_rate = np.mean(bin_values > 0) if len(bin_values) > 0 else 0
-            success_rates.append(success_rate)
+            mean_value = np.mean(bin_values) if len(bin_values) > 0 else 0
+            bin_means.append(mean_value)
         
-        all_success_rates.append(success_rates)
+        all_bin_means.append(bin_means)
     
     # Plot grouped bar chart
     plt.figure(figsize=(14, 7))
@@ -321,11 +321,11 @@ def plot_barplot_compare(
             else:
                 colors.append(plt.cm.tab20c((i - 40) / 20))
     
-    for idx, (success_rates, label) in enumerate(zip(all_success_rates, all_labels)):
+    for idx, (bin_means, label) in enumerate(zip(all_bin_means, all_labels)):
         offset = (idx - len(all_data) / 2) * bar_width + bar_width / 2
         plt.bar(
             x_pos + offset,
-            success_rates,
+            bin_means,
             bar_width,
             label=label,
             edgecolor="black",
@@ -343,11 +343,10 @@ def plot_barplot_compare(
     
     plt.xticks(x_pos, bin_labels, rotation=45, ha="right")
     plt.xlabel("Episode Range")
-    plt.ylabel("Success Rate")
-    plt.ylim(0, 1.0)
+    plt.ylabel(key.replace("_", " ").title())
     
     title_suffix = " (Success Only)" if success_only else ""
-    plt.title(f"Success Rate Comparison by Episode Bin{title_suffix}")
+    plt.title(f"{key.replace('_', ' ').title()} Comparison by Episode Bin{title_suffix}")
     plt.legend(loc="best")
     plt.grid(axis="y", alpha=0.3)
     plt.tight_layout()
@@ -476,7 +475,7 @@ def plot_episode_metrics_main():
         default="histogram",
         help=(
             "Type of plot to generate. 'histogram' shows distribution of values, "
-            "'barplot' shows success rate per episode bin (default: histogram)"
+            "'barplot' shows mean value per episode bin (default: histogram)"
         ),
     )
 
