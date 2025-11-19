@@ -17,6 +17,10 @@ import seaborn as sns  # type: ignore
 from analyzing.utils import extract_results, extract_x_and_y_values
 
 
+import matplotlib
+
+matplotlib.use("TkAgg")
+
 def plot_afhp(
     name_order: Optional[List[str]],
     eval_dir: Path,
