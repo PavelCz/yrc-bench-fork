@@ -173,8 +173,8 @@ def main():
         metric = config.coord_policy.metric
         # max_logit requires the training score distribution for percentile computation
         if metric == "max_logit":
-            # Use gather_rollouts.num_rollouts if available, otherwise use a default
-            num_rollouts = getattr(config.gather_rollouts, "num_rollouts", 256)
+            # Use algorithm.num_rollouts if available, otherwise use a default
+            num_rollouts = getattr(config.algorithm, "num_rollouts", 256)
             print(f"Generating {num_rollouts} training scores for threshold policy with {metric} metric...")
             policy.generate_scores(envs["train"], num_rollouts)
 
