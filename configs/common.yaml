@@ -151,6 +151,7 @@ algorithm:
         min_pct: 0
         max_pct: 101
         pct_step: 10
+        num_rollouts: 256
     ppo:
         cls: PPOAlgorithm
         log_freq: 10

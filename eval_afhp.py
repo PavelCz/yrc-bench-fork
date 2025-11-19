@@ -166,6 +166,18 @@ def main():
         if isinstance(policy, MahalanobisAEPolicy):
             policy.initialize_mahalanobis_detector(config)
 
+    # For threshold policy with metrics that require training score distribution (like max_logit),
+    # we need to generate scores before running AFHP evaluation
+    from YRC.policies.threshold import ThresholdPolicy
+    if isinstance(policy, ThresholdPolicy):
+        metric = config.coord_policy.metric
+        # max_logit requires the training score distribution for percentile computation
+        if metric == "max_logit":
+            # Use gather_rollouts.num_rollouts if available, otherwise use a default
+            num_rollouts = getattr(config.gather_rollouts, "num_rollouts", 256)
+            print(f"Generating {num_rollouts} training scores for threshold policy with {metric} metric...")
+            policy.generate_scores(envs["train"], num_rollouts)
+
     evaluator = Evaluator(config, config.environment)
 
     coverage_fraction = config.evaluation.coverage_fraction
