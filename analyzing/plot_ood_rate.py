@@ -54,7 +54,7 @@ def calculate_ood_rate(
             filtered_data.append((first_ts, length))
 
     if not filtered_data:
-        return np.array([]), np.array([])
+        return []
 
     # Sort data based on first_ood_timestep
     filtered_data.sort(key=lambda x: x[0])
@@ -67,7 +67,7 @@ def calculate_ood_rate(
         else:
             merged_data[-1]["lengths"].append(length)
 
-    ood_rates = []
+    ood_rates: list[dict[str, float]] = []
 
     # For each timestep, calculate the OOD rate, which is the number of episodes that
     # have their first OOD timestep at this timestep, out of all the episodes that did
