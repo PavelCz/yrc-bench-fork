@@ -36,9 +36,10 @@ def calculate_ood_rate(
     Returns:
         List of dictionaries, each containing the timestep and the OOD rate.
     """
-    # If first_ood_timestep is None, it means in this episode was never marked as ood
+    # Collect episode data: (first_ood_timestep, episode_length)
+    # If first_ood_timestep is None, it means this episode was never marked as OOD
     # We replace these values with positive infinity
-    filtered_data = []
+    episode_data: list[tuple[float, int]] = []
 
     for first_ts, length, return_value in zip(
         test_summary["first_ood_timestep"],
@@ -49,52 +50,35 @@ def calculate_ood_rate(
             # Optionally, filter out unsuccessful episodes.
             continue
         if first_ts is None:
-            filtered_data.append((float("inf"), length))
+            episode_data.append((float("inf"), length))
         else:
-            filtered_data.append((first_ts, length))
+            episode_data.append((first_ts, length))
 
-    if not filtered_data:
+    if not episode_data:
         return []
 
-    # Sort data based on first_ood_timestep
-    filtered_data.sort(key=lambda x: x[0])
-
-    # Create a list of lists, merging multiple episodes with the same first_ood_timestep
-    merged_data: list[dict[str, list[int]]] = []
-    for first_ts, length in filtered_data:
-        if not merged_data or merged_data[-1]["first_ts"] != first_ts:
-            merged_data.append({"first_ts": first_ts, "lengths": [length]})
-        else:
-            merged_data[-1]["lengths"].append(length)
-
+    # Find the range of timesteps to consider (1 to max episode length)
+    max_length = max(length for _, length in episode_data)
+    
     ood_rates: list[dict[str, float]] = []
 
-    # For each timestep, calculate the OOD rate, which is the number of episodes that
-    # have their first OOD timestep at this timestep, out of all the episodes that did
-    # not finish before this timestep.
-    for current_episodes in merged_data:
-        current_timestep = current_episodes["first_ts"]
+    # For each timestep, calculate the OOD rate
+    for current_timestep in range(1, max_length + 1):
+        # Count episodes that had their first OOD at this exact timestep
+        num_first_ood = sum(
+            1 for first_ts, _ in episode_data if first_ts == current_timestep
+        )
 
-        if current_timestep == float("inf"):
+        # Count surviving episodes: still running and haven't gone OOD yet
+        num_surviving_episodes = sum(
+            1 for first_ts, length in episode_data
+            if length >= current_timestep and first_ts >= current_timestep
+        )
+
+        if num_surviving_episodes == 0:
+            # No episodes active at this timestep, skip
             continue
 
-        # The number of episodes that have their first OOD timestep at this timestep..
-        num_first_ood = len(current_episodes["lengths"])
-
-        # The number of episodes that did not finish before this timestep and also did
-        # not have their first OOD timestep before this timestep.
-        num_surviving_episodes = 0
-        for other_episodes in merged_data:
-            for lengths in other_episodes["lengths"]:
-                if (
-                    lengths >= current_timestep
-                    and other_episodes["first_ts"] >= current_timestep
-                ):
-                    num_surviving_episodes += 1
-        assert num_surviving_episodes > 0, (
-            f"num_surviving_episodes is 0 for timestep {current_timestep} with "
-            f"num_first_ood {num_first_ood}"
-        )
         ood_rates.append(
             {
                 "timestep": current_timestep,
