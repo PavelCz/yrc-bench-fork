@@ -12,7 +12,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Union
 
-from analyzing.utils import extract_results, select_run_interactive
+from analyzing.utils import extract_results
 
 import matplotlib
 
@@ -109,8 +109,16 @@ def plot_barplot_compare(
     all_ood_rates: list[list[dict[str, float]]],
     all_labels: list,
     success_only: bool,
+    smooth_window: int = 0,
 ):
-    """Plot OOD rates as barplots for multiple runs."""
+    """Plot OOD rates as barplots for multiple runs.
+
+    Args:
+        all_ood_rates: List of OOD rate data for each run
+        all_labels: Labels for each run
+        success_only: If True, only successful episodes were included
+        smooth_window: Window size for running average smoothing (0 = no smoothing)
+    """
     filter_msg = " (success only)" if success_only else ""
     print(
         f"\nPlotting {len(all_ood_rates)} OOD rate curves for comparison{filter_msg}..."
@@ -138,6 +146,15 @@ def plot_barplot_compare(
         timesteps = [d["timestep"] for d in ood_rates]
         rates = [d["ood_rate"] for d in ood_rates]
 
+        # Apply running average smoothing if requested
+        if smooth_window > 1 and len(rates) >= smooth_window:
+            rates = np.convolve(
+                rates, np.ones(smooth_window) / smooth_window, mode="valid"
+            )
+            # Adjust timesteps to match the smoothed rates (center the window)
+            offset = (smooth_window - 1) // 2
+            timesteps = timesteps[offset : offset + len(rates)]
+
         plt.plot(
             timesteps,
             rates,
@@ -164,7 +181,6 @@ def plot_barplot_compare(
 def select_and_load_checkpoint_data(
     run_name: str,
     data_path: Path,
-    bins: int,
     success_only: bool,
 ) -> Union[tuple[list[dict[str, float]], int, float], None]:
     """
@@ -173,7 +189,6 @@ def select_and_load_checkpoint_data(
     Args:
         run_name: Name of the run being processed
         data_path: Path to the evaluation data file
-        bins: Number of bins for OOD rate calculation
         success_only: If True, only include episodes with reward > 0
     Returns:
         Tuple of (ood_rates, checkpoint_idx, ood_percentage) or None if error/no data
@@ -248,18 +263,15 @@ def plot_ood_rate_main():
         help="Prefix filter for the evaluation files.",
     )
     parser.add_argument(
-        "--bins",
-        type=int,
-        default=-1,
-        help=(
-            "Number of bins for OOD rate calculation (default: -1, which means results "
-            "are not binned)"
-        ),
-    )
-    parser.add_argument(
         "--success_only",
         action="store_true",
         help="Only include episodes with reward > 0 in OOD rate calculation",
+    )
+    parser.add_argument(
+        "--smooth",
+        type=int,
+        default=0,
+        help="Window size for running average smoothing (default: 0, no smoothing)",
     )
 
     args = parser.parse_args()
@@ -292,7 +304,6 @@ def plot_ood_rate_main():
         result = select_and_load_checkpoint_data(
             run_name=run_name,
             data_path=data_path,
-            bins=args.bins,
             success_only=args.success_only,
         )
 
@@ -316,7 +327,7 @@ def plot_ood_rate_main():
         return
 
     # Plot OOD rates
-    plot_barplot_compare(all_ood_rates, all_labels, args.success_only)
+    plot_barplot_compare(all_ood_rates, all_labels, args.success_only, args.smooth)
 
 
 if __name__ == "__main__":
