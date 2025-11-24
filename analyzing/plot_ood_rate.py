@@ -115,10 +115,10 @@ def plot_barplot_single(
 ):
     """Plot OOD rate as a barplot for a single run."""
     filter_msg = " (success only)" if success_only else ""
-    
+
     timesteps = [d["timestep"] for d in ood_rates]
     rates = [d["ood_rate"] for d in ood_rates]
-    
+
     mean_rate = np.mean(rates) if rates else 0.0
 
     print(f"\nPlotting OOD rate at checkpoint {checkpoint_idx}{filter_msg}")
@@ -127,13 +127,13 @@ def plot_barplot_single(
 
     # Plot as bar chart
     plt.figure(figsize=(12, 6))
-    
+
     if len(timesteps) > 1:
         # Estimate width based on data density, or just use 1.0 if they are sparse
         # Since it's non-binned, width of 1 makes sense for integer timesteps
         bar_width = 1.0
         # Or if we want to be safer:
-        # bar_width = max(1.0, np.min(np.diff(timesteps)) * 0.8) 
+        # bar_width = max(1.0, np.min(np.diff(timesteps)) * 0.8)
         # But calculate_ood_rate merges same timesteps, so diff >= 1.
     else:
         bar_width = 1.0
@@ -149,7 +149,7 @@ def plot_barplot_single(
 
     plt.xlabel("Timestep")
     plt.ylabel("OOD Rate")
-    plt.ylim(0, 1.0)
+    plt.ylim(bottom=0)
 
     title_suffix = " (Success Only)" if success_only else ""
     plt.title(
@@ -191,12 +191,10 @@ def plot_barplot_compare(
             else:
                 colors.append(plt.cm.tab20c((i - 40) / 20))
 
-    for idx, (ood_rates, label) in enumerate(
-        zip(all_ood_rates, all_labels)
-    ):
+    for idx, (ood_rates, label) in enumerate(zip(all_ood_rates, all_labels)):
         timesteps = [d["timestep"] for d in ood_rates]
         rates = [d["ood_rate"] for d in ood_rates]
-        
+
         plt.plot(
             timesteps,
             rates,
@@ -210,7 +208,7 @@ def plot_barplot_compare(
 
     plt.xlabel("Timestep")
     plt.ylabel("OOD Rate")
-    plt.ylim(0, 1.0)
+    plt.ylim(bottom=0)
 
     title_suffix = " (Success Only)" if success_only else ""
     plt.title(f"OOD Rate Comparison by Timestep{title_suffix}")
