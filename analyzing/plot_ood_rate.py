@@ -105,63 +105,6 @@ def calculate_ood_rate(
     return ood_rates
 
 
-def plot_barplot_single(
-    ood_rates: list[dict[str, float]],
-    selected_run: str,
-    checkpoint_idx: int,
-    ood_percentage: float,
-    bins: int,
-    success_only: bool = False,
-):
-    """Plot OOD rate as a barplot for a single run."""
-    filter_msg = " (success only)" if success_only else ""
-
-    timesteps = [d["timestep"] for d in ood_rates]
-    rates = [d["ood_rate"] for d in ood_rates]
-
-    mean_rate = np.mean(rates) if rates else 0.0
-
-    print(f"\nPlotting OOD rate at checkpoint {checkpoint_idx}{filter_msg}")
-    print(f"  OOD prediction percentage: {ood_percentage:.2f}%")
-    print(f"  Mean OOD rate: {mean_rate:.2%}")
-
-    # Plot as bar chart
-    plt.figure(figsize=(12, 6))
-
-    if len(timesteps) > 1:
-        # Estimate width based on data density, or just use 1.0 if they are sparse
-        # Since it's non-binned, width of 1 makes sense for integer timesteps
-        bar_width = 1.0
-        # Or if we want to be safer:
-        # bar_width = max(1.0, np.min(np.diff(timesteps)) * 0.8)
-        # But calculate_ood_rate merges same timesteps, so diff >= 1.
-    else:
-        bar_width = 1.0
-
-    plt.bar(
-        timesteps,
-        rates,
-        width=bar_width,
-        edgecolor="black",
-        alpha=0.7,
-        linewidth=0.5,
-    )
-
-    plt.xlabel("Timestep")
-    plt.ylabel("OOD Rate")
-    plt.ylim(bottom=0)
-
-    title_suffix = " (Success Only)" if success_only else ""
-    plt.title(
-        f"OOD Rate by Timestep{title_suffix}\n"
-        f"Run: {selected_run}, Checkpoint: {checkpoint_idx}, "
-        f"OOD%: {ood_percentage:.1f}%"
-    )
-    plt.grid(axis="y", alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-
 def plot_barplot_compare(
     all_ood_rates: list[list[dict[str, float]]],
     all_labels: list,
@@ -216,100 +159,6 @@ def plot_barplot_compare(
     plt.grid(alpha=0.3)
     plt.tight_layout()
     plt.show()
-
-
-def plot_single_run(
-    run_names: list,
-    results: dict,
-    bins: int,
-    success_only: bool,
-):
-    """Plot OOD rate for a single selected run and checkpoint.
-
-    Args:
-        run_names: List of available run names
-        results: Dictionary mapping run names to data file paths
-        bins: Number of bins for OOD rate calculation
-        success_only: If True, only include episodes with reward > 0
-    """
-    # Display runs and let user select
-    selected_run, data_path = select_run_interactive(run_names, results)
-
-    # Load data, select checkpoint, and extract OOD rate
-    result = select_and_load_checkpoint_data(
-        selected_run, data_path, bins, success_only
-    )
-
-    if result is None:
-        return
-
-    ood_rates, checkpoint_idx, ood_percentage = result
-
-    # Plot barplot
-    plot_barplot_single(
-        ood_rates,
-        selected_run,
-        checkpoint_idx,
-        ood_percentage,
-        bins,
-        success_only,
-    )
-
-
-def plot_compare_runs(
-    run_names: list,
-    results: dict,
-    bins: int,
-    success_only: bool,
-):
-    """Plot OOD rates for selected checkpoints from multiple runs.
-
-    Args:
-        run_names: List of available run names
-        results: Dictionary mapping run names to data file paths
-        bins: Number of bins for OOD rate calculation
-        success_only: If True, only include episodes with reward > 0
-    """
-    print("\n=== Multi-Run Comparison Mode ===")
-    print("You will select a checkpoint for each run to compare.\n")
-
-    # Collect data for each run
-    all_ood_rates = []
-    all_labels = []
-
-    for run_name in run_names:
-        data_path = results[run_name]
-        print(f"\n--- Run: {run_name} ---")
-
-        # Load data, select checkpoint, and extract OOD rate
-        result = select_and_load_checkpoint_data(
-            run_name=run_name,
-            data_path=data_path,
-            bins=bins,
-            success_only=success_only,
-        )
-
-        if result is None:
-            continue
-
-        ood_rates, checkpoint_idx, ood_percentage = result
-
-        # Store data and label
-        all_ood_rates.append(ood_rates)
-        label = f"{run_name} (OOD: {ood_percentage:.1f}%)"
-        all_labels.append(label)
-
-        rates = [d["ood_rate"] for d in ood_rates]
-        mean_rate = np.mean(rates) if rates else 0.0
-        print(f"  Selected checkpoint {checkpoint_idx}")
-        print(f"  Mean OOD rate: {mean_rate:.2%}")
-
-    if len(all_ood_rates) == 0:
-        print("\nNo valid data collected. Exiting.")
-        return
-
-    # Plot OOD rates
-    plot_barplot_compare(all_ood_rates, all_labels, success_only)
 
 
 def select_and_load_checkpoint_data(
@@ -408,11 +257,6 @@ def plot_ood_rate_main():
         ),
     )
     parser.add_argument(
-        "--compare_runs",
-        action="store_true",
-        help="Compare multiple runs by plotting OOD rates for selected checkpoints from each run",
-    )
-    parser.add_argument(
         "--success_only",
         action="store_true",
         help="Only include episodes with reward > 0 in OOD rate calculation",
@@ -432,22 +276,47 @@ def plot_ood_rate_main():
 
     run_names = list(results.keys())
 
-    if args.compare_runs:
-        # Multi-run comparison mode
-        plot_compare_runs(
-            run_names=run_names,
-            results=results,
+    # Multi-run comparison mode
+    print("\n=== Multi-Run Comparison Mode ===")
+    print("You will select a checkpoint for each run to compare.\n")
+
+    # Collect data for each run
+    all_ood_rates = []
+    all_labels = []
+
+    for run_name in run_names:
+        data_path = results[run_name]
+        print(f"\n--- Run: {run_name} ---")
+
+        # Load data, select checkpoint, and extract OOD rate
+        result = select_and_load_checkpoint_data(
+            run_name=run_name,
+            data_path=data_path,
             bins=args.bins,
             success_only=args.success_only,
         )
-    else:
-        # Single run mode
-        plot_single_run(
-            run_names=run_names,
-            results=results,
-            bins=args.bins,
-            success_only=args.success_only,
-        )
+
+        if result is None:
+            continue
+
+        ood_rates, checkpoint_idx, ood_percentage = result
+
+        # Store data and label
+        all_ood_rates.append(ood_rates)
+        label = f"{run_name} (OOD: {ood_percentage:.1f}%)"
+        all_labels.append(label)
+
+        rates = [d["ood_rate"] for d in ood_rates]
+        mean_rate = np.mean(rates) if rates else 0.0
+        print(f"  Selected checkpoint {checkpoint_idx}")
+        print(f"  Mean OOD rate: {mean_rate:.2%}")
+
+    if len(all_ood_rates) == 0:
+        print("\nNo valid data collected. Exiting.")
+        return
+
+    # Plot OOD rates
+    plot_barplot_compare(all_ood_rates, all_labels, args.success_only)
 
 
 if __name__ == "__main__":
