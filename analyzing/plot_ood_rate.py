@@ -110,6 +110,7 @@ def plot_barplot_compare(
     all_labels: list,
     success_only: bool,
     smooth_window: int = 0,
+    num_bins: int = 0,
 ):
     """Plot OOD rates as barplots for multiple runs.
 
@@ -118,6 +119,7 @@ def plot_barplot_compare(
         all_labels: Labels for each run
         success_only: If True, only successful episodes were included
         smooth_window: Window size for running average smoothing (0 = no smoothing)
+        num_bins: Number of bins for binned smoothing (0 = no binning)
     """
     filter_msg = " (success only)" if success_only else ""
     print(
@@ -146,8 +148,32 @@ def plot_barplot_compare(
         timesteps = [d["timestep"] for d in ood_rates]
         rates = [d["ood_rate"] for d in ood_rates]
 
-        # Apply running average smoothing if requested
-        if smooth_window > 1 and len(rates) >= smooth_window:
+        # Apply binned smoothing if requested
+        if num_bins > 0 and len(rates) > 0:
+            timesteps_arr = np.array(timesteps)
+            rates_arr = np.array(rates)
+
+            # Create bins based on timestep range
+            bin_edges = np.linspace(
+                timesteps_arr.min(), timesteps_arr.max() + 1, num_bins + 1
+            )
+            bin_indices = np.digitize(timesteps_arr, bin_edges) - 1
+            bin_indices = np.clip(bin_indices, 0, num_bins - 1)
+
+            # Calculate mean rate for each bin
+            binned_timesteps = []
+            binned_rates = []
+            for bin_idx in range(num_bins):
+                mask = bin_indices == bin_idx
+                if np.any(mask):
+                    bin_center = (bin_edges[bin_idx] + bin_edges[bin_idx + 1]) / 2
+                    binned_timesteps.append(bin_center)
+                    binned_rates.append(np.mean(rates_arr[mask]))
+
+            timesteps = binned_timesteps
+            rates = binned_rates
+        # Apply running average smoothing if requested (only if not binning)
+        elif smooth_window > 1 and len(rates) >= smooth_window:
             rates = np.convolve(
                 rates, np.ones(smooth_window) / smooth_window, mode="valid"
             )
@@ -273,6 +299,12 @@ def plot_ood_rate_main():
         default=0,
         help="Window size for running average smoothing (default: 0, no smoothing)",
     )
+    parser.add_argument(
+        "--bins",
+        type=int,
+        default=0,
+        help="Number of bins for binned smoothing (default: 0, no binning). Overrides --smooth.",
+    )
 
     args = parser.parse_args()
 
@@ -327,7 +359,9 @@ def plot_ood_rate_main():
         return
 
     # Plot OOD rates
-    plot_barplot_compare(all_ood_rates, all_labels, args.success_only, args.smooth)
+    plot_barplot_compare(
+        all_ood_rates, all_labels, args.success_only, args.smooth, args.bins
+    )
 
 
 if __name__ == "__main__":
