@@ -62,7 +62,7 @@ def calculate_ood_rate(
     # Create a list of lists, merging multiple episodes with the same first_ood_timestep
     merged_data: list[dict[str, list[int]]] = []
     for first_ts, length in filtered_data:
-        if not merged_data or merged_data[-1]["ts"] != first_ts:
+        if not merged_data or merged_data[-1]["first_ts"] != first_ts:
             merged_data.append({"first_ts": first_ts, "lengths": [length]})
         else:
             merged_data[-1]["lengths"].append(length)
@@ -72,23 +72,29 @@ def calculate_ood_rate(
     # For each timestep, calculate the OOD rate, which is the number of episodes that
     # have their first OOD timestep at this timestep, out of all the episodes that did
     # not finish before this timestep.
-    for episodes in merged_data:
-        current_timestep = episodes["first_ts"]
+    for current_episodes in merged_data:
+        current_timestep = current_episodes["first_ts"]
+
+        if current_timestep == float("inf"):
+            continue
+
+        # The number of episodes that have their first OOD timestep at this timestep..
+        num_first_ood = len(current_episodes["lengths"])
 
         # The number of episodes that did not finish before this timestep and also did
         # not have their first OOD timestep before this timestep.
         num_surviving_episodes = 0
-        for episodes in merged_data:
-            for lengths in episodes["lengths"]:
+        for other_episodes in merged_data:
+            for lengths in other_episodes["lengths"]:
                 if (
                     lengths >= current_timestep
-                    and episodes["first_ts"] >= current_timestep
+                    and other_episodes["first_ts"] >= current_timestep
                 ):
                     num_surviving_episodes += 1
-                    break
-
-        # The number of episodes that have their first OOD timestep at this timestep..
-        num_first_ood = len(episodes["lengths"])
+        assert num_surviving_episodes > 0, (
+            f"num_surviving_episodes is 0 for timestep {current_timestep} with "
+            f"num_first_ood {num_first_ood}"
+        )
         ood_rates.append(
             {
                 "timestep": current_timestep,
@@ -109,17 +115,32 @@ def plot_barplot_single(
 ):
     """Plot OOD rate as a barplot for a single run."""
     filter_msg = " (success only)" if success_only else ""
+    
+    timesteps = [d["timestep"] for d in ood_rates]
+    rates = [d["ood_rate"] for d in ood_rates]
+    
+    mean_rate = np.mean(rates) if rates else 0.0
+
     print(f"\nPlotting OOD rate at checkpoint {checkpoint_idx}{filter_msg}")
     print(f"  OOD prediction percentage: {ood_percentage:.2f}%")
-    print(f"  Number of bins: {bins}")
-    print(f"  Mean OOD rate: {np.mean(ood_rates):.2%}")
+    print(f"  Mean OOD rate: {mean_rate:.2%}")
 
     # Plot as bar chart
     plt.figure(figsize=(12, 6))
-    bar_width = bin_centers[1] - bin_centers[0] if len(bin_centers) > 1 else 1
+    
+    if len(timesteps) > 1:
+        # Estimate width based on data density, or just use 1.0 if they are sparse
+        # Since it's non-binned, width of 1 makes sense for integer timesteps
+        bar_width = 1.0
+        # Or if we want to be safer:
+        # bar_width = max(1.0, np.min(np.diff(timesteps)) * 0.8) 
+        # But calculate_ood_rate merges same timesteps, so diff >= 1.
+    else:
+        bar_width = 1.0
+
     plt.bar(
-        bin_centers,
-        ood_rates,
+        timesteps,
+        rates,
         width=bar_width,
         edgecolor="black",
         alpha=0.7,
@@ -142,8 +163,7 @@ def plot_barplot_single(
 
 
 def plot_barplot_compare(
-    all_bin_centers: list,
-    all_ood_rates: list,
+    all_ood_rates: list[list[dict[str, float]]],
     all_labels: list,
     success_only: bool,
 ):
@@ -171,12 +191,15 @@ def plot_barplot_compare(
             else:
                 colors.append(plt.cm.tab20c((i - 40) / 20))
 
-    for idx, (bin_centers, ood_rates, label) in enumerate(
-        zip(all_bin_centers, all_ood_rates, all_labels)
+    for idx, (ood_rates, label) in enumerate(
+        zip(all_ood_rates, all_labels)
     ):
+        timesteps = [d["timestep"] for d in ood_rates]
+        rates = [d["ood_rate"] for d in ood_rates]
+        
         plt.plot(
-            bin_centers,
-            ood_rates,
+            timesteps,
+            rates,
             marker="o",
             label=label,
             color=colors[idx],
@@ -222,11 +245,10 @@ def plot_single_run(
     if result is None:
         return
 
-    bin_centers, ood_rates, checkpoint_idx, ood_percentage = result
+    ood_rates, checkpoint_idx, ood_percentage = result
 
     # Plot barplot
     plot_barplot_single(
-        bin_centers,
         ood_rates,
         selected_run,
         checkpoint_idx,
@@ -254,7 +276,6 @@ def plot_compare_runs(
     print("You will select a checkpoint for each run to compare.\n")
 
     # Collect data for each run
-    all_bin_centers = []
     all_ood_rates = []
     all_labels = []
 
@@ -273,23 +294,24 @@ def plot_compare_runs(
         if result is None:
             continue
 
-        bin_centers, ood_rates, checkpoint_idx, ood_percentage = result
+        ood_rates, checkpoint_idx, ood_percentage = result
 
         # Store data and label
-        all_bin_centers.append(bin_centers)
         all_ood_rates.append(ood_rates)
         label = f"{run_name} (OOD: {ood_percentage:.1f}%)"
         all_labels.append(label)
 
+        rates = [d["ood_rate"] for d in ood_rates]
+        mean_rate = np.mean(rates) if rates else 0.0
         print(f"  Selected checkpoint {checkpoint_idx}")
-        print(f"  Mean OOD rate: {np.mean(ood_rates):.2%}")
+        print(f"  Mean OOD rate: {mean_rate:.2%}")
 
     if len(all_ood_rates) == 0:
         print("\nNo valid data collected. Exiting.")
         return
 
     # Plot OOD rates
-    plot_barplot_compare(all_bin_centers, all_ood_rates, all_labels, success_only)
+    plot_barplot_compare(all_ood_rates, all_labels, success_only)
 
 
 def select_and_load_checkpoint_data(
