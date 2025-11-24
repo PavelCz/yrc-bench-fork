@@ -369,7 +369,7 @@ def select_and_load_checkpoint_data(
     return bin_centers, ood_rates, checkpoint_idx, ood_percentages[checkpoint_idx]
 
 
-def plot_ood_rate_main():
+def plot_binned_ood_rate_main():
     """Main function for interactive OOD rate visualization."""
     parser = argparse.ArgumentParser(
         description="Interactive plotter for OOD rate (fraction of episodes going OOD at each timestep)"
@@ -436,4 +436,4 @@ def plot_ood_rate_main():
 
 
 if __name__ == "__main__":
-    plot_ood_rate_main()
+    plot_binned_ood_rate_main()
