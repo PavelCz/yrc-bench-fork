@@ -23,7 +23,6 @@ def calculate_ood_rate(
     test_summary: dict,
     bins: int,
     success_only: bool,
-    clean_ood_rate: bool,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Calculate OOD rate based on first OOD timesteps.
@@ -35,7 +34,6 @@ def calculate_ood_rate(
         test_summary: The test summary dict from element["summary"]["test"]
         bins: Number of bins for OOD rate calculation
         success_only: If True, only include episodes with reward > 0
-        clean_ood_rate: If True, clean ood rate
     Returns:
         Tuple of (bin_centers, ood_rates)
     """
@@ -74,23 +72,23 @@ def calculate_ood_rate(
         bin_start = bin_edges[i]
         bin_end = bin_edges[i + 1]
 
-        if clean_ood_rate:
-            num_surviving_episodes = 0
-            for ep_length, first_ood_ts in zip(ep_lengths, first_ood_timesteps):
-                # Filter such that we only count episodes that survived at least past
-                # the bin start, but also did not have their first OOD timestep before
-                # the bin start.
-                if first_ood_ts is None or (ep_length >= bin_start and first_ood_ts >= bin_start):
-                    num_surviving_episodes += 1
-        else:
-            num_surviving_episodes = len(
-                [ep_length for ep_length in ep_lengths if ep_length >= bin_start]
-            )
+        num_surviving_episodes = 0
+        for ep_length, first_ood_ts in zip(ep_lengths, first_ood_timesteps):
+            # Filter such that we only count episodes that survived at least past
+            # the bin start, but also did not have their first OOD timestep before
+            # the bin start.
+            if first_ood_ts is None or (
+                ep_length >= bin_start and first_ood_ts >= bin_start
+            ):
+                num_surviving_episodes += 1
+
         num_first_ood = len(
             [
                 first_ood_ts
                 for first_ood_ts in first_ood_timesteps
-                if first_ood_ts is not None and first_ood_ts >= bin_start and first_ood_ts < bin_end
+                if first_ood_ts is not None
+                and first_ood_ts >= bin_start
+                and first_ood_ts < bin_end
             ]
         )
 
@@ -113,7 +111,6 @@ def plot_barplot_single(
     ood_percentage: float,
     bins: int,
     success_only: bool = False,
-    clean_ood_rate: bool = False,
 ):
     """Plot OOD rate as a barplot for a single run."""
     filter_msg = " (success only)" if success_only else ""
@@ -139,8 +136,6 @@ def plot_barplot_single(
     plt.ylim(0, 1.0)
 
     title_suffix = " (Success Only)" if success_only else ""
-    if clean_ood_rate:
-        title_suffix += " (Clean OOD Rate)"
     plt.title(
         f"OOD Rate by Timestep{title_suffix}\n"
         f"Run: {selected_run}, Checkpoint: {checkpoint_idx}, "
@@ -156,7 +151,6 @@ def plot_barplot_compare(
     all_ood_rates: list,
     all_labels: list,
     success_only: bool,
-    clean_ood_rate: bool,
 ):
     """Plot OOD rates as barplots for multiple runs."""
     filter_msg = " (success only)" if success_only else ""
@@ -201,8 +195,6 @@ def plot_barplot_compare(
     plt.ylim(0, 1.0)
 
     title_suffix = " (Success Only)" if success_only else ""
-    if clean_ood_rate:
-        title_suffix += " (Clean OOD Rate)"
     plt.title(f"OOD Rate Comparison by Timestep{title_suffix}")
     plt.legend(loc="best")
     plt.grid(alpha=0.3)
@@ -215,7 +207,6 @@ def plot_single_run(
     results: dict,
     bins: int,
     success_only: bool,
-    clean_ood_rate: bool,
 ):
     """Plot OOD rate for a single selected run and checkpoint.
 
@@ -224,14 +215,13 @@ def plot_single_run(
         results: Dictionary mapping run names to data file paths
         bins: Number of bins for OOD rate calculation
         success_only: If True, only include episodes with reward > 0
-        clean_ood_rate: If True, clean ood rate
     """
     # Display runs and let user select
     selected_run, data_path = select_run_interactive(run_names, results)
 
     # Load data, select checkpoint, and extract OOD rate
     result = select_and_load_checkpoint_data(
-        selected_run, data_path, bins, success_only, clean_ood_rate
+        selected_run, data_path, bins, success_only
     )
 
     if result is None:
@@ -248,7 +238,6 @@ def plot_single_run(
         ood_percentage,
         bins,
         success_only,
-        clean_ood_rate,
     )
 
 
@@ -257,7 +246,6 @@ def plot_compare_runs(
     results: dict,
     bins: int,
     success_only: bool,
-    clean_ood_rate: bool,
 ):
     """Plot OOD rates for selected checkpoints from multiple runs.
 
@@ -266,7 +254,6 @@ def plot_compare_runs(
         results: Dictionary mapping run names to data file paths
         bins: Number of bins for OOD rate calculation
         success_only: If True, only include episodes with reward > 0
-        clean_ood_rate: If True, clean ood rate
     """
     print("\n=== Multi-Run Comparison Mode ===")
     print("You will select a checkpoint for each run to compare.\n")
@@ -286,7 +273,6 @@ def plot_compare_runs(
             data_path=data_path,
             bins=bins,
             success_only=success_only,
-            clean_ood_rate=clean_ood_rate,
         )
 
         if result is None:
@@ -308,9 +294,7 @@ def plot_compare_runs(
         return
 
     # Plot OOD rates
-    plot_barplot_compare(
-        all_bin_centers, all_ood_rates, all_labels, success_only, clean_ood_rate
-    )
+    plot_barplot_compare(all_bin_centers, all_ood_rates, all_labels, success_only)
 
 
 def select_and_load_checkpoint_data(
@@ -318,7 +302,6 @@ def select_and_load_checkpoint_data(
     data_path: Path,
     bins: int,
     success_only: bool,
-    clean_ood_rate: bool,
 ) -> Union[tuple[np.ndarray, np.ndarray, int, float], None]:
     """
     Load data, display checkpoints, get user selection, and calculate OOD rate.
@@ -328,7 +311,6 @@ def select_and_load_checkpoint_data(
         data_path: Path to the evaluation data file
         bins: Number of bins for OOD rate calculation
         success_only: If True, only include episodes with reward > 0
-        clean_ood_rate: If True, clean ood rate
     Returns:
         Tuple of (bin_centers, ood_rates, checkpoint_idx, ood_percentage) or None if error/no data
     """
@@ -378,7 +360,6 @@ def select_and_load_checkpoint_data(
         test_summary=test_summary,
         bins=bins,
         success_only=success_only,
-        clean_ood_rate=clean_ood_rate,
     )
 
     if len(ood_rates) == 0:
@@ -421,11 +402,6 @@ def plot_ood_rate_main():
         action="store_true",
         help="Only include episodes with reward > 0 in OOD rate calculation",
     )
-    parser.add_argument(
-        "--clean_ood_rate",
-        action="store_true",
-        help="Clean ood rate",
-    )
 
     args = parser.parse_args()
 
@@ -448,7 +424,6 @@ def plot_ood_rate_main():
             results=results,
             bins=args.bins,
             success_only=args.success_only,
-            clean_ood_rate=args.clean_ood_rate,
         )
     else:
         # Single run mode
@@ -457,7 +432,6 @@ def plot_ood_rate_main():
             results=results,
             bins=args.bins,
             success_only=args.success_only,
-            clean_ood_rate=args.clean_ood_rate,
         )
 
 
