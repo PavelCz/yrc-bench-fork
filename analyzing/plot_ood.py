@@ -21,6 +21,7 @@ import matplotlib
 
 matplotlib.use("TkAgg")
 
+
 def plot_afhp(
     name_order: Optional[List[str]],
     eval_dir: Path,
