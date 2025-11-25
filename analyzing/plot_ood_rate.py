@@ -131,6 +131,7 @@ def plot_barplot_compare(
     for idx, (ood_rates, label) in enumerate(zip(all_ood_rates, all_labels)):
         timesteps = [d["timestep"] for d in ood_rates]
         rates = [d["ood_rate"] for d in ood_rates]
+        stds = None  # Standard deviation (only computed for binning)
 
         # Apply binned smoothing if requested
         if num_bins > 0 and len(rates) > 0:
@@ -144,27 +145,40 @@ def plot_barplot_compare(
             bin_indices = np.digitize(timesteps_arr, bin_edges) - 1
             bin_indices = np.clip(bin_indices, 0, num_bins - 1)
 
-            # Calculate mean rate for each bin
+            # Calculate mean rate and std for each bin
             binned_timesteps = []
             binned_rates = []
+            binned_stds = []
             for bin_idx in range(num_bins):
                 mask = bin_indices == bin_idx
                 if np.any(mask):
                     bin_center = (bin_edges[bin_idx] + bin_edges[bin_idx + 1]) / 2
                     binned_timesteps.append(bin_center)
                     binned_rates.append(np.mean(rates_arr[mask]))
+                    binned_stds.append(np.std(rates_arr[mask]))
 
             timesteps = binned_timesteps
             rates = binned_rates
+            stds = binned_stds
         # Apply running average smoothing if requested (only if not binning)
         elif smooth_window > 1 and len(rates) >= smooth_window:
-            rates = np.convolve(
-                rates, np.ones(smooth_window) / smooth_window, mode="valid"
+            rates_arr = np.array(rates)
+            # Compute running mean
+            rates_smooth = np.convolve(
+                rates_arr, np.ones(smooth_window) / smooth_window, mode="valid"
             )
+            # Compute running std
+            stds_list = []
+            for i in range(len(rates_smooth)):
+                window_data = rates_arr[i : i + smooth_window]
+                stds_list.append(np.std(window_data))
+            stds = stds_list
+            rates = rates_smooth
             # Adjust timesteps to match the smoothed rates (center the window)
             offset = (smooth_window - 1) // 2
             timesteps = timesteps[offset : offset + len(rates)]
 
+        # Plot the line
         plt.plot(
             timesteps,
             rates,
@@ -175,6 +189,18 @@ def plot_barplot_compare(
             markersize=4,
             alpha=0.8,
         )
+
+        # Plot shaded region for standard deviation if available
+        if stds is not None:
+            rates_arr = np.array(rates)
+            stds_arr = np.array(stds)
+            plt.fill_between(
+                timesteps,
+                rates_arr - stds_arr,
+                rates_arr + stds_arr,
+                color=colors[idx],
+                alpha=0.2,
+            )
 
     plt.xlabel("Timestep")
     plt.ylabel("OOD Rate")
