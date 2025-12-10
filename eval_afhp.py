@@ -136,12 +136,17 @@ def main():
         # Create normal envs for train/val
         envs = env_factory.make(config)
 
+        # Get the actual weak and strong agents from the test env
+        # (test env has the correct agents, unlike train env which may use sim_weak)
+        actual_weak_agent = envs["test"].weak_agent
+        actual_strong_agent = envs["test"].strong_agent
+
         # Replace the test env with our wrapped version
         envs["test"] = envs["train"].__class__(
             config.coord_env,
             wrapped_test_env,
-            envs["train"].weak_agent,
-            envs["train"].strong_agent,
+            actual_weak_agent,
+            actual_strong_agent,
         )
         # Copy over costs
         envs["test"].strong_query_cost_per_action = envs[
