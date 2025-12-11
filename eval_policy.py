@@ -365,53 +365,24 @@ def initialize_wandb_logger(config, args, save_dir: Path) -> WandbLogger:
     Returns:
         WandbLogger instance
     """
-    # Get wandb config with defaults
-    wandb_project = (
-        getattr(config.wandb, "project", "yrc-policy-eval")
-        if hasattr(config, "wandb")
-        else "yrc-policy-eval"
-    )
-    wandb_mode = (
-        getattr(config.wandb, "mode", "online")
-        if hasattr(config, "wandb")
-        else "online"
-    )
-    wandb_group = (
-        getattr(config.wandb, "group", None)
-        if hasattr(config, "wandb")
-        else None
-    )
-    wandb_entity = (
-        getattr(config.wandb, "entity", None)
-        if hasattr(config, "wandb")
-        else None
-    )
-
-    # Create run name
-    run_name = f"policy_eval_{config.exp_name}"
-    if hasattr(args, "eval_run_name") and args.eval_run_name is not None:
-        run_name = args.eval_run_name
-
-    # Prepare wandb init parameters
+    # Prepare wandb init parameters - access config.wandb directly
+    # (flags are already merged into config by config_utils.load)
     wandb_kwargs = {
-        "name": run_name,
-        "project": wandb_project,
-        "mode": wandb_mode,
+        "name": config.exp_name,
+        "project": config.wandb.project,
+        "group": config.wandb.group,
+        "mode": config.wandb.mode,
         "job_type": "policy_eval",
-        "config": {
-            "exp_name": config.exp_name,
-            "model_file": args.model_file,
-            "eval_split": getattr(args, "eval_split", "test"),
-        },
+        "config": config,
     }
 
-    if wandb_group is not None:
-        wandb_kwargs["group"] = wandb_group
+    if config.wandb.entity is not None:
+        wandb_kwargs["entity"] = config.wandb.entity
 
-    if wandb_entity is not None:
-        wandb_kwargs["entity"] = wandb_entity
-
-    logging.info(f"Initializing wandb: project={wandb_project}, name={run_name}, mode={wandb_mode}")
+    logging.info(
+        f"Initializing wandb: project={config.wandb.project}, "
+        f"name={config.exp_name}, mode={config.wandb.mode}"
+    )
     exp = wandb.init(**wandb_kwargs)
 
     wandb_logger = WandbLogger(
