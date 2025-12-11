@@ -80,7 +80,6 @@ from YRC.core.video_utils import (
     TextRenderer,
     save_video_to_folder,
     resolve_video_output_folder,
-    log_to_wandb,
 )
 
 
@@ -510,13 +509,19 @@ def save_videos(
 
         # Log to wandb if needed
         if video_logging_mode in ["wandb", "both"] and wandb_logger is not None:
-            log_to_wandb(
-                wandb_logger,
-                video,
-                caption,
-                episode_return,  # Use return as AFHP for video key naming
-                VIDEO_CONFIG,
-                wandb_category=f"policy_eval/{eval_split}",
+            # Create video key with category
+            video_key = f"policy_eval/{eval_split}/episode_{episode_return:.2f}"
+            
+            # Log video to wandb
+            wandb_logger.experiment.log(
+                {
+                    video_key: wandb.Video(
+                        video,
+                        fps=VIDEO_CONFIG["fps"],
+                        format="gif",
+                        caption=caption,
+                    ),
+                }
             )
 
     if video_logging_mode in ["folder", "both"]:
