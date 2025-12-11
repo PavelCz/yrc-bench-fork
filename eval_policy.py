@@ -19,11 +19,27 @@ Examples:
         --model_file $COINRUN_BG_EXTRAHARD \
         -num_rollouts 100
     
-    # With video recording
+    # With video recording to disk
     python eval_policy.py -c configs/procgen_threshold.yaml \
         --model_file model.pth \
         -num_rollouts 100 \
         -video_logging_mode folder \
+        -video_output_folder ./videos \
+        -video_episodes_to_collect 10
+    
+    # With video logging to wandb
+    python eval_policy.py -c configs/procgen_threshold.yaml \
+        --model_file model.pth \
+        -num_rollouts 100 \
+        -video_logging_mode wandb \
+        -video_episodes_to_collect 10 \
+        -wandb_project my_project
+    
+    # With video logging to both disk and wandb
+    python eval_policy.py -c configs/procgen_threshold.yaml \
+        --model_file model.pth \
+        -num_rollouts 100 \
+        -video_logging_mode both \
         -video_output_folder ./videos \
         -video_episodes_to_collect 10
 
@@ -34,15 +50,17 @@ Options:
     -num_envs: Number of parallel environments
     -seed: Random seed
     -greedy: Use greedy action selection (default: True)
-    -video_logging_mode: Video logging mode: 'folder' (local files), 'none' (default)
+    -video_logging_mode: Video logging mode: 'folder', 'wandb', 'both', 'none' (default)
     -video_output_folder: Folder path for saving videos (default: <experiment_dir>/videos)
     -video_episodes_to_collect: Number of episodes to save as videos (default: 0)
+    -wandb_project: Weights & Biases project name (for wandb logging)
+    -wandb_mode: wandb mode: 'online', 'offline', 'disabled' (default: 'online')
     See flags.py for more options.
 
 Output:
     - Prints mean return statistics to console
     - Saves results to <experiment_dir>/policy_eval_results.json
-    - Optionally saves episode videos to disk
+    - Optionally saves episode videos to disk and/or Weights & Biases
 """
 
 import flags
@@ -54,12 +72,15 @@ import numpy as np
 import json
 import logging
 from typing import List, Dict, Optional
+import wandb
+from pytorch_lightning.loggers import WandbLogger
 from YRC.core.video_utils import (
     VideoProcessor,
     ScoreBarRenderer,
     TextRenderer,
     save_video_to_folder,
     resolve_video_output_folder,
+    log_to_wandb,
 )
 
 
@@ -149,7 +170,7 @@ def main():
     )
     
     should_collect_videos = (
-        video_logging_mode in ["folder", "both"] and video_episodes_to_collect > 0
+        video_logging_mode in ["folder", "wandb", "both"] and video_episodes_to_collect > 0
     )
 
     if should_collect_videos:
@@ -157,6 +178,11 @@ def main():
             f"Video collection enabled: will collect {video_episodes_to_collect} episodes"
         )
         logging.info(f"Video logging mode: {video_logging_mode}")
+
+    # Initialize wandb if needed for video logging
+    wandb_logger = None
+    if video_logging_mode in ["wandb", "both"] and video_episodes_to_collect > 0:
+        wandb_logger = initialize_wandb_logger(config, args, save_dir)
 
     # Run evaluation
     returns, video_episodes = rollout_and_get_returns(
@@ -207,7 +233,11 @@ def main():
 
     # Save videos if enabled
     if should_collect_videos and len(video_episodes) > 0:
-        save_videos(video_episodes, config, save_dir, eval_split)
+        save_videos(video_episodes, config, save_dir, eval_split, wandb_logger)
+    
+    # Finish wandb run if it was initialized
+    if wandb_logger is not None:
+        wandb.finish()
 
 
 def rollout_and_get_returns(
@@ -322,43 +352,124 @@ def rollout_and_get_returns(
     return returns, video_episodes
 
 
+def initialize_wandb_logger(config, args, save_dir: Path) -> WandbLogger:
+    """
+    Initialize Weights & Biases logger for video logging.
+
+    Args:
+        config: Configuration object
+        args: Command line arguments
+        save_dir: Directory to save wandb logs
+
+    Returns:
+        WandbLogger instance
+    """
+    # Get wandb config with defaults
+    wandb_project = (
+        getattr(config.wandb, "project", "yrc-policy-eval")
+        if hasattr(config, "wandb")
+        else "yrc-policy-eval"
+    )
+    wandb_mode = (
+        getattr(config.wandb, "mode", "online")
+        if hasattr(config, "wandb")
+        else "online"
+    )
+    wandb_group = (
+        getattr(config.wandb, "group", None)
+        if hasattr(config, "wandb")
+        else None
+    )
+    wandb_entity = (
+        getattr(config.wandb, "entity", None)
+        if hasattr(config, "wandb")
+        else None
+    )
+
+    # Create run name
+    run_name = f"policy_eval_{config.exp_name}"
+    if hasattr(args, "eval_run_name") and args.eval_run_name is not None:
+        run_name = args.eval_run_name
+
+    # Prepare wandb init parameters
+    wandb_kwargs = {
+        "name": run_name,
+        "project": wandb_project,
+        "mode": wandb_mode,
+        "job_type": "policy_eval",
+        "config": {
+            "exp_name": config.exp_name,
+            "model_file": args.model_file,
+            "eval_split": getattr(args, "eval_split", "test"),
+        },
+    }
+
+    if wandb_group is not None:
+        wandb_kwargs["group"] = wandb_group
+
+    if wandb_entity is not None:
+        wandb_kwargs["entity"] = wandb_entity
+
+    logging.info(f"Initializing wandb: project={wandb_project}, name={run_name}, mode={wandb_mode}")
+    exp = wandb.init(**wandb_kwargs)
+
+    wandb_logger = WandbLogger(
+        save_dir=str(save_dir),
+        experiment=exp,
+    )
+
+    return wandb_logger
+
+
 def save_videos(
     video_episodes: List[Dict],
     config,
     save_dir: Path,
     eval_split: str,
+    wandb_logger: Optional[WandbLogger] = None,
 ):
     """
-    Save collected video episodes to disk.
+    Save collected video episodes to disk and/or wandb.
 
     Args:
         video_episodes: List of video episode data
         config: Configuration object
         save_dir: Directory to save videos
         eval_split: Evaluation split name (train/test/val)
+        wandb_logger: Optional WandbLogger for logging to Weights & Biases
     """
-    # Determine output folder
-    video_output_folder = (
-        getattr(config.evaluation, "video_output_folder", None)
+    # Get video logging mode
+    video_logging_mode = (
+        getattr(config.evaluation, "video_logging_mode", "folder")
         if hasattr(config, "evaluation")
-        else None
+        else "folder"
     )
 
-    if video_output_folder is None:
-        # Default to <experiment_dir>/videos
-        output_folder = save_dir / "videos"
-    else:
-        output_folder = resolve_video_output_folder(
-            video_output_folder, save_dir, create_folder=True
+    # Determine output folder for disk saving
+    output_folder = None
+    split_folder = None
+    if video_logging_mode in ["folder", "both"]:
+        video_output_folder = (
+            getattr(config.evaluation, "video_output_folder", None)
+            if hasattr(config, "evaluation")
+            else None
         )
 
-    output_folder.mkdir(parents=True, exist_ok=True)
-    
-    # Create subfolder for the eval split
-    split_folder = output_folder / eval_split
-    split_folder.mkdir(parents=True, exist_ok=True)
+        if video_output_folder is None:
+            # Default to <experiment_dir>/videos
+            output_folder = save_dir / "videos"
+        else:
+            output_folder = resolve_video_output_folder(
+                video_output_folder, save_dir, create_folder=True
+            )
 
-    logging.info(f"Saving {len(video_episodes)} videos to {split_folder}")
+        output_folder.mkdir(parents=True, exist_ok=True)
+        
+        # Create subfolder for the eval split
+        split_folder = output_folder / eval_split
+        split_folder.mkdir(parents=True, exist_ok=True)
+
+        logging.info(f"Saving {len(video_episodes)} videos to {split_folder}")
 
     # Create video processor
     processor = VideoProcessor(VIDEO_CONFIG)
@@ -383,18 +494,33 @@ def save_videos(
 
         # Generate filename and caption
         filename = f"episode_{episode_idx:03d}_return_{episode_return:.2f}"
-        caption = f"Episode {episode_idx} - Return: {episode_return:.2f}"
+        caption = f"Episode {episode_idx} - Split: {eval_split} - Return: {episode_return:.2f}"
 
-        # Save video
-        save_video_to_folder(
-            video,
-            split_folder,
-            filename,
-            VIDEO_CONFIG,
-            caption=caption,
-        )
+        # Save to disk if needed
+        if video_logging_mode in ["folder", "both"]:
+            save_video_to_folder(
+                video,
+                split_folder,
+                filename,
+                VIDEO_CONFIG,
+                caption=caption,
+            )
 
-    logging.info(f"Successfully saved {len(video_episodes)} videos")
+        # Log to wandb if needed
+        if video_logging_mode in ["wandb", "both"] and wandb_logger is not None:
+            log_to_wandb(
+                wandb_logger,
+                video,
+                caption,
+                episode_return,  # Use return as AFHP for video key naming
+                VIDEO_CONFIG,
+                wandb_category=f"policy_eval/{eval_split}",
+            )
+
+    if video_logging_mode in ["folder", "both"]:
+        logging.info(f"Successfully saved {len(video_episodes)} videos to disk")
+    if video_logging_mode in ["wandb", "both"]:
+        logging.info(f"Successfully logged {len(video_episodes)} videos to wandb")
 
 
 if __name__ == "__main__":
