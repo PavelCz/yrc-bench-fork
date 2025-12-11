@@ -157,6 +157,9 @@ def main():
     )
     logging.info(f"Using greedy action selection: {greedy}")
 
+    # Get save directory
+    save_dir = Path(str(get_global_variable("experiment_dir")))
+
     # Check video collection settings
     video_logging_mode = (
         getattr(config.evaluation, "video_logging_mode", "none")
@@ -210,7 +213,6 @@ def main():
     print("=" * 60 + "\n")
 
     # Save results
-    save_dir = Path(str(get_global_variable("experiment_dir")))
     save_dir.mkdir(parents=True, exist_ok=True)
 
     results = {
@@ -414,7 +416,7 @@ def initialize_wandb_logger(config, args, save_dir: Path) -> WandbLogger:
     exp = wandb.init(**wandb_kwargs)
 
     wandb_logger = WandbLogger(
-        save_dir=str(save_dir),
+        save_dir=save_dir,
         experiment=exp,
     )
 
