@@ -504,6 +504,21 @@ class RandomEnvSwitchWrapper(VecEnvWrapper):
                 f"random_percent must be between 0 and 100. Got {random_percent}"
             )
         
+        # Validate that observation and action spaces are compatible
+        if venv1.observation_space.shape != venv2.observation_space.shape:
+            import logging
+            logging.warning(
+                f"Observation space mismatch: venv1={venv1.observation_space.shape}, "
+                f"venv2={venv2.observation_space.shape}. This may cause issues with observations."
+            )
+        
+        if venv1.action_space.n != venv2.action_space.n:
+            import logging
+            logging.warning(
+                f"Action space mismatch: venv1 has {venv1.action_space.n} actions, "
+                f"venv2 has {venv2.action_space.n} actions. This may cause issues with policies."
+            )
+        
         self.venv1 = venv1
         self.venv2 = venv2
         self.random_percent = random_percent / 100.0  # Convert to probability

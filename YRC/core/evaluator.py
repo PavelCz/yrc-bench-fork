@@ -218,6 +218,13 @@ class Evaluator:
             action, scores, recons = policy.act(
                 obs, greedy=args.act_greedy, return_scores_and_recons=True
             )
+            
+            # Debug: Log scores on first timestep
+            if num_episodes == 0 and all(has_done == False):
+                if scores is not None:
+                    logging.debug(f"First scores from policy: {scores}, shape: {scores.shape if hasattr(scores, 'shape') else 'N/A'}")
+                else:
+                    logging.warning("Policy returned None for scores!")
 
             # Store original action before it might be modified by defer_to_oracle
             original_action = action.copy()
@@ -307,6 +314,10 @@ class Evaluator:
                             log["scores_original_in_domain"].append(scores_original_i)
 
                 if not self.done_saving_actions_for_vid:
+                    # Debug logging for scores
+                    if len(self.collected_states[i][-1]) == 0 and scores_i is not None:
+                        logging.debug(f"First score collected for env {i}: {scores_i}, type: {type(scores_i)}")
+                    
                     self.collected_states[i][-1].append(
                         {
                             "obs": prev_obs["env_obs"][i],
@@ -939,6 +950,13 @@ class Evaluator:
 
                 # Only log videos for completed episodes.
                 if len(episode) > 0 and episode[-1]["done"]:
+                    # Debug: Check if scores exist in the episode
+                    scores_in_episode = [x["scores"] for x in episode]
+                    non_none_scores = [s for s in scores_in_episode if s is not None]
+                    if len(non_none_scores) == 0:
+                        logging.warning(f"Episode {env_idx}-{episode_idx}: All scores are None! Episode length: {len(episode)}")
+                    else:
+                        logging.debug(f"Episode {env_idx}-{episode_idx}: Has {len(non_none_scores)}/{len(scores_in_episode)} non-None scores")
                     # Get stored episode metadata
                     episode_meta = self.episode_metadata[env_idx][episode_idx]
 

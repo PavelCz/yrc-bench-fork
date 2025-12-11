@@ -2,9 +2,9 @@ import os
 import numpy as np
 from copy import deepcopy as dc
 import collections
+import logging
 
 import torch
-import logging
 from torch.distributions.categorical import Categorical
 from YRC.core import Policy
 from YRC.core.configs.global_configs import get_global_variable
@@ -17,7 +17,7 @@ class ThresholdPolicy(Policy):
         self.agent = env.weak_agent
         self.params = {"threshold": 0.0, "explore_temp": 1.0, "score_temp": 1.0}
         self.device = get_global_variable("device")
-        self.rolling_average: Optional[str] = self.args.rolling_average
+        self.rolling_average: Optional[str] = getattr(self.args, "rolling_average", None)
 
         if self.rolling_average == "none":
             self.rolling_average = None
@@ -29,7 +29,7 @@ class ThresholdPolicy(Policy):
         ):
             raise ValueError(f"Rolling average {self.rolling_average} not supported")
 
-        self.rolling_average_size: int = self.args.rolling_average_size
+        self.rolling_average_size: int = getattr(self.args, "rolling_average_size", 10)
 
         self.rolling_average_buffers = []
 
@@ -45,30 +45,38 @@ class ThresholdPolicy(Policy):
         self._train_scores = None
 
     def act(self, obs, greedy=False, return_scores_and_recons=False):
-        if get_global_variable("benchmark") == "cliport":
-            attention_size = 3  # todo: get this shape automatically
-            attention_flat = obs["weak_logit"][:, :attention_size]
-            transport_flat = obs["weak_logit"][:, attention_size:]
-            if not torch.is_tensor(attention_flat):
-                attention_flat = torch.from_numpy(attention_flat).float().to(self.device)
-            if not torch.is_tensor(transport_flat):
-                transport_flat = torch.from_numpy(transport_flat).float().to(self.device)
-            attention_score = self._compute_score(attention_flat)
-            transport_score = self._compute_score(transport_flat)
-            score = torch.mean(torch.stack([attention_score, transport_score])).unsqueeze(0)
-        else:
-            weak_logit = obs["weak_logit"]
-            if not torch.is_tensor(weak_logit):
-                weak_logit = torch.from_numpy(weak_logit).float().to(self.device)
-            score = self._compute_score(weak_logit)
-        # NOTE: Originally, higher score = more certain
-        # I inverted score, so it is in line with other OOD scores.
-        action = (score > self.params["threshold"]).int()
+        try:
+            if get_global_variable("benchmark") == "cliport":
+                attention_size = 3  # todo: get this shape automatically
+                attention_flat = obs["weak_logit"][:, :attention_size]
+                transport_flat = obs["weak_logit"][:, attention_size:]
+                if not torch.is_tensor(attention_flat):
+                    attention_flat = torch.from_numpy(attention_flat).float().to(self.device)
+                if not torch.is_tensor(transport_flat):
+                    transport_flat = torch.from_numpy(transport_flat).float().to(self.device)
+                attention_score = self._compute_score(attention_flat)
+                transport_score = self._compute_score(transport_flat)
+                score = torch.mean(torch.stack([attention_score, transport_score])).unsqueeze(0)
+            else:
+                weak_logit = obs["weak_logit"]
+                if not torch.is_tensor(weak_logit):
+                    weak_logit = torch.from_numpy(weak_logit).float().to(self.device)
+                score = self._compute_score(weak_logit)
+            # NOTE: Originally, higher score = more certain
+            # I inverted score, so it is in line with other OOD scores.
+            action = (score > self.params["threshold"]).int()
 
-        if return_scores_and_recons:
-            return action.cpu().numpy(), score.cpu().numpy(), None
+            if return_scores_and_recons:
+                return action.cpu().numpy(), score.cpu().numpy(), None
 
-        return action.cpu().numpy()
+            return action.cpu().numpy()
+        except Exception as e:
+            logging.error(f"Error in ThresholdPolicy.act(): {e}", exc_info=True)
+            # Return safe defaults
+            batch_size = obs["weak_logit"].shape[0] if "weak_logit" in obs else 1
+            if return_scores_and_recons:
+                return np.zeros(batch_size, dtype=int), None, None
+            return np.zeros(batch_size, dtype=int)
 
     def generate_scores(self, env, num_rollouts):
         assert num_rollouts % env.num_envs == 0
