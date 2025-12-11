@@ -18,6 +18,14 @@ Examples:
     python eval_policy.py -c configs/procgen_threshold.yaml \
         --model_file $COINRUN_BG_EXTRAHARD \
         -num_rollouts 100
+    
+    # With video recording
+    python eval_policy.py -c configs/procgen_threshold.yaml \
+        --model_file model.pth \
+        -num_rollouts 100 \
+        -video_logging_mode folder \
+        -video_output_folder ./videos \
+        -video_episodes_to_collect 10
 
 Options:
     -c, --config: Path to YAML config file (required)
@@ -26,11 +34,15 @@ Options:
     -num_envs: Number of parallel environments
     -seed: Random seed
     -greedy: Use greedy action selection (default: True)
+    -video_logging_mode: Video logging mode: 'folder' (local files), 'none' (default)
+    -video_output_folder: Folder path for saving videos (default: <experiment_dir>/videos)
+    -video_episodes_to_collect: Number of episodes to save as videos (default: 0)
     See flags.py for more options.
 
 Output:
     - Prints mean return statistics to console
     - Saves results to <experiment_dir>/policy_eval_results.json
+    - Optionally saves episode videos to disk
 """
 
 import flags
@@ -41,6 +53,30 @@ import importlib
 import numpy as np
 import json
 import logging
+from typing import List, Dict, Optional
+from YRC.core.video_utils import (
+    VideoProcessor,
+    ScoreBarRenderer,
+    TextRenderer,
+    save_video_to_folder,
+    resolve_video_output_folder,
+)
+
+
+# Video configuration
+VIDEO_CONFIG = {
+    "fps": 10,
+    "final_frame_repetitions": 10,
+    "score_bar_height": 0,  # No score bar for simple policy evaluation
+    "score_bar_bg_color": 64,  # Dark gray
+    "font_size": 12,
+    "text_padding": 5,
+    "char_width_estimate": 6,
+    "normal_color": [0, 255, 0],  # Green
+    "ood_color": [255, 0, 0],  # Red
+    "text_color": [255, 255, 255],  # White
+    "outline_color": [0, 0, 0],  # Black
+}
 
 
 def main():
@@ -100,8 +136,33 @@ def main():
     )
     logging.info(f"Using greedy action selection: {greedy}")
 
+    # Check video collection settings
+    video_logging_mode = (
+        getattr(config.evaluation, "video_logging_mode", "none")
+        if hasattr(config, "evaluation")
+        else "none"
+    )
+    video_episodes_to_collect = (
+        getattr(config.evaluation, "video_episodes_to_collect", 0)
+        if hasattr(config, "evaluation")
+        else 0
+    )
+    
+    should_collect_videos = (
+        video_logging_mode in ["folder", "both"] and video_episodes_to_collect > 0
+    )
+
+    if should_collect_videos:
+        logging.info(
+            f"Video collection enabled: will collect {video_episodes_to_collect} episodes"
+        )
+        logging.info(f"Video logging mode: {video_logging_mode}")
+
     # Run evaluation
-    returns = rollout_and_get_returns(policy, env, num_episodes, greedy=greedy)
+    returns, video_episodes = rollout_and_get_returns(
+        policy, env, num_episodes, greedy=greedy, collect_videos=should_collect_videos,
+        max_video_episodes=video_episodes_to_collect
+    )
 
     # Calculate statistics
     mean_return = np.mean(returns)
@@ -144,8 +205,14 @@ def main():
 
     logging.info(f"Results saved to {results_path}")
 
+    # Save videos if enabled
+    if should_collect_videos and len(video_episodes) > 0:
+        save_videos(video_episodes, config, save_dir, eval_split)
 
-def rollout_and_get_returns(policy, env, num_episodes, greedy=True):
+
+def rollout_and_get_returns(
+    policy, env, num_episodes, greedy=True, collect_videos=False, max_video_episodes=0
+):
     """
     Rollout the policy on the environment and collect episode returns.
 
@@ -154,9 +221,13 @@ def rollout_and_get_returns(policy, env, num_episodes, greedy=True):
         env: The raw environment to evaluate on
         num_episodes: Number of episodes to run
         greedy: Whether to use greedy action selection (default: True)
+        collect_videos: Whether to collect video frames (default: False)
+        max_video_episodes: Maximum number of episodes to collect videos for (default: 0)
 
     Returns:
-        List of episode returns
+        Tuple of (returns, video_episodes)
+        - returns: List of episode returns
+        - video_episodes: List of collected video data (if collect_videos=True)
     """
     assert num_episodes % env.num_envs == 0, (
         f"num_episodes ({num_episodes}) must be divisible by num_envs ({env.num_envs})"
@@ -168,6 +239,11 @@ def rollout_and_get_returns(policy, env, num_episodes, greedy=True):
 
     # Track cumulative reward for each parallel environment
     cumulative_rewards = [0.0] * env.num_envs
+
+    # Video collection data structures (one per parallel env)
+    video_episodes = []
+    current_episodes = [[] for _ in range(env.num_envs)]
+    video_episodes_collected = 0
 
     # Reset environment
     obs = env.reset()
@@ -184,7 +260,22 @@ def rollout_and_get_returns(policy, env, num_episodes, greedy=True):
         action = policy.act(obs, greedy=greedy)
 
         # Step environment
-        obs, reward, done, info = env.step(action)
+        next_obs, reward, done, info = env.step(action)
+
+        # Collect video frames if enabled
+        if collect_videos and video_episodes_collected < max_video_episodes:
+            for i in range(env.num_envs):
+                # Normalize observation to [0, 1] range for video
+                obs_normalized = obs[i].astype(np.float32) / 255.0
+                
+                current_episodes[i].append({
+                    "obs": obs_normalized,
+                    "action": action[i],
+                    "reward": reward[i],
+                    "done": done[i],
+                    "scores": None,  # No OOD scores for simple policy evaluation
+                    "recons": None,  # No reconstructions
+                })
 
         # Accumulate rewards
         for i in range(env.num_envs):
@@ -202,13 +293,108 @@ def rollout_and_get_returns(policy, env, num_episodes, greedy=True):
                             f"Current mean return: {np.mean(returns):.4f}"
                         )
 
+                # Save video episode if we're still collecting
+                if (
+                    collect_videos
+                    and video_episodes_collected < max_video_episodes
+                    and len(current_episodes[i]) > 0
+                ):
+                    video_episodes.append({
+                        "frames": current_episodes[i],
+                        "return": cumulative_rewards[i],
+                        "episode_idx": video_episodes_collected,
+                    })
+                    video_episodes_collected += 1
+                    logging.info(
+                        f"Collected video {video_episodes_collected}/{max_video_episodes}"
+                    )
+
+                # Reset for next episode
+                current_episodes[i] = []
                 cumulative_rewards[i] = 0.0
 
                 # Reset episode counter for heuristic policies
                 if hasattr(policy, "reset_episode"):
                     policy.reset_episode()
 
-    return returns
+        obs = next_obs
+
+    return returns, video_episodes
+
+
+def save_videos(
+    video_episodes: List[Dict],
+    config,
+    save_dir: Path,
+    eval_split: str,
+):
+    """
+    Save collected video episodes to disk.
+
+    Args:
+        video_episodes: List of video episode data
+        config: Configuration object
+        save_dir: Directory to save videos
+        eval_split: Evaluation split name (train/test/val)
+    """
+    # Determine output folder
+    video_output_folder = (
+        getattr(config.evaluation, "video_output_folder", None)
+        if hasattr(config, "evaluation")
+        else None
+    )
+
+    if video_output_folder is None:
+        # Default to <experiment_dir>/videos
+        output_folder = save_dir / "videos"
+    else:
+        output_folder = resolve_video_output_folder(
+            video_output_folder, save_dir, create_folder=True
+        )
+
+    output_folder.mkdir(parents=True, exist_ok=True)
+    
+    # Create subfolder for the eval split
+    split_folder = output_folder / eval_split
+    split_folder.mkdir(parents=True, exist_ok=True)
+
+    logging.info(f"Saving {len(video_episodes)} videos to {split_folder}")
+
+    # Create video processor
+    processor = VideoProcessor(VIDEO_CONFIG)
+
+    for video_data in video_episodes:
+        frames = video_data["frames"]
+        episode_return = video_data["return"]
+        episode_idx = video_data["episode_idx"]
+
+        # Extract observations
+        observations = [frame["obs"] for frame in frames]
+
+        # Create video
+        video = np.stack(observations, axis=0)
+        
+        # Add repeated frames for smoother ending
+        video = processor.add_repeated_frames(video)
+
+        # Normalize to 0-255 range
+        video = video * 255
+        video = video.astype(np.uint8)
+
+        # Generate filename and caption
+        filename = f"episode_{episode_idx:03d}_return_{episode_return:.2f}"
+        caption = f"Episode {episode_idx} - Return: {episode_return:.2f}"
+
+        # Save video
+        save_video_to_folder(
+            video,
+            split_folder,
+            filename,
+            VIDEO_CONFIG,
+            caption=caption,
+        )
+
+    logging.info(f"Successfully saved {len(video_episodes)} videos")
 
 
 if __name__ == "__main__":
