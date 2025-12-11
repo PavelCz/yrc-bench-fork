@@ -296,11 +296,11 @@ def rollout_and_get_returns(
         # Collect video frames if enabled
         if collect_videos and video_episodes_collected < max_video_episodes:
             for i in range(env.num_envs):
-                # Normalize observation to [0, 1] range for video
-                obs_normalized = obs[i].astype(np.float32) / 255.0
+                # Observations are already in [0, 1] range from ScaledFloatFrame wrapper
+                obs_float = obs[i].astype(np.float32)
                 
                 current_episodes[i].append({
-                    "obs": obs_normalized,
+                    "obs": obs_float,
                     "action": action[i],
                     "reward": reward[i],
                     "done": done[i],
