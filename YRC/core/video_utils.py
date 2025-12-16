@@ -334,6 +334,62 @@ def add_score_bars(
     return vid_with_bars
 
 
+def add_action_indicator_bars(
+    video: np.ndarray,
+    actions: List[int],
+    score_renderer: ScoreBarRenderer,
+    text_renderer: TextRenderer,
+    video_config: dict,
+) -> np.ndarray:
+    """Add action indicator bars to video frames when scores are not available.
+
+    Args:
+        video: Video array
+        actions: List of actions for each frame
+        score_renderer: ScoreBarRenderer instance
+        text_renderer: TextRenderer instance
+        video_config: Video configuration dictionary
+
+    Returns:
+        Video with action indicator bars added
+    """
+    bar_height = video_config["score_bar_height"]
+    time_steps, channels, _, width = video.shape
+
+    # Create new video with extra height for action bar
+    processor = VideoProcessor(video_config)
+    vid_with_bars = processor.create_video_with_bars(video)
+    processor.add_base_video_content(vid_with_bars, video)
+
+    # Add action indicator bars for each frame
+    for t in range(time_steps):
+        # Get current action, handling repeated frames
+        if t < len(actions):
+            current_action = actions[t]
+        else:
+            # For repeated frames, use the last action
+            current_action = actions[-1] if actions else 0
+
+        # Get the bar color based on action (green for normal, red for OOD)
+        bar_color = score_renderer.get_bar_color(current_action)
+
+        # Fill the entire bar area with the action color
+        vid_with_bars[t, :, :bar_height, :] = np.array(bar_color)[
+            :, np.newaxis, np.newaxis
+        ]
+
+        # Add text overlay showing the action
+        action_text = "OOD Detected" if current_action == 1 else "Normal"
+        _text_width, text_height = text_renderer.calculate_text_dimensions(action_text)
+        text_x, text_y = text_renderer.calculate_text_position(bar_height, text_height)
+
+        vid_with_bars[t] = text_renderer.add_text_to_frame(
+            vid_with_bars[t], action_text, (text_x, text_y)
+        )
+
+    return vid_with_bars
+
+
 def generate_caption(threshold: float, afhp: float, video_data: Dict[str, Any]) -> str:
     """Generate video caption with relevant information."""
     caption = f"Threshold: {threshold:.2E} - AFHP: {afhp:.2f}"
@@ -354,6 +410,9 @@ def generate_caption(threshold: float, afhp: float, video_data: Dict[str, Any]) 
             " - Top bar: Score with values (Green=Normal, Red=OOD, Range: "
             f"{score_min:.3f}-{score_max:.3f})"
         )
+    else:
+        # When scores are not available, we show action indicator instead
+        caption += " - Top bar: Action indicator (Green=Normal, Red=OOD Detected)"
 
     return caption
 
@@ -507,12 +566,12 @@ def process_and_log_video(
     combined_video = processor.add_repeated_frames(combined_video)
 
     # Add score bars if available and scores contain valid values
+    score_renderer = ScoreBarRenderer(video_config)
+    text_renderer = TextRenderer(video_config)
+
     if video_data["scores"] is not None and any(
         score is not None for score in video_data["scores"]
     ):
-        score_renderer = ScoreBarRenderer(video_config)
-        text_renderer = TextRenderer(video_config)
-
         combined_video = add_score_bars(
             combined_video,
             video_data["scores"],
@@ -521,6 +580,15 @@ def process_and_log_video(
             text_renderer,
             video_config,
             skip_normalization=skip_score_normalization,
+        )
+    else:
+        # When scores are not available, add action indicator bars instead
+        combined_video = add_action_indicator_bars(
+            combined_video,
+            video_data["actions"],
+            score_renderer,
+            text_renderer,
+            video_config,
         )
 
     # Generate caption
