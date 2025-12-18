@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 
 from YRC.core.video_utils import process_and_log_video, resolve_video_output_folder
 
-
 class Evaluator:
     LOGGED_ACTION = 1
 
@@ -29,7 +28,7 @@ class Evaluator:
         "outline_color": [0, 0, 0],  # Black
     }
 
-    def __init__(self, config, env_config: Optional[dict] = None):
+    def __init__(self, config, env_config: Optional[dict] = None, random_env_switch: bool = False):
         self.args = config.evaluation
 
         self.eval_run_dir = Path(config.eval_run_dir)
@@ -53,6 +52,8 @@ class Evaluator:
             metric == "max_prob" or alg_cls == "RandomAlgorithm"
         )
 
+        self.random_env_switch = random_env_switch
+
     def eval(
         self,
         policy,
@@ -61,7 +62,6 @@ class Evaluator:
         num_episodes=None,
         logger: Optional[WandbLogger] = None,
         threshold: Optional[float] = None,
-        random_env_switch: bool = False,
     ):
         args = self.args
         policy.eval()
@@ -117,7 +117,9 @@ class Evaluator:
 
             logging.info(f"Evaluation on {split} for {num_episodes} episodes")
 
-            log = self._eval_loop(policy, envs[split], num_episodes)
+            log = self._eval_loop(
+                policy, envs[split], num_episodes
+            )
 
             summary[split] = self.summarize(log)
             self.write_summary(split, summary[split])
@@ -150,6 +152,10 @@ class Evaluator:
                 logger.experiment.log({
                     "num_finished_episodes": summary[split]["num_finished_episodes"],
                 })
+                if self.random_env_switch:
+                    logger.experiment.log({
+                    "env_1_percentage": summary[split]["num_finished_episodes_env1"] / summary[split]["num_finished_episodes"],
+                })
 
         return summary
 
@@ -176,6 +182,8 @@ class Evaluator:
             "first_ood_timestep": [],
             # Track total number of finished episodes
             "num_finished_episodes": 0,
+            "num_finished_episodes_env1": 0,
+            "num_finished_episodes_env2": 0,
         }
 
         # A temporary log that only contains stats for the current episode.
@@ -349,7 +357,14 @@ class Evaluator:
                     num_episodes += 1
                     # Track total finished episodes
                     log["num_finished_episodes"] += 1
-                    
+
+                    if self.random_env_switch:
+                        env: "CoordEnv"
+                        if env.base_env.env_selector[i] == 0:
+                            log["num_finished_episodes_env1"] += 1
+                        else:
+                            log["num_finished_episodes_env2"] += 1
+
                     # Check which filters this episode passes
                     episode_data = {
                         "cumulative_reward": episode_log["cumulative_reward"][i],
@@ -480,6 +495,8 @@ class Evaluator:
             # Episode outcome information
             "invisible_coin_collected": log["invisible_coin_collected"],
             "first_ood_timestep": log["first_ood_timestep"],
+            "num_finished_episodes_env1": log["num_finished_episodes_env1"],
+            "num_finished_episodes_env2": log["num_finished_episodes_env2"],
         }
 
     def write_summary(self, split, summary):

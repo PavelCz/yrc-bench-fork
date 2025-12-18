@@ -186,7 +186,7 @@ def main():
             )
             policy.generate_scores(envs["train"], num_rollouts)
 
-    evaluator = Evaluator(config, config.environment)
+    evaluator = Evaluator(config, config.environment, random_env_switch=use_random_env_switch)
 
     coverage_fraction = config.evaluation.coverage_fraction
     threshold_sampler: str = config.evaluation.threshold_sampler
