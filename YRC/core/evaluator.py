@@ -61,6 +61,7 @@ class Evaluator:
         num_episodes=None,
         logger: Optional[WandbLogger] = None,
         threshold: Optional[float] = None,
+        random_env_switch: bool = False,
     ):
         args = self.args
         policy.eval()
@@ -146,6 +147,10 @@ class Evaluator:
             if logger is not None:
                 self._process_and_log_videos(split, threshold, afhp, logger)
 
+                logger.experiment.log({
+                    "num_finished_episodes": summary[split]["num_finished_episodes"],
+                })
+
         return summary
 
     def _eval_loop(self, policy, env, max_episodes: int) -> dict:
@@ -169,6 +174,8 @@ class Evaluator:
             "invisible_coin_collected": [],  # Whether coin was collected this episode
             # First timestep when OOD was predicted (None if never predicted)
             "first_ood_timestep": [],
+            # Track total number of finished episodes
+            "num_finished_episodes": 0,
         }
 
         # A temporary log that only contains stats for the current episode.
@@ -340,7 +347,9 @@ class Evaluator:
 
                     # Always increment episode counter (for upper bound check)
                     num_episodes += 1
-
+                    # Track total finished episodes
+                    log["num_finished_episodes"] += 1
+                    
                     # Check which filters this episode passes
                     episode_data = {
                         "cumulative_reward": episode_log["cumulative_reward"][i],
@@ -451,6 +460,7 @@ class Evaluator:
         ood_accuracy = float(np.mean(log["level_ood_pred"] == log["level_ood_gt"]))
         return {
             "steps": total_steps,
+            "num_finished_episodes": log["num_finished_episodes"],
             "episode_length_mean": float(np.mean(log["episode_length"])),
             "episode_length_min": int(np.min(log["episode_length"])),
             "episode_length_max": int(np.max(log["episode_length"])),
@@ -474,6 +484,7 @@ class Evaluator:
 
     def write_summary(self, split, summary):
         log_str = f"   Steps:       {summary['steps']}\n"
+        log_str += f"   Finished Episodes: {summary['num_finished_episodes']}\n"
         log_str += "   Episode:    "
         log_str += f"mean {summary['episode_length_mean']:7.2f}  "
         log_str += f"min {summary['episode_length_min']:7.2f}  "
