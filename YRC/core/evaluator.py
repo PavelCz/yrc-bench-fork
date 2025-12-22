@@ -54,6 +54,41 @@ class Evaluator:
 
         self.random_env_switch = random_env_switch
 
+    def _random_env_switch_is_ood(self, env, i: int) -> bool:
+        """
+        Determine OOD ground-truth for random-env-switch evaluation.
+
+        Convention:
+        - env1 (venv1) is in-distribution  => OOD GT False
+        - env2 (venv2) is out-of-domain    => OOD GT True
+
+        This relies on `RandomEnvSwitchWrapper.env_selector` being present.
+        We intentionally fail fast if it's missing to avoid silently producing
+        incorrect OOD metrics.
+        """
+        base_env = getattr(env, "base_env", env)
+        if not hasattr(base_env, "env_selector"):
+            raise RuntimeError(
+                "random_env_switch=True but the environment has no `env_selector`. "
+                "Expected the underlying env to be a `RandomEnvSwitchWrapper` (or compatible). "
+                "Make sure you constructed the test env via `RandomEnvSwitchWrapper(env1, env2, ...)` "
+                "and passed that wrapped env into `CoordEnv` / the evaluator. "
+                f"Got base_env type: {type(base_env)}"
+            )
+
+        selector = getattr(base_env, "env_selector")
+        try:
+            # RandomEnvSwitchWrapper uses: True => env1, False => env2
+            is_env1 = bool(selector[i])
+        except Exception as e:
+            raise RuntimeError(
+                "random_env_switch=True but could not index `env_selector` for env idx "
+                f"{i}. Got env_selector type: {type(selector)}"
+            ) from e
+
+        # env2 is OOD
+        return not is_env1
+
     def eval(
         self,
         policy,
@@ -205,6 +240,19 @@ class Evaluator:
         first_ood_timestep = [None] * env.num_envs
 
         obs = env.reset()
+        # Initialize OOD GT for the *current* episode.
+        #
+        # - Coinrun-style tasks populate `info["randomize_goal"]` (handled after stepping).
+        # - Random env switch tasks define OOD GT by which underlying env is selected:
+        #   env1 = in-distribution, env2 = OOD.
+        if self.random_env_switch:
+            # RandomEnvSwitchWrapper uses a boolean env_selector:
+            #   True  => venv1 (env1)
+            #   False => venv2 (env2)
+            # Therefore, OOD GT (env2) is the negation of env_selector.
+            current_level_ood_gt = [
+                self._random_env_switch_is_ood(env, i) for i in range(env.num_envs)
+            ]
         prev_obs = obs
 
         for i in range(env.num_envs):
@@ -359,11 +407,18 @@ class Evaluator:
                     log["num_finished_episodes"] += 1
 
                     if self.random_env_switch:
-                        env: "CoordEnv"
-                        if env.base_env.env_selector[i] == 0:
-                            log["num_finished_episodes_env1"] += 1
-                        else:
+                        # Count the env for the episode that just finished.
+                        # `RandomEnvSwitchWrapper` may already have sampled the NEXT
+                        # episode's env_selector by the time we see done=True, so
+                        # we rely on the per-episode GT we already stored.
+                        #
+                        # Convention:
+                        # - env1 (in-distribution) => OOD GT False
+                        # - env2 (OOD)             => OOD GT True
+                        if current_level_ood_gt[i]:
                             log["num_finished_episodes_env2"] += 1
+                        else:
+                            log["num_finished_episodes_env1"] += 1
 
                     # Check which filters this episode passes
                     episode_data = {
@@ -458,7 +513,13 @@ class Evaluator:
                 # We update this after we (potentially) save this to log. This is
                 # because gym3 automatically resets the environment at the end of an
                 # episode, so the info dict might be of the next episode.
-                current_level_ood_gt[i] = info[i]["randomize_goal"]
+                if self.random_env_switch:
+                    # In random env switch mode, GT is determined by which underlying
+                    # env is selected for the (possibly just-reset) current episode.
+                    current_level_ood_gt[i] = self._random_env_switch_is_ood(env, i)
+                else:
+                    # Coinrun-style GT: randomize_goal indicates OOD.
+                    current_level_ood_gt[i] = bool(info[i]["randomize_goal"])
 
                 # Check if all filters have enough episodes
                 if self._all_video_filters_satisfied():
