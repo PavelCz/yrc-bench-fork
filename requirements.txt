@@ -188,6 +188,7 @@ tifffile==2023.7.10
 tokenizers==0.10.3
 tomli==2.0.1
 tornado==6.4
+torch==2.4.1
 tqdm==4.66.4
 traitlets==4.3.3
 transformers==4.3.2
