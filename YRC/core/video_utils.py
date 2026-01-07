@@ -689,6 +689,7 @@ def process_and_log_video(
     subfolder: Optional[str] = None,
     wandb_category: Optional[str] = None,
     skip_score_normalization: bool = False,
+    include_human_view: bool = False,
 ) -> None:
     """
     Complete video processing and logging pipeline.
@@ -705,6 +706,7 @@ def process_and_log_video(
         subfolder: Optional subfolder name to create within output_folder for organization
         wandb_category: Optional category name for wandb logging organization
         skip_score_normalization: If True, don't normalize scores (useful for max_prob metric)
+        include_human_view: If True, include the human-resolution view in the video (default: False)
     """
     video_logger.debug(
         f"[ep={episode_idx}] process_and_log_video called: logging_mode={logging_mode}, "
@@ -781,8 +783,9 @@ def process_and_log_video(
     video_logger.debug(f"[ep={episode_idx}] Step 4/6: Done ({timings['add_score_bars']:.3f}s)")
 
     # Combine agent view (with bar) and human view (bar will be copied to human section)
+    # Only include human view if the flag is enabled
     human_obs = video_data.get("human_observations", [])
-    if human_obs and any(h is not None for h in human_obs):
+    if include_human_view and human_obs and any(h is not None for h in human_obs):
         video_logger.debug(f"[ep={episode_idx}] Step 5/6: Combining agent and human views (with bars on both)...")
         t0 = time.perf_counter()
         combined_video = processor.combine_agent_and_human_views(
@@ -790,6 +793,8 @@ def process_and_log_video(
         )
         timings["combine_agent_human_views"] = time.perf_counter() - t0
         video_logger.debug(f"[ep={episode_idx}] Step 5/6: Done ({timings['combine_agent_human_views']:.3f}s), shape={combined_video.shape}")
+    elif not include_human_view:
+        video_logger.debug(f"[ep={episode_idx}] Step 5/6: Skipped (include_human_view=False)")
     else:
         video_logger.debug(f"[ep={episode_idx}] Step 5/6: Skipped (no human observations)")
 

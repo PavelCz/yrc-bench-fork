@@ -1089,6 +1089,7 @@ class Evaluator:
                                         subfolder=filter_name,
                                         wandb_category=f"videos_{filter_name}",
                                         skip_score_normalization=self.skip_score_normalization,
+                                        include_human_view=getattr(self.args, "include_human_view", True),
                                     )
                                     videos_logged[filter_name] += 1
                         else:  # filter_mode == "all"
@@ -1119,6 +1120,7 @@ class Evaluator:
                                     subfolder=combined_filter_name,
                                     wandb_category=f"videos_{combined_filter_name}",
                                     skip_score_normalization=self.skip_score_normalization,
+                                    include_human_view=getattr(self.args, "include_human_view", True),
                                 )
                                 videos_logged[combined_filter_name] += 1
 

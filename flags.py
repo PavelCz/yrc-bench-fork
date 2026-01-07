@@ -391,6 +391,14 @@ def make():
     )
 
     parser.add_argument(
+        "-include_human_view",
+        "--evaluation.include_human_view",
+        type=bool,
+        default=True,
+        help="Include human-resolution view (512x512) in logged videos (default: True)",
+    )
+
+    parser.add_argument(
         "-rollout_dir",
         "--training.rollout_dir",
         type=str,
