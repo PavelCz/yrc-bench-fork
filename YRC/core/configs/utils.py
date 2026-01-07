@@ -201,7 +201,13 @@ def load(yaml_file_or_str, flags=None) -> ConfigDict:
     log_file_path = Path(log_file)
     if log_file_path.is_file():
         log_file_path.unlink()
-    config_logging(log_file)
+    
+    # Get log level from flags if available, otherwise default to INFO
+    log_level = logging.INFO
+    if flags is not None and hasattr(flags, "log_level") and flags.log_level is not None:
+        log_level = getattr(logging, flags.log_level)
+    
+    config_logging(log_file, log_level=log_level)
     logging.info(str(datetime.now()))
     logging.info("python -u " + " ".join(sys.argv))
     logging.info("Write log to %s" % log_file)
@@ -229,7 +235,7 @@ def update_config(source, target):
             target[k] = source[k]
 
 
-def config_logging(log_file):
+def config_logging(log_file, log_level=logging.INFO):
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(ElapsedFormatter())
 
@@ -237,7 +243,7 @@ def config_logging(log_file):
     file_handler.setFormatter(ElapsedFormatter())
 
     logging.basicConfig(
-        level=logging.INFO, handlers=[file_handler, stream_handler], force=True
+        level=log_level, handlers=[file_handler, stream_handler], force=True
     )
 
     def handler(type, value, tb):
