@@ -668,40 +668,54 @@ def process_and_log_video(
 
     total_start = time.perf_counter()
     timings = {}
+    num_frames = len(episode)
+
+    video_logger.debug(f"[ep={episode_idx}] Starting video processing ({num_frames} frames)...")
 
     # Extract and validate data
+    video_logger.debug(f"[ep={episode_idx}] Step 1/6: Extracting video data...")
     t0 = time.perf_counter()
     video_data = extract_video_data(episode)
     timings["extract_data"] = time.perf_counter() - t0
+    video_logger.debug(f"[ep={episode_idx}] Step 1/6: Done ({timings['extract_data']:.3f}s)")
 
     # Create video processor instance
     processor = VideoProcessor(video_config)
 
     # Process video frames (agent observations with optional reconstructions)
+    video_logger.debug(f"[ep={episode_idx}] Step 2/6: Combining observations and reconstructions...")
     t0 = time.perf_counter()
     combined_video = processor.combine_observations_and_reconstructions(
         video_data["observations"],
         video_data["reconstructions"],
     )
     timings["combine_obs_recons"] = time.perf_counter() - t0
+    video_logger.debug(f"[ep={episode_idx}] Step 2/6: Done ({timings['combine_obs_recons']:.3f}s), shape={combined_video.shape}")
 
+    video_logger.debug(f"[ep={episode_idx}] Step 3/6: Adding repeated frames...")
     t0 = time.perf_counter()
     combined_video = processor.add_repeated_frames(combined_video)
     timings["add_repeated_frames"] = time.perf_counter() - t0
+    video_logger.debug(f"[ep={episode_idx}] Step 3/6: Done ({timings['add_repeated_frames']:.3f}s)")
 
     # Combine agent view (top) with human-resolution view (bottom) if available
     human_obs = video_data.get("human_observations", [])
     if human_obs and any(h is not None for h in human_obs):
+        video_logger.debug(f"[ep={episode_idx}] Step 4/6: Combining agent and human views...")
         t0 = time.perf_counter()
         combined_video = processor.combine_agent_and_human_views(
             combined_video, human_obs
         )
         timings["combine_agent_human_views"] = time.perf_counter() - t0
+        video_logger.debug(f"[ep={episode_idx}] Step 4/6: Done ({timings['combine_agent_human_views']:.3f}s), shape={combined_video.shape}")
+    else:
+        video_logger.debug(f"[ep={episode_idx}] Step 4/6: Skipped (no human observations)")
 
     # Add score bars if available and scores contain valid values
     score_renderer = ScoreBarRenderer(video_config)
     text_renderer = TextRenderer(video_config)
 
+    video_logger.debug(f"[ep={episode_idx}] Step 5/6: Adding score bars...")
     t0 = time.perf_counter()
     if video_data["scores"] is not None and any(
         score is not None for score in video_data["scores"]
@@ -725,6 +739,7 @@ def process_and_log_video(
             video_config,
         )
     timings["add_score_bars"] = time.perf_counter() - t0
+    video_logger.debug(f"[ep={episode_idx}] Step 5/6: Done ({timings['add_score_bars']:.3f}s)")
 
     # Generate caption
     caption = generate_caption(threshold, afhp, video_data)
@@ -739,11 +754,13 @@ def process_and_log_video(
     if logging_mode in ["wandb", "both"]:
         if logger is None:
             raise ValueError("logger is required for wandb logging mode")
+        video_logger.debug(f"[ep={episode_idx}] Step 6/6: Uploading to wandb...")
         t0 = time.perf_counter()
         log_to_wandb(
             logger, combined_video, caption, afhp, video_config, wandb_category
         )
         timings["log_to_wandb"] = time.perf_counter() - t0
+        video_logger.debug(f"[ep={episode_idx}] Step 6/6: wandb upload done ({timings['log_to_wandb']:.3f}s)")
 
     if logging_mode in ["folder", "both"]:
         if output_folder is None:
@@ -752,17 +769,18 @@ def process_and_log_video(
             )
         # Create subfolder if specified
         target_folder = output_folder / subfolder if subfolder else output_folder
+        video_logger.debug(f"[ep={episode_idx}] Step 6/6: Saving to folder {target_folder}...")
         t0 = time.perf_counter()
         save_video_to_folder(
             combined_video, target_folder, filename, video_config, caption
         )
         timings["save_to_folder"] = time.perf_counter() - t0
+        video_logger.debug(f"[ep={episode_idx}] Step 6/6: Folder save done ({timings['save_to_folder']:.3f}s)")
 
     total_time = time.perf_counter() - total_start
     timings["total"] = total_time
 
-    # Log profiling results
-    num_frames = len(episode)
+    # Log profiling summary
     video_shape = combined_video.shape
     timing_str = ", ".join(f"{k}={v:.3f}s" for k, v in timings.items())
     video_logger.info(
