@@ -193,7 +193,7 @@ tqdm==4.66.4
 traitlets==4.3.3
 transformers==4.3.2
 transforms3d==0.3.1
-triton==2.1.0
+# triton==2.1.0
 typing-extensions==4.11.0
 tzdata==2024.1
 u-msgpack-python==2.8.0
@@ -211,6 +211,7 @@ zipp==3.18.1
 # --index-url https://download.pytorch.org/whl/cu121
 # torch==2.1.2
 # torchvision==0.16.2
+torchvision==0.19.1
 
 # --index-url https://pypi.org/simple
 # tomli==2.0.1
