@@ -259,6 +259,7 @@ class ProcgenGym3Env(BaseProcgenEnv):
         corruption_type=None,
         corruption_severity=1,
         continue_after_coin=False,
+        timeout=None,
         **kwargs,
     ):
         self.corruption_type = corruption_type
@@ -294,6 +295,8 @@ class ProcgenGym3Env(BaseProcgenEnv):
                 "rand_region": int(rand_region),
                 "continue_after_coin": bool(continue_after_coin),
             }
+        if timeout is not None:
+            options["timeout"] = int(timeout)
         super().__init__(num, env_name, options, **kwargs)
     
     def observe(self):
