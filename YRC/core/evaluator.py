@@ -414,6 +414,10 @@ class Evaluator:
                     num_episodes += 1
                     # Track total finished episodes
                     log["num_finished_episodes"] += 1
+                    
+                    # Log progress every 50 episodes at DEBUG level
+                    if num_episodes % 50 == 0:
+                        logging.debug(f"_eval_loop: Progress {num_episodes}/{max_episodes} episodes completed")
 
                     if self.random_env_switch:
                         # Count the env for the episode that just finished.
@@ -539,6 +543,7 @@ class Evaluator:
 
             has_done |= done
 
+        logging.debug(f"_eval_loop: Completed - {num_episodes} episodes evaluated, {log['num_finished_episodes']} finished")
         return log
 
     def summarize(self, log):
