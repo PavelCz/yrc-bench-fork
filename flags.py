@@ -404,6 +404,15 @@ def make():
         help="directory to save val rollouts. Currently only used for Mahalanobis AE.",
     )
 
+    parser.add_argument(
+        "-log_level",
+        "--log_level",
+        type=str,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+        help="logging level (default: INFO). Use DEBUG for detailed video profiling logs.",
+    )
+
     args = parser.parse_args()
 
     return args

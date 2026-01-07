@@ -1,6 +1,7 @@
 from pathlib import Path
 import os
 import time
+import logging
 from typing import List
 
 import flags
@@ -98,6 +99,15 @@ def main():
     args = flags.make()
     args.eval_mode = True
     config = config_utils.load(args.config, flags=args)
+
+    # Configure logging level from command line flag
+    log_level = getattr(args, "log_level", "INFO")
+    logging.basicConfig(
+        level=getattr(logging, log_level),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+    # Ensure video_utils logger respects the level
+    logging.getLogger("YRC.core.video_utils").setLevel(getattr(logging, log_level))
 
     # Record time for profiling purposes
     start_time = time.time()
