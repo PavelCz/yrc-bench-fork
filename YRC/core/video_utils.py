@@ -661,6 +661,10 @@ def process_and_log_video(
         wandb_category: Optional category name for wandb logging organization
         skip_score_normalization: If True, don't normalize scores (useful for max_prob metric)
     """
+    video_logger.debug(
+        f"[ep={episode_idx}] process_and_log_video called: logging_mode={logging_mode}, "
+        f"episode_frames={len(episode)}, logger={'present' if logger is not None else 'None'}"
+    )
 
     # Skip video logging entirely if mode is "none"
     if logging_mode == "none":

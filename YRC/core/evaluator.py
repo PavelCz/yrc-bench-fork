@@ -181,7 +181,9 @@ class Evaluator:
             envs[split].close()
 
             # Process and log videos if logger is available
+            logging.debug(f"eval: logger is {'not None' if logger is not None else 'None'}, will process videos: {logger is not None}")
             if logger is not None:
+                logging.debug(f"eval: Calling _process_and_log_videos for split={split}")
                 self._process_and_log_videos(split, threshold, afhp, logger)
 
                 logger.experiment.log({
@@ -1004,7 +1006,12 @@ class Evaluator:
         raw_output_folder = getattr(args, "video_output_folder", None)
         logging_mode = getattr(args, "video_logging_mode", "none")
         
-        logging.debug(f"_process_and_log_videos: logging_mode={logging_mode}, collected_states has {len(self.collected_states)} envs")
+        total_collected_frames = sum(sum(len(ep) for ep in env_episodes) for env_episodes in self.collected_states)
+        logging.debug(
+            f"_process_and_log_videos: logging_mode={logging_mode}, "
+            f"collected_states has {len(self.collected_states)} envs, "
+            f"total frames collected={total_collected_frames}"
+        )
 
         if raw_output_folder is None and logging_mode in ["folder", "both"]:
             output_folder = self._get_default_video_folder()
