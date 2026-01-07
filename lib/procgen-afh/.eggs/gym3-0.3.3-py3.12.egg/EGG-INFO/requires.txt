@@ -1,0 +1,14 @@
+numpy<2.0.0,>=1.11.0
+cffi<2.0.0,>=1.13.0
+imageio<3.0.0,>=2.6.0
+imageio-ffmpeg<0.4.0,>=0.3.0
+glfw<2.0.0,>=1.8.6
+moderngl<6.0.0,>=5.5.4
+
+[test]
+pytest==5.2.1
+pytest-benchmark==3.2.2
+gym-retro==0.8.0
+gym==0.17.2
+tensorflow==1.15.0
+mpi4py==3.0.3

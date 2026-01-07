@@ -1,0 +1,7 @@
+numpy<2.0.0,>=1.17.0
+gym<1.0.0,>=0.15.0
+filelock<4.0.0,>=3.0.0
+
+[test]
+pytest==5.2.1
+pytest-benchmark==3.2.2
