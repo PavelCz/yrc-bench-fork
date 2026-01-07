@@ -69,6 +69,8 @@ def create_raw_env_from_config(env_config, base_config):
             random_percent=get_config_value(env_config, "random_percent", 100),
             # Enable human-resolution rendering for video logging (512x512 frames in info["rgb"])
             render_mode="rgb_array",
+            # Set episode timeout (max steps) directly in procgen C++ backend
+            timeout=get_config_value(common_config, "max_steps", None),
         )
 
         # Apply standard wrappers
@@ -77,10 +79,6 @@ def create_raw_env_from_config(env_config, base_config):
             env = wrappers.VecNormalize(env, ob=False)
         env = wrappers.TransposeFrame(env)
         env = wrappers.ScaledFloatFrame(env)
-
-        # Apply time limit wrapper if specified
-        if hasattr(common_config, "max_steps") and common_config.max_steps is not None:
-            env = wrappers.TimeLimitWrapper(env, common_config.max_steps)
 
         # Must be done last
         env = wrappers.HardResetWrapper(env)

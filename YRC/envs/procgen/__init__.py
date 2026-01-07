@@ -15,6 +15,9 @@ def create_env(name, config):
     # val, test
     specific_config = getattr(config, name)
 
+    # Get max_steps if specified in config
+    max_steps = getattr(common_config, 'max_steps', None)
+    
     env = ProcgenEnv(
         env_name=common_config.env_name,
         num_envs=common_config.num_envs,
@@ -30,6 +33,8 @@ def create_env(name, config):
         random_percent=specific_config.random_percent,
         # Enable human-resolution rendering for video logging (512x512 frames in info["rgb"])
         render_mode="rgb_array",
+        # Set episode timeout (max steps) directly in procgen C++ backend
+        timeout=max_steps,
     )
 
     env = wrappers.VecExtractDictObs(env, "rgb")
@@ -39,10 +44,6 @@ def create_env(name, config):
         )  # normalizing returns, but not the img frames
     env = wrappers.TransposeFrame(env)
     env = wrappers.ScaledFloatFrame(env)
-    
-    # Apply time limit wrapper if max_steps is specified
-    if hasattr(common_config, 'max_steps') and common_config.max_steps is not None:
-        env = wrappers.TimeLimitWrapper(env, common_config.max_steps)
     
     # NOTE: this must be done last
     env = wrappers.HardResetWrapper(env)
