@@ -28,6 +28,8 @@ def create_env(name, config):
         use_monochrome_assets=common_config.use_monochrome_assets,
         restrict_themes=common_config.restrict_themes,
         random_percent=specific_config.random_percent,
+        # Enable human-resolution rendering for video logging (512x512 frames in info["rgb"])
+        render_mode="rgb_array",
     )
 
     env = wrappers.VecExtractDictObs(env, "rgb")

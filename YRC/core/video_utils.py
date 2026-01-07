@@ -63,6 +63,78 @@ class VideoProcessor:
 
         return combined_vid
 
+    def combine_agent_and_human_views(
+        self,
+        agent_video: np.ndarray,
+        human_observations: List[Optional[np.ndarray]],
+    ) -> np.ndarray:
+        """
+        Combine agent view (top) with human-resolution view (bottom) vertically.
+
+        Args:
+            agent_video: Agent observation video array (T, C, H, W), already in uint8 0-255
+            human_observations: List of human-resolution frames (H, W, C) or None for each timestep
+
+        Returns:
+            Combined video array with agent view on top, human view on bottom
+        """
+        time_steps, channels, agent_height, agent_width = agent_video.shape
+
+        # Check if we have any human observations
+        has_human_obs = any(h is not None for h in human_observations)
+        if not has_human_obs:
+            return agent_video
+
+        # Get human frame dimensions from first non-None frame
+        human_height, human_width = None, None
+        for h in human_observations:
+            if h is not None:
+                # Human obs comes as (H, W, C), we need to get dimensions
+                human_height, human_width = h.shape[0], h.shape[1]
+                break
+
+        if human_height is None:
+            return agent_video
+
+        # Scale agent view to match human width for consistent stacking
+        # We'll resize agent frames to match the human frame width
+        scale_factor = human_width / agent_width
+        scaled_agent_height = int(agent_height * scale_factor)
+
+        # Create output array: agent (scaled) on top, human on bottom
+        total_height = scaled_agent_height + human_height
+        combined_vid = np.zeros(
+            (time_steps, channels, total_height, human_width), dtype=np.uint8
+        )
+
+        for t in range(time_steps):
+            # Resize agent frame to match human width
+            # Agent video is (C, H, W), need to convert for PIL
+            agent_frame = agent_video[t].transpose(1, 2, 0)  # (H, W, C)
+            agent_pil = Image.fromarray(agent_frame, mode="RGB")
+            agent_resized = agent_pil.resize(
+                (human_width, scaled_agent_height), Image.Resampling.NEAREST
+            )
+            agent_resized_np = np.array(agent_resized).transpose(2, 0, 1)  # (C, H, W)
+
+            # Place agent frame on top
+            combined_vid[t, :, :scaled_agent_height, :] = agent_resized_np
+
+            # Place human frame on bottom (if available for this timestep)
+            # Handle repeated frames at the end
+            human_idx = min(t, len(human_observations) - 1)
+            human_frame = human_observations[human_idx]
+
+            if human_frame is not None:
+                # Human frame is (H, W, C), convert to (C, H, W)
+                human_frame_chw = human_frame.transpose(2, 0, 1)
+                combined_vid[t, :, scaled_agent_height:, :] = human_frame_chw
+            else:
+                # If no human frame available, fill with gray
+                combined_vid[t, :, scaled_agent_height:, :] = 128
+
+        return combined_vid
+
     def add_repeated_frames(self, video: np.ndarray) -> np.ndarray:
         """
         Add repeated frames at the end for smoother video ending.
@@ -236,9 +308,12 @@ def extract_video_data(episode: List[Dict]) -> Optional[Dict[str, Any]]:
     recons = [x["recons"] for x in episode]
     actions = [x["action"] for x in episode]
     dones = [x["done"] for x in episode]
+    # Extract human-resolution observations if available
+    human_obs = [x.get("human_obs", None) for x in episode]
 
     return {
         "observations": obs,
+        "human_observations": human_obs,
         "scores": scores,
         "reconstructions": recons,
         "actions": actions,
@@ -395,10 +470,21 @@ def generate_caption(threshold: float, afhp: float, video_data: Dict[str, Any]) 
     caption = f"Threshold: {threshold:.2E} - AFHP: {afhp:.2f}"
 
     use_recons = video_data["reconstructions"][0] is not None
-    if use_recons:
-        caption += " - Left: Original, Right: Reconstruction"
+    
+    # Check if human observations are present
+    human_obs = video_data.get("human_observations", [])
+    has_human_view = human_obs and any(h is not None for h in human_obs)
+    
+    if has_human_view:
+        if use_recons:
+            caption += " - Top: Agent view (Left: Original, Right: Reconstruction), Bottom: Human view (512x512)"
+        else:
+            caption += " - Top: Agent view (64x64), Bottom: Human view (512x512)"
     else:
-        caption += " - Original observations"
+        if use_recons:
+            caption += " - Left: Original, Right: Reconstruction"
+        else:
+            caption += " - Original observations"
 
     if video_data["scores"] is not None and any(
         score is not None for score in video_data["scores"]
@@ -407,12 +493,12 @@ def generate_caption(threshold: float, afhp: float, video_data: Dict[str, Any]) 
             video_data["scores"]
         )
         caption += (
-            " - Top bar: Score with values (Green=Normal, Red=OOD, Range: "
+            " - Score bar: (Green=Normal, Red=OOD, Range: "
             f"{score_min:.3f}-{score_max:.3f})"
         )
     else:
         # When scores are not available, we show action indicator instead
-        caption += " - Top bar: Action indicator (Green=Normal, Red=OOD Detected)"
+        caption += " - Action bar: (Green=Normal, Red=OOD Detected)"
 
     return caption
 
@@ -557,13 +643,20 @@ def process_and_log_video(
     # Create video processor instance
     processor = VideoProcessor(video_config)
 
-    # Process video frames
+    # Process video frames (agent observations with optional reconstructions)
     combined_video = processor.combine_observations_and_reconstructions(
         video_data["observations"],
         video_data["reconstructions"],
     )
 
     combined_video = processor.add_repeated_frames(combined_video)
+
+    # Combine agent view (top) with human-resolution view (bottom) if available
+    human_obs = video_data.get("human_observations", [])
+    if human_obs and any(h is not None for h in human_obs):
+        combined_video = processor.combine_agent_and_human_views(
+            combined_video, human_obs
+        )
 
     # Add score bars if available and scores contain valid values
     score_renderer = ScoreBarRenderer(video_config)

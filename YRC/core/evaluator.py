@@ -254,6 +254,9 @@ class Evaluator:
                 self._random_env_switch_is_ood(env, i) for i in range(env.num_envs)
             ]
         prev_obs = obs
+        # Track previous info for human-resolution frames (info["rgb"])
+        # On first frame after reset, this will be empty dicts (no human frame available)
+        prev_info = [{} for _ in range(env.num_envs)]
 
         for i in range(env.num_envs):
             # Maker sure there are no stale scores in the rolling average buffer.
@@ -370,9 +373,13 @@ class Evaluator:
                             log["scores_original_in_domain"].append(scores_original_i)
 
                 if not self.done_saving_actions_for_vid:
+                    # Get human-resolution frame from previous info if available
+                    # (info["rgb"] contains 512x512 frames when render_mode="rgb_array")
+                    human_obs = prev_info[i].get("rgb", None)
                     self.collected_states[i][-1].append(
                         {
                             "obs": prev_obs["env_obs"][i],
+                            "human_obs": human_obs,
                             "scores": scores_i,
                             "recons": recons_i,
                             "action": action[i],
@@ -525,6 +532,8 @@ class Evaluator:
                 if self._all_video_filters_satisfied():
                     self.done_saving_actions_for_vid = True
             prev_obs = obs
+            # Update prev_info for human-resolution frames on next iteration
+            prev_info = [info[i] for i in range(env.num_envs)]
 
             has_done |= done
 

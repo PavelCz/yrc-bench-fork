@@ -67,6 +67,8 @@ def create_raw_env_from_config(env_config, base_config):
                 env_config, "restrict_themes", common_config.restrict_themes
             ),
             random_percent=get_config_value(env_config, "random_percent", 100),
+            # Enable human-resolution rendering for video logging (512x512 frames in info["rgb"])
+            render_mode="rgb_array",
         )
 
         # Apply standard wrappers
