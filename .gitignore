@@ -199,6 +199,6 @@ fabric.properties
 .idea
 
 # Temporary build artifacts
-src/
+/src/
 *.egg-info/
 __pycache__/
