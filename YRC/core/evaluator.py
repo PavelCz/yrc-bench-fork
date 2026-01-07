@@ -1003,6 +1003,8 @@ class Evaluator:
         # Determine output folder for video logging
         raw_output_folder = getattr(args, "video_output_folder", None)
         logging_mode = getattr(args, "video_logging_mode", "none")
+        
+        logging.debug(f"_process_and_log_videos: logging_mode={logging_mode}, collected_states has {len(self.collected_states)} envs")
 
         if raw_output_folder is None and logging_mode in ["folder", "both"]:
             output_folder = self._get_default_video_folder()
@@ -1030,6 +1032,9 @@ class Evaluator:
 
         # Global episode index for video logging.
         global_episode_idx = 0
+        
+        total_episodes = sum(len(eps) for eps in self.collected_states)
+        logging.debug(f"_process_and_log_videos: Processing {total_episodes} total episodes across {len(self.collected_states)} envs")
 
         for env_idx in range(len(self.collected_states)):
             for episode_idx in range(len(self.collected_states[env_idx])):
@@ -1037,6 +1042,7 @@ class Evaluator:
 
                 # Only log videos for completed episodes.
                 if len(episode) > 0 and episode[-1]["done"]:
+                    logging.debug(f"_process_and_log_videos: Found completed episode env={env_idx}, ep={episode_idx}, frames={len(episode)}")
                     # Get stored episode metadata
                     episode_meta = self.episode_metadata[env_idx][episode_idx]
 

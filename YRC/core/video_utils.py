@@ -640,7 +640,7 @@ def process_and_log_video(
     video_config: dict,
     output_folder: Optional[Path] = None,
     logger: Optional[WandbLogger] = None,
-    logging_mode: Literal["wandb", "folder", "both"] = "wandb",
+    logging_mode: Literal["wandb", "folder", "both", "none"] = "wandb",
     subfolder: Optional[str] = None,
     wandb_category: Optional[str] = None,
     skip_score_normalization: bool = False,
@@ -664,6 +664,7 @@ def process_and_log_video(
 
     # Skip video logging entirely if mode is "none"
     if logging_mode == "none":
+        video_logger.debug(f"[ep={episode_idx}] Skipping video (logging_mode='none')")
         return
 
     total_start = time.perf_counter()
