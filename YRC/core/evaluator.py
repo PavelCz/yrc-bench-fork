@@ -88,8 +88,8 @@ class Evaluator:
         Determine OOD ground-truth for random-env-switch evaluation.
 
         Convention:
-        - env1 (venv1) is in-distribution  => OOD GT False
-        - env2 (venv2) is out-of-domain    => OOD GT True
+        - env0 (venv0) is in-distribution  => OOD GT False
+        - env1 (venv1) is out-of-domain    => OOD GT True
 
         This relies on `RandomEnvSwitchWrapper.env_selector` being present.
         We intentionally fail fast if it's missing to avoid silently producing
@@ -100,23 +100,23 @@ class Evaluator:
             raise RuntimeError(
                 "random_env_switch=True but the environment has no `env_selector`. "
                 "Expected the underlying env to be a `RandomEnvSwitchWrapper` (or compatible). "
-                "Make sure you constructed the test env via `RandomEnvSwitchWrapper(env1, env2, ...)` "
+                "Make sure you constructed the test env via `RandomEnvSwitchWrapper(env0, env1, ...)` "
                 "and passed that wrapped env into `CoordEnv` / the evaluator. "
                 f"Got base_env type: {type(base_env)}"
             )
 
         selector = getattr(base_env, "env_selector")
         try:
-            # RandomEnvSwitchWrapper uses: True => env1, False => env2
-            is_env1 = bool(selector[i])
+            # RandomEnvSwitchWrapper uses: True => env0, False => env1
+            is_env0 = bool(selector[i])
         except Exception as e:
             raise RuntimeError(
                 "random_env_switch=True but could not index `env_selector` for env idx "
                 f"{i}. Got env_selector type: {type(selector)}"
             ) from e
 
-        # env2 is OOD
-        return not is_env1
+        # env1 is OOD
+        return not is_env0
 
     def eval(
         self,
@@ -227,8 +227,8 @@ class Evaluator:
                 if self.random_env_switch:
                     logger.experiment.log(
                         {
-                            "env_1_percentage": summary[split][
-                                "num_finished_episodes_env1"
+                            "env_0_percentage": summary[split][
+                                "num_finished_episodes_env0"
                             ]
                             / summary[split]["num_finished_episodes"],
                         }
@@ -259,8 +259,8 @@ class Evaluator:
             "first_ood_timestep": [],
             # Track total number of finished episodes
             "num_finished_episodes": 0,
+            "num_finished_episodes_env0": 0,
             "num_finished_episodes_env1": 0,
-            "num_finished_episodes_env2": 0,
         }
 
         # A temporary log that only contains stats for the current episode.
@@ -286,12 +286,12 @@ class Evaluator:
         #
         # - Coinrun-style tasks populate `info["randomize_goal"]` (handled after stepping).
         # - Random env switch tasks define OOD GT by which underlying env is selected:
-        #   env1 = in-distribution, env2 = OOD.
+        #   env0 = in-distribution, env1 = OOD.
         if self.random_env_switch:
             # RandomEnvSwitchWrapper uses a boolean env_selector:
-            #   True  => venv1 (env1)
-            #   False => venv2 (env2)
-            # Therefore, OOD GT (env2) is the negation of env_selector.
+            #   True  => venv0 (env0)
+            #   False => venv1 (env1)
+            # Therefore, OOD GT (env1) is the negation of env_selector.
             current_level_ood_gt = [
                 self._random_env_switch_is_ood(env, i) for i in range(env.num_envs)
             ]
@@ -474,12 +474,12 @@ class Evaluator:
                         # we rely on the per-episode GT we already stored.
                         #
                         # Convention:
-                        # - env1 (in-distribution) => OOD GT False
-                        # - env2 (OOD)             => OOD GT True
+                        # - env0 (in-distribution) => OOD GT False
+                        # - env1 (OOD)             => OOD GT True
                         if current_level_ood_gt[i]:
-                            log["num_finished_episodes_env2"] += 1
-                        else:
                             log["num_finished_episodes_env1"] += 1
+                        else:
+                            log["num_finished_episodes_env0"] += 1
 
                     # Check which filters this episode passes
                     episode_data = {
@@ -623,8 +623,8 @@ class Evaluator:
             # Episode outcome information
             "invisible_coin_collected": log["invisible_coin_collected"],
             "first_ood_timestep": log["first_ood_timestep"],
+            "num_finished_episodes_env0": log["num_finished_episodes_env0"],
             "num_finished_episodes_env1": log["num_finished_episodes_env1"],
-            "num_finished_episodes_env2": log["num_finished_episodes_env2"],
         }
 
     def write_summary(self, split, summary):

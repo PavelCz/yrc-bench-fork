@@ -82,6 +82,11 @@ class RandomEnvSwitchWrapper:
                 self.env_selector[i] = np.random.random() < self.random_percent
 
         return obs, rews, dones, infos
+
+    def step(self, actions):
+        """Step the environments synchronously."""
+        self.step_async(actions)
+        return self.step_wait()
     
     def close(self):
         self.venv0.close()
