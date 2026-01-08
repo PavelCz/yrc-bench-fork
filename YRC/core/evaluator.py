@@ -10,6 +10,34 @@ import matplotlib.pyplot as plt
 
 from YRC.core.video_utils import process_and_log_video, resolve_video_output_folder
 
+
+def _deep_copy_obs(obs: Dict) -> Dict:
+    """Deep copy observation dict to avoid Procgen buffer reuse issues.
+
+    Procgen (and wrappers like VecFrameStack) reuse internal numpy buffers,
+    so storing references to observations results in all frames showing the
+    same (latest) state. This function creates independent copies.
+    """
+    copied = {}
+    for key, value in obs.items():
+        if isinstance(value, np.ndarray):
+            copied[key] = value.copy()
+        else:
+            copied[key] = value
+    return copied
+
+
+def _deep_copy_info(info: Dict) -> Dict:
+    """Deep copy info dict, specifically handling the rgb array."""
+    copied = {}
+    for key, value in info.items():
+        if isinstance(value, np.ndarray):
+            copied[key] = value.copy()
+        else:
+            copied[key] = value
+    return copied
+
+
 class Evaluator:
     LOGGED_ACTION = 1
 
@@ -254,7 +282,8 @@ class Evaluator:
             current_level_ood_gt = [
                 self._random_env_switch_is_ood(env, i) for i in range(env.num_envs)
             ]
-        prev_obs = obs
+        # Deep copy obs to avoid Procgen buffer reuse issues
+        prev_obs = _deep_copy_obs(obs)
         # Track previous info for human-resolution frames (info["rgb"])
         # On first frame after reset, this will be empty dicts (no human frame available)
         prev_info = [{} for _ in range(env.num_envs)]
@@ -539,9 +568,10 @@ class Evaluator:
                 # Check if all filters have enough episodes
                 if self._all_video_filters_satisfied():
                     self.done_saving_actions_for_vid = True
-            prev_obs = obs
+            # Deep copy obs and info to avoid Procgen buffer reuse issues
+            prev_obs = _deep_copy_obs(obs)
             # Update prev_info for human-resolution frames on next iteration
-            prev_info = [info[i] for i in range(env.num_envs)]
+            prev_info = [_deep_copy_info(info[i]) for i in range(env.num_envs)]
 
             has_done |= done
 
