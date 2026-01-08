@@ -83,6 +83,14 @@ class RandomEnvSwitchWrapper:
         for i, done in enumerate(dones):
             if done:
                 self.env_selector[i] = np.random.random() < self.random_percent
+                # Update info["rgb"] to match the newly selected environment.
+                # This ensures that on the NEXT step, prev_info["rgb"] (used for video
+                # logging) matches prev_obs (which will be the new env's first frame).
+                # Note: other info fields (episode stats, selected_env) remain from the
+                # OLD env since they describe the episode that just ended.
+                new_info = infos0[i] if self.env_selector[i] else infos1[i]
+                if "rgb" in new_info:
+                    infos[i]["rgb"] = new_info["rgb"]
 
         # Select obs from the (potentially updated) environment.
         # For non-done envs, this is the next frame of the current episode.
