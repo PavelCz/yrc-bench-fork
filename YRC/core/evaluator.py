@@ -380,8 +380,11 @@ class Evaluator:
                     human_obs = prev_info[i].get("rgb", None)
                     self.collected_states[i][-1].append(
                         {
-                            "obs": prev_obs["env_obs"][i],
-                            "human_obs": human_obs,
+                            # Copy arrays to avoid Procgen buffer reuse issues -
+                            # Procgen reuses internal buffers, so storing references
+                            # would result in all frames showing the same (latest) state
+                            "obs": prev_obs["env_obs"][i].copy(),
+                            "human_obs": human_obs.copy() if human_obs is not None else None,
                             "scores": scores_i,
                             "recons": recons_i,
                             "action": action[i],
