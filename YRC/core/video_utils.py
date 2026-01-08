@@ -371,7 +371,7 @@ class TextRenderer:
         return np.array(pil_image).transpose(2, 0, 1)
 
 
-def extract_video_data(episode: List[Dict]) -> Optional[Dict[str, Any]]:
+def extract_video_data(episode: List[Dict]) -> Dict[str, Any]:
     """Extract and validate video data from collected states."""
 
     obs = [x["obs"] for x in episode]
@@ -401,6 +401,7 @@ def add_score_bars(
     skip_normalization: bool = False,
     bar_height: Optional[int] = None,
     total_episode_frames: Optional[int] = None,
+    dones: Optional[List[bool]] = None,
 ) -> np.ndarray:
     """Add score bars to video frames.
 
@@ -414,6 +415,7 @@ def add_score_bars(
         bar_height: Height of the bar in pixels. If None, computed from video dimensions.
         total_episode_frames: Total number of frames in the episode (for frame counter display).
                               If None, uses len(scores).
+        dones: List of done flags for each frame (for debugging episode boundaries).
 
     Returns:
         Video with score bars added
@@ -449,11 +451,13 @@ def add_score_bars(
         if t < len(scores):
             current_score = scores[t]
             current_action = actions[t] if t < len(actions) else 0
+            current_done = dones[t] if dones and t < len(dones) else False
             frame_num = t + 1  # 1-indexed for display
         else:
             # For repeated frames, use the last values
             current_score = scores[-1] if scores else 0.0
             current_action = actions[-1] if actions else 0
+            current_done = dones[-1] if dones else False
             frame_num = total_frames  # Show last frame number for repeated frames
 
         # Normalize score to 0-1 range (or use as-is if skipping normalization)
@@ -483,8 +487,9 @@ def add_score_bars(
                 "score_bar_bg_color"
             ]
 
-        # Add text overlay with frame counter and score value
-        bar_text = f"F{frame_num}/{total_frames} | {current_score:.3f}"
+        # Add text overlay with frame counter, done status, and score value
+        done_marker = " [DONE]" if current_done else ""
+        bar_text = f"F{frame_num}/{total_frames}{done_marker} | {current_score:.3f}"
         _text_width, text_height = text_renderer.calculate_text_dimensions(bar_text)
         text_x, text_y = text_renderer.calculate_text_position(bar_height, text_height)
 
@@ -502,6 +507,7 @@ def add_action_indicator_bars(
     video_config: dict,
     bar_height: Optional[int] = None,
     total_episode_frames: Optional[int] = None,
+    dones: Optional[List[bool]] = None,
 ) -> np.ndarray:
     """Add action indicator bars to video frames when scores are not available.
 
@@ -513,6 +519,7 @@ def add_action_indicator_bars(
         bar_height: Height of the bar in pixels. If None, computed from video dimensions.
         total_episode_frames: Total number of frames in the episode (for frame counter display).
                               If None, uses len(actions).
+        dones: List of done flags for each frame (for debugging episode boundaries).
 
     Returns:
         Video with action indicator bars added
@@ -540,10 +547,12 @@ def add_action_indicator_bars(
         # Get current action, handling repeated frames
         if t < len(actions):
             current_action = actions[t]
+            current_done = dones[t] if dones and t < len(dones) else False
             frame_num = t + 1  # 1-indexed for display
         else:
             # For repeated frames, use the last action
             current_action = actions[-1] if actions else 0
+            current_done = dones[-1] if dones else False
             frame_num = total_frames  # Show last frame number for repeated frames
 
         # Get the bar color based on action (green for normal, red for OOD)
@@ -554,9 +563,10 @@ def add_action_indicator_bars(
             :, np.newaxis, np.newaxis
         ]
 
-        # Add text overlay with frame counter and action status
+        # Add text overlay with frame counter, done status, and action status
+        done_marker = " [DONE]" if current_done else ""
         action_status = "OOD" if current_action == 1 else "Normal"
-        bar_text = f"F{frame_num}/{total_frames} | {action_status}"
+        bar_text = f"F{frame_num}/{total_frames}{done_marker} | {action_status}"
         _text_width, text_height = text_renderer.calculate_text_dimensions(bar_text)
         text_x, text_y = text_renderer.calculate_text_position(bar_height, text_height)
 
@@ -825,6 +835,7 @@ def process_and_log_video(
                 video_config,
                 skip_normalization=skip_score_normalization,
                 total_episode_frames=total_episode_frames,
+                dones=video_data["dones"],
             )
         else:
             agent_with_bars = add_action_indicator_bars(
@@ -833,6 +844,7 @@ def process_and_log_video(
                 score_renderer,
                 video_config,
                 total_episode_frames=total_episode_frames,
+                dones=video_data["dones"],
             )
 
         # Process human observations into video array
@@ -864,6 +876,7 @@ def process_and_log_video(
                 video_config,
                 skip_normalization=skip_score_normalization,
                 total_episode_frames=total_episode_frames,
+                dones=video_data["dones"],
             )
         else:
             human_with_bars = add_action_indicator_bars(
@@ -872,6 +885,7 @@ def process_and_log_video(
                 score_renderer,
                 video_config,
                 total_episode_frames=total_episode_frames,
+                dones=video_data["dones"],
             )
 
         # Stack agent (with bars) on top of human (with bars)
@@ -903,6 +917,7 @@ def process_and_log_video(
                 video_config,
                 skip_normalization=skip_score_normalization,
                 total_episode_frames=total_episode_frames,
+                dones=video_data["dones"],
             )
         else:
             combined_video = add_action_indicator_bars(
@@ -911,6 +926,7 @@ def process_and_log_video(
                 score_renderer,
                 video_config,
                 total_episode_frames=total_episode_frames,
+                dones=video_data["dones"],
             )
         timings["add_score_bars"] = time.perf_counter() - t0
         video_logger.debug(f"[ep={episode_idx}] Step 5/6: Done ({timings['add_score_bars']:.3f}s)")
