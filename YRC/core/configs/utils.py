@@ -201,12 +201,16 @@ def load(yaml_file_or_str, flags=None) -> ConfigDict:
     log_file_path = Path(log_file)
     if log_file_path.is_file():
         log_file_path.unlink()
-    
+
     # Get log level from flags if available, otherwise default to INFO
     log_level = logging.INFO
-    if flags is not None and hasattr(flags, "log_level") and flags.log_level is not None:
+    if (
+        flags is not None
+        and hasattr(flags, "log_level")
+        and flags.log_level is not None
+    ):
         log_level = getattr(logging, flags.log_level)
-    
+
     config_logging(log_file, log_level=log_level)
     logging.info(str(datetime.now()))
     logging.info("python -u " + " ".join(sys.argv))

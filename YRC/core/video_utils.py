@@ -75,7 +75,7 @@ class VideoProcessor:
     ) -> np.ndarray:
         """
         Combine agent view (top) with human-resolution view (bottom) vertically.
-        
+
         The agent video (without bars) is upscaled to match the human view width.
         No bars are added here - bars should be added separately after combining.
 
@@ -121,7 +121,7 @@ class VideoProcessor:
 
         for t in range(time_steps):
             t0 = time.perf_counter()
-            
+
             # Resize agent frame to match human width
             agent_frame = agent_video[t].transpose(1, 2, 0)  # (H, W, C)
             agent_pil = Image.fromarray(agent_frame, mode="RGB")
@@ -129,15 +129,15 @@ class VideoProcessor:
                 (human_width, scaled_agent_height), Image.Resampling.NEAREST
             )
             agent_resized_np = np.array(agent_resized).transpose(2, 0, 1)  # (C, H, W)
-            
+
             resize_time += time.perf_counter() - t0
 
             # Place frames in combined video
             t0 = time.perf_counter()
-            
+
             # 1. Place agent content at top
             combined_vid[t, :, :scaled_agent_height, :] = agent_resized_np
-            
+
             # 2. Place human frame below
             human_idx = min(t, len(human_observations) - 1)
             human_frame = human_observations[human_idx]
@@ -234,12 +234,16 @@ class VideoProcessor:
         new_width = int(width * scale)
 
         # Create output array
-        upscaled = np.zeros((time_steps, channels, new_height, new_width), dtype=np.uint8)
+        upscaled = np.zeros(
+            (time_steps, channels, new_height, new_width), dtype=np.uint8
+        )
 
         for t in range(time_steps):
             frame = video[t].transpose(1, 2, 0)  # (H, W, C)
             pil_frame = Image.fromarray(frame, mode="RGB")
-            resized = pil_frame.resize((new_width, new_height), Image.Resampling.NEAREST)
+            resized = pil_frame.resize(
+                (new_width, new_height), Image.Resampling.NEAREST
+            )
             upscaled[t] = np.array(resized).transpose(2, 0, 1)  # (C, H, W)
 
         return upscaled
@@ -443,7 +447,9 @@ def add_score_bars(
     processor.add_base_video_content(vid_with_bars, video, bar_height)
 
     # Total frames for display (excluding repeated frames at end)
-    total_frames = total_episode_frames if total_episode_frames is not None else len(scores)
+    total_frames = (
+        total_episode_frames if total_episode_frames is not None else len(scores)
+    )
 
     # Add score bars for each frame
     for t in range(time_steps):
@@ -540,7 +546,9 @@ def add_action_indicator_bars(
     processor.add_base_video_content(vid_with_bars, video, bar_height)
 
     # Total frames for display (excluding repeated frames at end)
-    total_frames = total_episode_frames if total_episode_frames is not None else len(actions)
+    total_frames = (
+        total_episode_frames if total_episode_frames is not None else len(actions)
+    )
 
     # Add action indicator bars for each frame
     for t in range(time_steps):
@@ -582,11 +590,11 @@ def generate_caption(threshold: float, afhp: float, video_data: Dict[str, Any]) 
     caption = f"Threshold: {threshold:.2E} - AFHP: {afhp:.2f}"
 
     use_recons = video_data["reconstructions"][0] is not None
-    
+
     # Check if human observations are present
     human_obs = video_data.get("human_observations", [])
     has_human_view = human_obs and any(h is not None for h in human_obs)
-    
+
     if has_human_view:
         if use_recons:
             caption += " - Top: Agent view (Left: Original, Right: Reconstruction), Bottom: Human view (512x512)"
@@ -770,37 +778,49 @@ def process_and_log_video(
     timings = {}
     num_frames = len(episode)
 
-    video_logger.debug(f"[ep={episode_idx}] Starting video processing ({num_frames} frames)...")
+    video_logger.debug(
+        f"[ep={episode_idx}] Starting video processing ({num_frames} frames)..."
+    )
 
     # Extract and validate data
     video_logger.debug(f"[ep={episode_idx}] Step 1/6: Extracting video data...")
     t0 = time.perf_counter()
     video_data = extract_video_data(episode)
     timings["extract_data"] = time.perf_counter() - t0
-    video_logger.debug(f"[ep={episode_idx}] Step 1/6: Done ({timings['extract_data']:.3f}s)")
+    video_logger.debug(
+        f"[ep={episode_idx}] Step 1/6: Done ({timings['extract_data']:.3f}s)"
+    )
 
     # Create video processor instance
     processor = VideoProcessor(video_config)
 
     # Process video frames (agent observations with optional reconstructions)
-    video_logger.debug(f"[ep={episode_idx}] Step 2/6: Combining observations and reconstructions...")
+    video_logger.debug(
+        f"[ep={episode_idx}] Step 2/6: Combining observations and reconstructions..."
+    )
     t0 = time.perf_counter()
     combined_video = processor.combine_observations_and_reconstructions(
         video_data["observations"],
         video_data["reconstructions"],
     )
     timings["combine_obs_recons"] = time.perf_counter() - t0
-    video_logger.debug(f"[ep={episode_idx}] Step 2/6: Done ({timings['combine_obs_recons']:.3f}s), shape={combined_video.shape}")
+    video_logger.debug(
+        f"[ep={episode_idx}] Step 2/6: Done ({timings['combine_obs_recons']:.3f}s), shape={combined_video.shape}"
+    )
 
     video_logger.debug(f"[ep={episode_idx}] Step 3/6: Adding repeated frames...")
     t0 = time.perf_counter()
     agent_video = processor.add_repeated_frames(combined_video)
     timings["add_repeated_frames"] = time.perf_counter() - t0
-    video_logger.debug(f"[ep={episode_idx}] Step 3/6: Done ({timings['add_repeated_frames']:.3f}s)")
+    video_logger.debug(
+        f"[ep={episode_idx}] Step 3/6: Done ({timings['add_repeated_frames']:.3f}s)"
+    )
 
     # Check if we have human view
     human_obs = video_data.get("human_observations", [])
-    has_human_view = include_human_view and human_obs and any(h is not None for h in human_obs)
+    has_human_view = (
+        include_human_view and human_obs and any(h is not None for h in human_obs)
+    )
 
     # Store total episode frames for display (before repeated frames were added)
     total_episode_frames = num_frames
@@ -812,7 +832,9 @@ def process_and_log_video(
 
     if has_human_view:
         # Step 4: Process agent and human views separately, adding bars to each
-        video_logger.debug(f"[ep={episode_idx}] Step 4/6: Processing agent and human views with separate bars...")
+        video_logger.debug(
+            f"[ep={episode_idx}] Step 4/6: Processing agent and human views with separate bars..."
+        )
         t0 = time.perf_counter()
 
         # Get human frame dimensions to scale agent video appropriately
@@ -849,7 +871,9 @@ def process_and_log_video(
 
         # Process human observations into video array
         time_steps = agent_video.shape[0]
-        human_video = np.zeros((time_steps, 3, human_height, human_width), dtype=np.uint8)
+        human_video = np.zeros(
+            (time_steps, 3, human_height, human_width), dtype=np.uint8
+        )
         for t in range(time_steps):
             # Use the corresponding human frame, or last available for repeated frames
             if t < len(human_obs) and human_obs[t] is not None:
@@ -892,10 +916,14 @@ def process_and_log_video(
         combined_video = np.concatenate([agent_with_bars, human_with_bars], axis=2)
 
         timings["process_views_with_bars"] = time.perf_counter() - t0
-        video_logger.debug(f"[ep={episode_idx}] Step 4/6: Done ({timings['process_views_with_bars']:.3f}s), shape={combined_video.shape}")
+        video_logger.debug(
+            f"[ep={episode_idx}] Step 4/6: Done ({timings['process_views_with_bars']:.3f}s), shape={combined_video.shape}"
+        )
 
         # Step 5: Skip (bars already added)
-        video_logger.debug(f"[ep={episode_idx}] Step 5/6: Skipped (bars added in step 4)")
+        video_logger.debug(
+            f"[ep={episode_idx}] Step 5/6: Skipped (bars added in step 4)"
+        )
     else:
         # No human view - upscale agent video to minimum output size for readability
         video_logger.debug(f"[ep={episode_idx}] Step 4/6: Upscaling agent view...")
@@ -903,7 +931,9 @@ def process_and_log_video(
         min_size = video_config.get("min_output_size", 512)
         combined_video = processor.upscale_video(agent_video, min_size)
         timings["upscale_video"] = time.perf_counter() - t0
-        video_logger.debug(f"[ep={episode_idx}] Step 4/6: Done ({timings['upscale_video']:.3f}s), shape={combined_video.shape}")
+        video_logger.debug(
+            f"[ep={episode_idx}] Step 4/6: Done ({timings['upscale_video']:.3f}s), shape={combined_video.shape}"
+        )
 
         # Step 5: Add bars at the final resolution
         video_logger.debug(f"[ep={episode_idx}] Step 5/6: Adding score bars...")
@@ -929,7 +959,9 @@ def process_and_log_video(
                 dones=video_data["dones"],
             )
         timings["add_score_bars"] = time.perf_counter() - t0
-        video_logger.debug(f"[ep={episode_idx}] Step 5/6: Done ({timings['add_score_bars']:.3f}s)")
+        video_logger.debug(
+            f"[ep={episode_idx}] Step 5/6: Done ({timings['add_score_bars']:.3f}s)"
+        )
 
     # Generate caption
     caption = generate_caption(threshold, afhp, video_data)
@@ -950,7 +982,9 @@ def process_and_log_video(
             logger, combined_video, caption, afhp, video_config, wandb_category
         )
         timings["log_to_wandb"] = time.perf_counter() - t0
-        video_logger.debug(f"[ep={episode_idx}] Step 6/6: wandb upload done ({timings['log_to_wandb']:.3f}s)")
+        video_logger.debug(
+            f"[ep={episode_idx}] Step 6/6: wandb upload done ({timings['log_to_wandb']:.3f}s)"
+        )
 
     if logging_mode in ["folder", "both"]:
         if output_folder is None:
@@ -959,13 +993,17 @@ def process_and_log_video(
             )
         # Create subfolder if specified
         target_folder = output_folder / subfolder if subfolder else output_folder
-        video_logger.debug(f"[ep={episode_idx}] Step 6/6: Saving to folder {target_folder}...")
+        video_logger.debug(
+            f"[ep={episode_idx}] Step 6/6: Saving to folder {target_folder}..."
+        )
         t0 = time.perf_counter()
         save_video_to_folder(
             combined_video, target_folder, filename, video_config, caption
         )
         timings["save_to_folder"] = time.perf_counter() - t0
-        video_logger.debug(f"[ep={episode_idx}] Step 6/6: Folder save done ({timings['save_to_folder']:.3f}s)")
+        video_logger.debug(
+            f"[ep={episode_idx}] Step 6/6: Folder save done ({timings['save_to_folder']:.3f}s)"
+        )
 
     total_time = time.perf_counter() - total_start
     timings["total"] = total_time

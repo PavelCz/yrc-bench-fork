@@ -59,7 +59,7 @@ def calculate_ood_rate(
 
     # Find the range of timesteps to consider (1 to max episode length)
     max_length = max(length for _, length in episode_data)
-    
+
     ood_rates: list[dict[str, float]] = []
 
     # For each timestep, calculate the OOD rate
@@ -71,7 +71,8 @@ def calculate_ood_rate(
 
         # Count surviving episodes: still running and haven't gone OOD yet
         num_surviving_episodes = sum(
-            1 for first_ts, length in episode_data
+            1
+            for first_ts, length in episode_data
             if length >= current_timestep and first_ts >= current_timestep
         )
 

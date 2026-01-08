@@ -76,8 +76,6 @@ import wandb
 from pytorch_lightning.loggers import WandbLogger
 from YRC.core.video_utils import (
     VideoProcessor,
-    ScoreBarRenderer,
-    TextRenderer,
     save_video_to_folder,
     resolve_video_output_folder,
 )
@@ -169,9 +167,10 @@ def main():
         if hasattr(config, "evaluation")
         else 0
     )
-    
+
     should_collect_videos = (
-        video_logging_mode in ["folder", "wandb", "both"] and video_episodes_to_collect > 0
+        video_logging_mode in ["folder", "wandb", "both"]
+        and video_episodes_to_collect > 0
     )
 
     if should_collect_videos:
@@ -187,8 +186,12 @@ def main():
 
     # Run evaluation
     returns, video_episodes = rollout_and_get_returns(
-        policy, env, num_episodes, greedy=greedy, collect_videos=should_collect_videos,
-        max_video_episodes=video_episodes_to_collect
+        policy,
+        env,
+        num_episodes,
+        greedy=greedy,
+        collect_videos=should_collect_videos,
+        max_video_episodes=video_episodes_to_collect,
     )
 
     # Calculate statistics
@@ -234,7 +237,7 @@ def main():
     # Save videos if enabled
     if should_collect_videos and len(video_episodes) > 0:
         save_videos(video_episodes, config, save_dir, eval_split, wandb_logger)
-    
+
     # Finish wandb run if it was initialized
     if wandb_logger is not None:
         wandb.finish()
@@ -297,15 +300,17 @@ def rollout_and_get_returns(
             for i in range(env.num_envs):
                 # Observations are already in [0, 1] range from ScaledFloatFrame wrapper
                 obs_float = obs[i].astype(np.float32)
-                
-                current_episodes[i].append({
-                    "obs": obs_float,
-                    "action": action[i],
-                    "reward": reward[i],
-                    "done": done[i],
-                    "scores": None,  # No OOD scores for simple policy evaluation
-                    "recons": None,  # No reconstructions
-                })
+
+                current_episodes[i].append(
+                    {
+                        "obs": obs_float,
+                        "action": action[i],
+                        "reward": reward[i],
+                        "done": done[i],
+                        "scores": None,  # No OOD scores for simple policy evaluation
+                        "recons": None,  # No reconstructions
+                    }
+                )
 
         # Accumulate rewards
         for i in range(env.num_envs):
@@ -329,11 +334,13 @@ def rollout_and_get_returns(
                     and video_episodes_collected < max_video_episodes
                     and len(current_episodes[i]) > 0
                 ):
-                    video_episodes.append({
-                        "frames": current_episodes[i],
-                        "return": cumulative_rewards[i],
-                        "episode_idx": video_episodes_collected,
-                    })
+                    video_episodes.append(
+                        {
+                            "frames": current_episodes[i],
+                            "return": cumulative_rewards[i],
+                            "episode_idx": video_episodes_collected,
+                        }
+                    )
                     video_episodes_collected += 1
                     logging.info(
                         f"Collected video {video_episodes_collected}/{max_video_episodes}"
@@ -435,7 +442,7 @@ def save_videos(
             )
 
         output_folder.mkdir(parents=True, exist_ok=True)
-        
+
         # Create subfolder for the eval split
         split_folder = output_folder / eval_split
         split_folder.mkdir(parents=True, exist_ok=True)
@@ -455,7 +462,7 @@ def save_videos(
 
         # Create video
         video = np.stack(observations, axis=0)
-        
+
         # Add repeated frames for smoother ending
         video = processor.add_repeated_frames(video)
 
@@ -481,7 +488,7 @@ def save_videos(
         if video_logging_mode in ["wandb", "both"] and wandb_logger is not None:
             # Create video key with category
             video_key = f"policy_eval/{eval_split}/episode_{episode_return:.2f}"
-            
+
             # Log video to wandb
             wandb_logger.experiment.log(
                 {

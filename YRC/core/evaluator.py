@@ -55,7 +55,9 @@ class Evaluator:
         "min_output_size": 512,  # Minimum output size for agent-only videos
     }
 
-    def __init__(self, config, env_config: Optional[dict] = None, random_env_switch: bool = False):
+    def __init__(
+        self, config, env_config: Optional[dict] = None, random_env_switch: bool = False
+    ):
         self.args = config.evaluation
 
         self.eval_run_dir = Path(config.eval_run_dir)
@@ -179,9 +181,7 @@ class Evaluator:
 
             logging.info(f"Evaluation on {split} for {num_episodes} episodes")
 
-            log = self._eval_loop(
-                policy, envs[split], num_episodes
-            )
+            log = self._eval_loop(policy, envs[split], num_episodes)
 
             summary[split] = self.summarize(log)
             self.write_summary(split, summary[split])
@@ -208,18 +208,31 @@ class Evaluator:
             envs[split].close()
 
             # Process and log videos if logger is available
-            logging.debug(f"eval: logger is {'not None' if logger is not None else 'None'}, will process videos: {logger is not None}")
+            logging.debug(
+                f"eval: logger is {'not None' if logger is not None else 'None'}, will process videos: {logger is not None}"
+            )
             if logger is not None:
-                logging.debug(f"eval: Calling _process_and_log_videos for split={split}")
+                logging.debug(
+                    f"eval: Calling _process_and_log_videos for split={split}"
+                )
                 self._process_and_log_videos(split, threshold, afhp, logger)
 
-                logger.experiment.log({
-                    "num_finished_episodes": summary[split]["num_finished_episodes"],
-                })
+                logger.experiment.log(
+                    {
+                        "num_finished_episodes": summary[split][
+                            "num_finished_episodes"
+                        ],
+                    }
+                )
                 if self.random_env_switch:
-                    logger.experiment.log({
-                    "env_1_percentage": summary[split]["num_finished_episodes_env1"] / summary[split]["num_finished_episodes"],
-                })
+                    logger.experiment.log(
+                        {
+                            "env_1_percentage": summary[split][
+                                "num_finished_episodes_env1"
+                            ]
+                            / summary[split]["num_finished_episodes"],
+                        }
+                    )
 
         return summary
 
@@ -412,7 +425,9 @@ class Evaluator:
                             # Procgen reuses internal buffers, so storing references
                             # would result in all frames showing the same (latest) state
                             "obs": prev_obs["env_obs"][i].copy(),
-                            "human_obs": human_obs.copy() if human_obs is not None else None,
+                            "human_obs": human_obs.copy()
+                            if human_obs is not None
+                            else None,
                             "scores": scores_i,
                             "recons": recons_i,
                             "action": action[i],
@@ -445,10 +460,12 @@ class Evaluator:
                     num_episodes += 1
                     # Track total finished episodes
                     log["num_finished_episodes"] += 1
-                    
+
                     # Log progress every 50 episodes at DEBUG level
                     if num_episodes % 50 == 0:
-                        logging.debug(f"_eval_loop: Progress {num_episodes}/{max_episodes} episodes completed")
+                        logging.debug(
+                            f"_eval_loop: Progress {num_episodes}/{max_episodes} episodes completed"
+                        )
 
                     if self.random_env_switch:
                         # Count the env for the episode that just finished.
@@ -575,7 +592,9 @@ class Evaluator:
 
             has_done |= done
 
-        logging.debug(f"_eval_loop: Completed - {num_episodes} episodes evaluated, {log['num_finished_episodes']} finished")
+        logging.debug(
+            f"_eval_loop: Completed - {num_episodes} episodes evaluated, {log['num_finished_episodes']} finished"
+        )
         return log
 
     def summarize(self, log):
@@ -1042,8 +1061,11 @@ class Evaluator:
         # Determine output folder for video logging
         raw_output_folder = getattr(args, "video_output_folder", None)
         logging_mode = getattr(args, "video_logging_mode", "none")
-        
-        total_collected_frames = sum(sum(len(ep) for ep in env_episodes) for env_episodes in self.collected_states)
+
+        total_collected_frames = sum(
+            sum(len(ep) for ep in env_episodes)
+            for env_episodes in self.collected_states
+        )
         logging.debug(
             f"_process_and_log_videos: logging_mode={logging_mode}, "
             f"collected_states has {len(self.collected_states)} envs, "
@@ -1076,9 +1098,11 @@ class Evaluator:
 
         # Global episode index for video logging.
         global_episode_idx = 0
-        
+
         total_episodes = sum(len(eps) for eps in self.collected_states)
-        logging.debug(f"_process_and_log_videos: Processing {total_episodes} total episodes across {len(self.collected_states)} envs")
+        logging.debug(
+            f"_process_and_log_videos: Processing {total_episodes} total episodes across {len(self.collected_states)} envs"
+        )
 
         for env_idx in range(len(self.collected_states)):
             for episode_idx in range(len(self.collected_states[env_idx])):
@@ -1086,7 +1110,9 @@ class Evaluator:
 
                 # Only log videos for completed episodes.
                 if len(episode) > 0 and episode[-1]["done"]:
-                    logging.debug(f"_process_and_log_videos: Found completed episode env={env_idx}, ep={episode_idx}, frames={len(episode)}")
+                    logging.debug(
+                        f"_process_and_log_videos: Found completed episode env={env_idx}, ep={episode_idx}, frames={len(episode)}"
+                    )
                     # Get stored episode metadata
                     episode_meta = self.episode_metadata[env_idx][episode_idx]
 
@@ -1121,7 +1147,9 @@ class Evaluator:
                                         subfolder=filter_name,
                                         wandb_category=f"videos_{filter_name}",
                                         skip_score_normalization=self.skip_score_normalization,
-                                        include_human_view=getattr(self.args, "include_human_view", True),
+                                        include_human_view=getattr(
+                                            self.args, "include_human_view", True
+                                        ),
                                     )
                                     videos_logged[filter_name] += 1
                         else:  # filter_mode == "all"
@@ -1152,7 +1180,9 @@ class Evaluator:
                                     subfolder=combined_filter_name,
                                     wandb_category=f"videos_{combined_filter_name}",
                                     skip_score_normalization=self.skip_score_normalization,
-                                    include_human_view=getattr(self.args, "include_human_view", True),
+                                    include_human_view=getattr(
+                                        self.args, "include_human_view", True
+                                    ),
                                 )
                                 videos_logged[combined_filter_name] += 1
 
