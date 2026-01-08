@@ -21,7 +21,7 @@ import wandb
 from acs.types import CurvePoint
 
 # Import RandomEnvSwitchWrapper for multi-env switching
-from procgen import RandomEnvSwitchWrapper
+from YRC.envs.procgen.wrappers import RandomEnvSwitchWrapper
 
 
 def create_raw_env_from_config(env_config, base_config):

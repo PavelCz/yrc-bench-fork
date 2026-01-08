@@ -423,3 +423,99 @@ class HardResetWrapper(VecEnvWrapper):
 
     def get_obs(self):
         return self.venv.reset()
+
+
+class RandomEnvSwitchWrapper(VecEnvWrapper):
+    """
+    A wrapper that randomly switches between two procgen environments on reset.
+    Since the environments are vectorized, each sub-environment independently
+    chooses which underlying environment to use when it resets.
+
+    Args:
+        venv1: First vectorized environment
+        venv2: Second vectorized environment
+        random_percent: Probability (0-100) of choosing venv1 on reset for each sub-env.
+                       For example, random_percent=70 means 70% chance of using venv1,
+                       30% chance of using venv2.
+    """
+
+    def __init__(self, venv1, venv2, random_percent):
+        if venv1.num_envs != venv2.num_envs:
+            raise ValueError(
+                f"Both environments must have the same number of envs. "
+                f"Got venv1.num_envs={venv1.num_envs}, venv2.num_envs={venv2.num_envs}"
+            )
+
+        if not (0 <= random_percent <= 100):
+            raise ValueError(
+                f"random_percent must be between 0 and 100. Got {random_percent}"
+            )
+
+        self.venv1 = venv1
+        self.venv2 = venv2
+        self.random_percent = random_percent / 100.0  # Convert to probability
+
+        # Track which environment each sub-env is currently using (True=venv1, False=venv2)
+        self.env_selector = np.random.random(venv1.num_envs) < self.random_percent
+
+        # Initialize parent with venv1's properties
+        super().__init__(
+            venv=venv1,
+            observation_space=venv1.observation_space,
+            action_space=venv1.action_space,
+        )
+
+    def reset(self):
+        # Randomly choose which environment each sub-env will use
+        self.env_selector = np.random.random(self.num_envs) < self.random_percent
+
+        # Reset both environments
+        obs1 = self.venv1.reset()
+        obs2 = self.venv2.reset()
+
+        # Select observations from the chosen environment for each sub-env
+        obs = np.where(self.env_selector[:, None, None, None], obs1, obs2)
+        return obs
+
+    def step_async(self, actions):
+        # Both environments need to step
+        self.venv1.step_async(actions)
+        self.venv2.step_async(actions)
+
+    def step_wait(self):
+        # Get results from both environments
+        obs1, rews1, dones1, infos1 = self.venv1.step_wait()
+        obs2, rews2, dones2, infos2 = self.venv2.step_wait()
+
+        # Select results from the CURRENT environment BEFORE switching
+        obs = np.where(self.env_selector[:, None, None, None], obs1, obs2)
+        rews = np.where(self.env_selector, rews1, rews2)
+        dones = np.where(self.env_selector, dones1, dones2)
+        infos = [
+            infos1[i] if self.env_selector[i] else infos2[i]
+            for i in range(self.num_envs)
+        ]
+
+        # NOW switch environments for any sub-env that is done
+        for i, done in enumerate(dones):
+            if done:
+                self.env_selector[i] = np.random.random() < self.random_percent
+
+        return obs, rews, dones, infos
+
+    def close(self):
+        self.venv1.close()
+        self.venv2.close()
+
+    def render(self, mode="human"):
+        # Render from venv1 by default
+        return self.venv1.render(mode=mode)
+
+    def get_images(self):
+        # Get images from both and select based on env_selector
+        imgs1 = self.venv1.get_images()
+        imgs2 = self.venv2.get_images()
+        return [
+            imgs1[i] if self.env_selector[i] else imgs2[i]
+            for i in range(self.num_envs)
+        ]

@@ -57,7 +57,7 @@ class RandomEnvSwitchWrapper:
         # Both environments need to step
         self.venv0.step_async(actions)
         self.venv1.step_async(actions)
-    
+
     def step_wait(self):
         # Get results from both environments
         obs0, rews0, dones0, infos0 = self.venv0.step_wait()
