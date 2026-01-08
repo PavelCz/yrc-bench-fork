@@ -63,8 +63,8 @@ class RandomEnvSwitchWrapper:
         obs0, rews0, dones0, infos0 = self.venv0.step_wait()
         obs1, rews1, dones1, infos1 = self.venv1.step_wait()
 
-        # Select results from the CURRENT environment BEFORE switching
-        obs = np.where(self.env_selector[:, None, None, None], obs0, obs1)
+        # Select reward, done, info from the CURRENT environment (before switching)
+        # These represent the terminal transition of the episode that just ended.
         rews = np.where(self.env_selector, rews0, rews1)
         dones = np.where(self.env_selector, dones0, dones1)
 
@@ -76,10 +76,18 @@ class RandomEnvSwitchWrapper:
             info['selected_env'] = 0 if self.env_selector[i] else 1
             infos.append(info)
 
-        # NOW switch environments for any sub-env that is done
+        # Switch environments for any sub-env that is done BEFORE selecting obs.
+        # In Procgen, when done=True, the returned obs is the first frame of the
+        # NEW episode (auto-reset). So we must switch first, then select obs from
+        # the newly chosen environment.
         for i, done in enumerate(dones):
             if done:
                 self.env_selector[i] = np.random.random() < self.random_percent
+
+        # Select obs from the (potentially updated) environment.
+        # For non-done envs, this is the next frame of the current episode.
+        # For done envs, this is the first frame of the new episode in the new env.
+        obs = np.where(self.env_selector[:, None, None, None], obs0, obs1)
 
         return obs, rews, dones, infos
 
