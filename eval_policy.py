@@ -437,9 +437,13 @@ def save_videos(
             # Default to <experiment_dir>/videos
             output_folder = save_dir / "videos"
         else:
-            output_folder = resolve_video_output_folder(
+            resolved = resolve_video_output_folder(
                 video_output_folder, save_dir, create_folder=True
             )
+            # resolve_video_output_folder returns None only if input is None,
+            # which we already checked above
+            assert resolved is not None
+            output_folder = resolved
 
         output_folder.mkdir(parents=True, exist_ok=True)
 

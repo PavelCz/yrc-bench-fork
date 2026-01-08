@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Any, Optional, List, Dict
 from pytorch_lightning.loggers import WandbLogger
 import matplotlib
 
@@ -236,10 +236,10 @@ class Evaluator:
 
         return summary
 
-    def _eval_loop(self, policy, env, max_episodes: int) -> dict:
+    def _eval_loop(self, policy, env, max_episodes: int) -> Dict[str, Any]:
         args = self.args
 
-        log = {
+        log: Dict[str, Any] = {
             "returns": [],
             "env_returns": [],
             "episode_length": [],
