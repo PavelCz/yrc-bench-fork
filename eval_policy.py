@@ -87,15 +87,14 @@ from YRC.core.video_utils import (
 VIDEO_CONFIG = {
     "fps": 10,
     "final_frame_repetitions": 10,
-    "score_bar_height": 0,  # No score bar for simple policy evaluation
+    "score_bar_height_ratio": 0.0,  # No score bar for simple policy evaluation
     "score_bar_bg_color": 64,  # Dark gray
-    "font_size": 12,
     "text_padding": 5,
-    "char_width_estimate": 6,
     "normal_color": [0, 255, 0],  # Green
     "ood_color": [255, 0, 0],  # Red
     "text_color": [255, 255, 255],  # White
     "outline_color": [0, 0, 0],  # Black
+    "min_output_size": 512,  # Minimum output size for videos
 }
 
 

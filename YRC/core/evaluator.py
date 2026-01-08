@@ -17,15 +17,14 @@ class Evaluator:
     VIDEO_CONFIG = {
         "fps": 10,
         "final_frame_repetitions": 10,
-        "score_bar_height": 54,  # Slightly taller than font_size (48) for minimal padding
+        "score_bar_height_ratio": 0.08,  # Bar height as fraction of view height (8%)
         "score_bar_bg_color": 64,  # Dark gray
-        "font_size": 48,
         "text_padding": 5,
-        "char_width_estimate": 24,
         "normal_color": [0, 255, 0],  # Green
         "ood_color": [255, 0, 0],  # Red
         "text_color": [255, 255, 255],  # White
         "outline_color": [0, 0, 0],  # Black
+        "min_output_size": 512,  # Minimum output size for agent-only videos
     }
 
     def __init__(self, config, env_config: Optional[dict] = None, random_env_switch: bool = False):

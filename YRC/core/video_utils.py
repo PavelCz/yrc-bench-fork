@@ -72,22 +72,20 @@ class VideoProcessor:
         self,
         agent_video: np.ndarray,
         human_observations: List[Optional[np.ndarray]],
-        bar_height: int = 0,
     ) -> np.ndarray:
         """
         Combine agent view (top) with human-resolution view (bottom) vertically.
         
-        If the agent video has a score bar (bar_height > 0), the same bar will be
-        copied and placed on top of the human view as well.
+        The agent video (without bars) is upscaled to match the human view width.
+        No bars are added here - bars should be added separately after combining.
 
         Args:
             agent_video: Agent observation video array (T, C, H, W), already in uint8 0-255.
-                         If bar_height > 0, the first bar_height rows are the score bar.
+                         Should NOT have bars - bars are added after combining.
             human_observations: List of human-resolution frames (H, W, C) or None for each timestep
-            bar_height: Height of the score bar at the top of agent_video (0 if no bar)
 
         Returns:
-            Combined video array with agent view on top, human view (with same bar) on bottom
+            Combined video array with agent view on top, human view on bottom
         """
         t_start = time.perf_counter()
         time_steps, channels, agent_height, agent_width = agent_video.shape
@@ -108,19 +106,12 @@ class VideoProcessor:
         if human_height is None:
             return agent_video
 
-        # Agent video content height (excluding bar if present)
-        agent_content_height = agent_height - bar_height
-
-        # Scale agent content (excluding bar) to match human width for consistent stacking
+        # Scale agent to match human width for consistent stacking
         scale_factor = human_width / agent_width
-        scaled_agent_content_height = int(agent_content_height * scale_factor)
-        
-        # Scaled bar height (bar spans full width, so scale proportionally)
-        scaled_bar_height = int(bar_height * scale_factor) if bar_height > 0 else 0
+        scaled_agent_height = int(agent_height * scale_factor)
 
-        # Create output array:
-        # [scaled_bar][scaled_agent_content][scaled_bar][human_content]
-        total_height = scaled_bar_height + scaled_agent_content_height + scaled_bar_height + human_height
+        # Create output array: [scaled_agent][human]
+        total_height = scaled_agent_height + human_height
         combined_vid = np.zeros(
             (time_steps, channels, total_height, human_width), dtype=np.uint8
         )
@@ -131,70 +122,39 @@ class VideoProcessor:
         for t in range(time_steps):
             t0 = time.perf_counter()
             
-            if bar_height > 0:
-                # Extract and resize the bar separately (preserve bar text quality)
-                bar_frame = agent_video[t, :, :bar_height, :].transpose(1, 2, 0)  # (H, W, C)
-                bar_pil = Image.fromarray(bar_frame, mode="RGB")
-                bar_resized = bar_pil.resize(
-                    (human_width, scaled_bar_height), Image.Resampling.NEAREST
-                )
-                bar_resized_np = np.array(bar_resized).transpose(2, 0, 1)  # (C, H, W)
-                
-                # Extract and resize agent content (below bar)
-                agent_content = agent_video[t, :, bar_height:, :].transpose(1, 2, 0)  # (H, W, C)
-                agent_pil = Image.fromarray(agent_content, mode="RGB")
-                agent_resized = agent_pil.resize(
-                    (human_width, scaled_agent_content_height), Image.Resampling.NEAREST
-                )
-                agent_resized_np = np.array(agent_resized).transpose(2, 0, 1)  # (C, H, W)
-            else:
-                # No bar - resize entire agent frame
-                agent_frame = agent_video[t].transpose(1, 2, 0)  # (H, W, C)
-                agent_pil = Image.fromarray(agent_frame, mode="RGB")
-                agent_resized = agent_pil.resize(
-                    (human_width, scaled_agent_content_height), Image.Resampling.NEAREST
-                )
-                agent_resized_np = np.array(agent_resized).transpose(2, 0, 1)  # (C, H, W)
-                bar_resized_np = None
+            # Resize agent frame to match human width
+            agent_frame = agent_video[t].transpose(1, 2, 0)  # (H, W, C)
+            agent_pil = Image.fromarray(agent_frame, mode="RGB")
+            agent_resized = agent_pil.resize(
+                (human_width, scaled_agent_height), Image.Resampling.NEAREST
+            )
+            agent_resized_np = np.array(agent_resized).transpose(2, 0, 1)  # (C, H, W)
             
             resize_time += time.perf_counter() - t0
 
             # Place frames in combined video
             t0 = time.perf_counter()
-            current_y = 0
             
-            # 1. Place bar for agent view (if present)
-            if bar_height > 0:
-                combined_vid[t, :, current_y:current_y + scaled_bar_height, :] = bar_resized_np
-                current_y += scaled_bar_height
+            # 1. Place agent content at top
+            combined_vid[t, :, :scaled_agent_height, :] = agent_resized_np
             
-            # 2. Place agent content
-            combined_vid[t, :, current_y:current_y + scaled_agent_content_height, :] = agent_resized_np
-            current_y += scaled_agent_content_height
-            
-            # 3. Place bar for human view (same bar, if present)
-            if bar_height > 0:
-                combined_vid[t, :, current_y:current_y + scaled_bar_height, :] = bar_resized_np
-                current_y += scaled_bar_height
-
-            # 4. Place human frame (if available for this timestep)
+            # 2. Place human frame below
             human_idx = min(t, len(human_observations) - 1)
             human_frame = human_observations[human_idx]
 
             if human_frame is not None:
                 # Human frame is (H, W, C), convert to (C, H, W)
                 human_frame_chw = human_frame.transpose(2, 0, 1)
-                combined_vid[t, :, current_y:, :] = human_frame_chw
+                combined_vid[t, :, scaled_agent_height:, :] = human_frame_chw
             else:
                 # If no human frame available, fill with gray
-                combined_vid[t, :, current_y:, :] = 128
+                combined_vid[t, :, scaled_agent_height:, :] = 128
             copy_time += time.perf_counter() - t0
 
         total_time = time.perf_counter() - t_start
         video_logger.debug(
             f"combine_agent_and_human_views: total={total_time:.3f}s, "
-            f"resize={resize_time:.3f}s, copy={copy_time:.3f}s, frames={time_steps}, "
-            f"bar_height={bar_height}, scaled_bar_height={scaled_bar_height}"
+            f"resize={resize_time:.3f}s, copy={copy_time:.3f}s, frames={time_steps}"
         )
 
         return combined_vid
@@ -215,25 +175,32 @@ class VideoProcessor:
         )
         return np.concatenate([video, repeated_frames], axis=0)
 
-    def create_video_with_bars(self, video: np.ndarray) -> np.ndarray:
+    def calculate_bar_height(self, video_height: int) -> int:
+        """Calculate bar height based on video dimensions and configured ratio."""
+        ratio = self.config.get("score_bar_height_ratio", 0.08)
+        bar_height = int(video_height * ratio)
+        # Ensure minimum bar height of 16 pixels for readability
+        return max(16, bar_height)
+
+    def create_video_with_bars(self, video: np.ndarray, bar_height: int) -> np.ndarray:
         """
         Create a new video array with space for score bars.
 
         Args:
             video: Input video array
+            bar_height: Height of the bar to add
 
         Returns:
             New video array with extra height for score bars
         """
         time_steps, channels, height, width = video.shape
-        bar_height = self.config["score_bar_height"]
 
         return np.zeros(
             (time_steps, channels, height + bar_height, width), dtype=np.uint8
         )
 
     def add_base_video_content(
-        self, video_with_bars: np.ndarray, original_video: np.ndarray
+        self, video_with_bars: np.ndarray, original_video: np.ndarray, bar_height: int
     ) -> None:
         """
         Copy original video content below the bar area.
@@ -241,9 +208,41 @@ class VideoProcessor:
         Args:
             video_with_bars: Video array with space for bars
             original_video: Original video content to copy
+            bar_height: Height of the bar area
         """
-        bar_height = self.config["score_bar_height"]
         video_with_bars[:, :, bar_height:, :] = original_video
+
+    def upscale_video(self, video: np.ndarray, target_size: int) -> np.ndarray:
+        """
+        Upscale video to target size while maintaining aspect ratio.
+
+        Args:
+            video: Input video array (T, C, H, W)
+            target_size: Target size for the larger dimension
+
+        Returns:
+            Upscaled video array
+        """
+        time_steps, channels, height, width = video.shape
+
+        # Calculate scale factor to reach target size
+        scale = target_size / max(height, width)
+        if scale <= 1.0:
+            return video  # Already at or above target size
+
+        new_height = int(height * scale)
+        new_width = int(width * scale)
+
+        # Create output array
+        upscaled = np.zeros((time_steps, channels, new_height, new_width), dtype=np.uint8)
+
+        for t in range(time_steps):
+            frame = video[t].transpose(1, 2, 0)  # (H, W, C)
+            pil_frame = Image.fromarray(frame, mode="RGB")
+            resized = pil_frame.resize((new_width, new_height), Image.Resampling.NEAREST)
+            upscaled[t] = np.array(resized).transpose(2, 0, 1)  # (C, H, W)
+
+        return upscaled
 
 
 class ScoreBarRenderer:
@@ -304,13 +303,21 @@ class ScoreBarRenderer:
 class TextRenderer:
     """Handles text rendering and PIL image operations."""
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, font_size: int = 16):
+        """
+        Initialize TextRenderer with configuration.
+
+        Args:
+            config: Dictionary containing rendering configuration
+            font_size: Font size in pixels (computed from bar height)
+        """
         self.config = config
+        self.font_size = font_size
         self.font = self._load_font()
 
     def _load_font(self) -> Union[ImageFont.FreeTypeFont, ImageFont.ImageFont]:
         try:
-            return ImageFont.truetype("arial.ttf", self.config["font_size"])
+            return ImageFont.truetype("arial.ttf", self.font_size)
         except OSError:
             return ImageFont.load_default()
 
@@ -318,9 +325,9 @@ class TextRenderer:
         if self.font:
             bbox = self.font.getbbox(text)
             return bbox[2] - bbox[0], bbox[3] - bbox[1]
-        return len(text) * self.config["char_width_estimate"], self.config[
-            "font_size"
-        ] + 2
+        # Fallback estimate based on font size
+        char_width = max(1, self.font_size // 2)
+        return len(text) * char_width, self.font_size + 2
 
     def calculate_text_position(
         self, bar_height: int, text_height: int
@@ -390,9 +397,9 @@ def add_score_bars(
     scores: List[float],
     actions: List[int],
     score_renderer: ScoreBarRenderer,
-    text_renderer: TextRenderer,
     video_config: dict,
     skip_normalization: bool = False,
+    bar_height: Optional[int] = None,
 ) -> np.ndarray:
     """Add score bars to video frames.
 
@@ -401,15 +408,23 @@ def add_score_bars(
         scores: List of scores for each frame
         actions: List of actions for each frame
         score_renderer: ScoreBarRenderer instance
-        text_renderer: TextRenderer instance
         video_config: Video configuration dictionary
         skip_normalization: If True, don't normalize scores (useful for max_prob which is already in [0,1])
+        bar_height: Height of the bar in pixels. If None, computed from video dimensions.
 
     Returns:
         Video with score bars added
     """
-    bar_height = video_config["score_bar_height"]
-    time_steps, channels, _, width = video.shape
+    time_steps, channels, height, width = video.shape
+
+    # Calculate bar height from video dimensions if not provided
+    processor = VideoProcessor(video_config)
+    if bar_height is None:
+        bar_height = processor.calculate_bar_height(height)
+
+    # Create text renderer with font size proportional to bar height
+    font_size = max(10, int(bar_height * 0.7))
+    text_renderer = TextRenderer(video_config, font_size=font_size)
 
     # Calculate score bounds for normalization (unless we're skipping normalization)
     if not skip_normalization:
@@ -419,9 +434,8 @@ def add_score_bars(
         score_min, score_max = 0.0, 1.0
 
     # Create new video with extra height for score bar
-    processor = VideoProcessor(video_config)
-    vid_with_bars = processor.create_video_with_bars(video)
-    processor.add_base_video_content(vid_with_bars, video)
+    vid_with_bars = processor.create_video_with_bars(video, bar_height)
+    processor.add_base_video_content(vid_with_bars, video, bar_height)
 
     # Add score bars for each frame
     for t in range(time_steps):
@@ -477,8 +491,8 @@ def add_action_indicator_bars(
     video: np.ndarray,
     actions: List[int],
     score_renderer: ScoreBarRenderer,
-    text_renderer: TextRenderer,
     video_config: dict,
+    bar_height: Optional[int] = None,
 ) -> np.ndarray:
     """Add action indicator bars to video frames when scores are not available.
 
@@ -486,19 +500,26 @@ def add_action_indicator_bars(
         video: Video array
         actions: List of actions for each frame
         score_renderer: ScoreBarRenderer instance
-        text_renderer: TextRenderer instance
         video_config: Video configuration dictionary
+        bar_height: Height of the bar in pixels. If None, computed from video dimensions.
 
     Returns:
         Video with action indicator bars added
     """
-    bar_height = video_config["score_bar_height"]
-    time_steps, channels, _, width = video.shape
+    time_steps, channels, height, width = video.shape
+
+    # Calculate bar height from video dimensions if not provided
+    processor = VideoProcessor(video_config)
+    if bar_height is None:
+        bar_height = processor.calculate_bar_height(height)
+
+    # Create text renderer with font size proportional to bar height
+    font_size = max(10, int(bar_height * 0.7))
+    text_renderer = TextRenderer(video_config, font_size=font_size)
 
     # Create new video with extra height for action bar
-    processor = VideoProcessor(video_config)
-    vid_with_bars = processor.create_video_with_bars(video)
-    processor.add_base_video_content(vid_with_bars, video)
+    vid_with_bars = processor.create_video_with_bars(video, bar_height)
+    processor.add_base_video_content(vid_with_bars, video, bar_height)
 
     # Add action indicator bars for each frame
     for t in range(time_steps):
@@ -750,13 +771,30 @@ def process_and_log_video(
     timings["add_repeated_frames"] = time.perf_counter() - t0
     video_logger.debug(f"[ep={episode_idx}] Step 3/6: Done ({timings['add_repeated_frames']:.3f}s)")
 
-    # Add score bars to agent video FIRST (before combining with human view)
-    # This way the bar can be copied to the human view section as well
-    score_renderer = ScoreBarRenderer(video_config)
-    text_renderer = TextRenderer(video_config)
-    bar_height = video_config["score_bar_height"]
+    # Step 4: Upscale/combine views FIRST, THEN add bars at the final resolution
+    # This ensures bars are sized appropriately for the output resolution
+    human_obs = video_data.get("human_observations", [])
+    has_human_view = include_human_view and human_obs and any(h is not None for h in human_obs)
 
-    video_logger.debug(f"[ep={episode_idx}] Step 4/6: Adding score bars to agent view...")
+    if has_human_view:
+        video_logger.debug(f"[ep={episode_idx}] Step 4/6: Combining agent and human views...")
+        t0 = time.perf_counter()
+        combined_video = processor.combine_agent_and_human_views(combined_video, human_obs)
+        timings["combine_agent_human_views"] = time.perf_counter() - t0
+        video_logger.debug(f"[ep={episode_idx}] Step 4/6: Done ({timings['combine_agent_human_views']:.3f}s), shape={combined_video.shape}")
+    else:
+        # No human view - upscale agent video to minimum output size for readability
+        video_logger.debug(f"[ep={episode_idx}] Step 4/6: Upscaling agent view...")
+        t0 = time.perf_counter()
+        min_size = video_config.get("min_output_size", 512)
+        combined_video = processor.upscale_video(combined_video, min_size)
+        timings["upscale_video"] = time.perf_counter() - t0
+        video_logger.debug(f"[ep={episode_idx}] Step 4/6: Done ({timings['upscale_video']:.3f}s), shape={combined_video.shape}")
+
+    # Step 5: Add bars at the final resolution (after upscaling/combining)
+    score_renderer = ScoreBarRenderer(video_config)
+
+    video_logger.debug(f"[ep={episode_idx}] Step 5/6: Adding score bars...")
     t0 = time.perf_counter()
     if video_data["scores"] is not None and any(
         score is not None for score in video_data["scores"]
@@ -766,7 +804,6 @@ def process_and_log_video(
             video_data["scores"],
             video_data["actions"],
             score_renderer,
-            text_renderer,
             video_config,
             skip_normalization=skip_score_normalization,
         )
@@ -776,27 +813,10 @@ def process_and_log_video(
             combined_video,
             video_data["actions"],
             score_renderer,
-            text_renderer,
             video_config,
         )
     timings["add_score_bars"] = time.perf_counter() - t0
-    video_logger.debug(f"[ep={episode_idx}] Step 4/6: Done ({timings['add_score_bars']:.3f}s)")
-
-    # Combine agent view (with bar) and human view (bar will be copied to human section)
-    # Only include human view if the flag is enabled
-    human_obs = video_data.get("human_observations", [])
-    if include_human_view and human_obs and any(h is not None for h in human_obs):
-        video_logger.debug(f"[ep={episode_idx}] Step 5/6: Combining agent and human views (with bars on both)...")
-        t0 = time.perf_counter()
-        combined_video = processor.combine_agent_and_human_views(
-            combined_video, human_obs, bar_height=bar_height
-        )
-        timings["combine_agent_human_views"] = time.perf_counter() - t0
-        video_logger.debug(f"[ep={episode_idx}] Step 5/6: Done ({timings['combine_agent_human_views']:.3f}s), shape={combined_video.shape}")
-    elif not include_human_view:
-        video_logger.debug(f"[ep={episode_idx}] Step 5/6: Skipped (include_human_view=False)")
-    else:
-        video_logger.debug(f"[ep={episode_idx}] Step 5/6: Skipped (no human observations)")
+    video_logger.debug(f"[ep={episode_idx}] Step 5/6: Done ({timings['add_score_bars']:.3f}s)")
 
     # Generate caption
     caption = generate_caption(threshold, afhp, video_data)
