@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-YRC-Bench (Yield and Request Control Benchmark) is a research framework for learning coordination strategies between novice (weak) and expert (strong) policies in reinforcement learning environments. The core problem is determining when to yield control from a weak agent to a strong agent, optimizing the trade-off between performance and query cost.
+This is a fork of YRC-Bench (Yield and Request Control Benchmark) focused exclusively on **Procgen environments**. The framework is for learning coordination strategies between novice (weak) and expert (strong) policies in reinforcement learning. The core problem is determining when to yield control from a weak agent to a strong agent, optimizing the trade-off between performance and query cost.
+
+**Note:** While the codebase contains code for MiniGrid and Cliport environments from the original benchmark, this fork only uses Procgen. Focus on `YRC/envs/procgen/`, `configs/procgen_*.yaml`, and `YRC/checkpoints/procgen/` when working with this codebase.
 
 ## Reflective Memories
 
@@ -29,15 +31,10 @@ ci/format_and_check.sh
 
 ### Training
 ```bash
-# Train a coordination policy
-python train.py -c configs/CONFIG.yaml -n RUN_NAME -en ENV_NAME \
+# Train a coordination policy (Procgen)
+python train.py -c configs/procgen_ood.yaml -n RUN_NAME -en ENV_NAME \
     -sim PATH/TO/SIM_WEAK.pt -weak PATH/TO/WEAK.pt -strong PATH/TO/STRONG.pt \
     -query_cost COST -cp_feature FEATURE_TYPE
-
-# For cliport environments (strong agent is oracle-based)
-python train.py -c configs/cliport_ood.yaml -n RUN_NAME -en ENV_NAME \
-    -sim PATH/TO/SIM_WEAK.pt -weak PATH/TO/WEAK.pt \
-    -cp_feature FEATURE_TYPE -query_cost COST
 ```
 
 ### Evaluation
@@ -68,10 +65,7 @@ python analyzing/fig*.py
 # Install main requirements
 pip install -r requirements.txt
 
-# Install MiniGrid-specific requirements
-pip install -r requirements_minigrid.txt
-
-# Install environment libraries
+# Install environment libraries (e.g., Procgen)
 pip install -e lib/LIBRARY_NAME
 ```
 
@@ -96,9 +90,7 @@ pip install -e lib/LIBRARY_NAME
    - `policy.py`: Policy factory and interfaces
 
 3. **YRC/envs/**: Environment wrappers
-   - `minigrid/`: MiniGrid environments with models, policies, and wrappers
-   - `procgen/`: Procgen environments with models, policies, and wrappers
-   - `cliport/`: Cliport manipulation tasks with models, policies, and wrappers
+   - `procgen/`: Procgen environments with models, policies, and wrappers (primary focus of this fork)
 
 4. **YRC/policies/**: Policy implementations
    - `base.py`: Base policy interface
@@ -112,9 +104,9 @@ pip install -e lib/LIBRARY_NAME
 
 The project uses hierarchical YAML configs in `configs/`:
 - `common.yaml`: Common parameters shared across experiments
-- Environment-specific configs: `minigrid_*.yaml`, `procgen_*.yaml`, `cliport_*.yaml`
+- `procgen_*.yaml`: Procgen-specific configs (primary configs for this fork)
 - Algorithm-specific parameters embedded in each config
-- Checkpoint paths for pre-trained acting policies go in `YRC/checkpoints/`
+- Checkpoint paths for pre-trained acting policies go in `YRC/checkpoints/procgen/`
 
 ### Key Design Patterns
 
