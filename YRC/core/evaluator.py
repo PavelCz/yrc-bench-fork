@@ -17,10 +17,10 @@ class Evaluator:
     VIDEO_CONFIG = {
         "fps": 10,
         "final_frame_repetitions": 10,
-        "score_bar_height": 60,
+        "score_bar_height": 54,  # Slightly taller than font_size (48) for minimal padding
         "score_bar_bg_color": 64,  # Dark gray
         "font_size": 48,
-        "text_padding": 10,
+        "text_padding": 5,
         "char_width_estimate": 24,
         "normal_color": [0, 255, 0],  # Green
         "ood_color": [255, 0, 0],  # Red
