@@ -486,21 +486,19 @@ class RandomEnvSwitchWrapper(VecEnvWrapper):
         # Get results from both environments
         obs1, rews1, dones1, infos1 = self.venv1.step_wait()
         obs2, rews2, dones2, infos2 = self.venv2.step_wait()
-        
-        # When a sub-env is done, randomly choose which env it will use next
-        for i, done in enumerate(dones1 | dones2):  # If either reports done
-            if done:
-                self.env_selector[i] = np.random.random() < self.random_percent
-        
-        # Select results from the chosen environment for each sub-env
+
+        # Select results from the CURRENT environment BEFORE switching
         obs = np.where(self.env_selector[:, None, None, None], obs1, obs2)
         rews = np.where(self.env_selector, rews1, rews2)
         dones = np.where(self.env_selector, dones1, dones2)
-        
-        # Select infos from the chosen environment
-        infos = [infos1[i] if self.env_selector[i] else infos2[i] 
+        infos = [infos1[i] if self.env_selector[i] else infos2[i]
                  for i in range(self.num_envs)]
-        
+
+        # NOW switch environments for any sub-env that is done
+        for i, done in enumerate(dones):
+            if done:
+                self.env_selector[i] = np.random.random() < self.random_percent
+
         return obs, rews, dones, infos
     
     def close(self):
