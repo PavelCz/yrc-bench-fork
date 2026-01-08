@@ -12,21 +12,32 @@ This is a fork of YRC-Bench (Yield and Request Control Benchmark) focused exclus
 
 - Remember, that when you implement some algorithm I suggested or you came up with, that you will be biased towards thinking this alg is efficient or well-suited. However, this might not be true and it is hard to know how much you have thought about this. When writing conclusions or documentation, refrain from using language that subjectively assigns value to parts of the code or algorithms concept. Only use these, if we have some proof that these types of judements are correct.
 
+## Development Environment
+
+**Important:** All commands should be run within the `ood` conda environment:
+```bash
+# Using conda run (recommended)
+conda run -n ood <command>
+
+# Or activate the environment first
+conda activate ood
+```
+
 ## Key Commands
 
 ### Code Quality
 ```bash
 # Format code
-ruff format <files>
+conda run -n ood ruff format <files>
 
 # Lint code
-ruff check <files>
+conda run -n ood ruff check <files>
 
 # Type check
-pytype <files>
+conda run -n ood pytype <files>
 
 # Run all checks on specific files
-ci/format_and_check.sh
+conda run -n ood ci/format_and_check.sh
 ```
 
 ### Training
