@@ -400,6 +400,7 @@ def add_score_bars(
     video_config: dict,
     skip_normalization: bool = False,
     bar_height: Optional[int] = None,
+    total_episode_frames: Optional[int] = None,
 ) -> np.ndarray:
     """Add score bars to video frames.
 
@@ -411,6 +412,8 @@ def add_score_bars(
         video_config: Video configuration dictionary
         skip_normalization: If True, don't normalize scores (useful for max_prob which is already in [0,1])
         bar_height: Height of the bar in pixels. If None, computed from video dimensions.
+        total_episode_frames: Total number of frames in the episode (for frame counter display).
+                              If None, uses len(scores).
 
     Returns:
         Video with score bars added
@@ -422,8 +425,8 @@ def add_score_bars(
     if bar_height is None:
         bar_height = processor.calculate_bar_height(height)
 
-    # Create text renderer with font size proportional to bar height
-    font_size = max(10, int(bar_height * 0.7))
+    # Create text renderer with font size proportional to bar height (increased from 0.7 to 0.85)
+    font_size = max(12, int(bar_height * 0.85))
     text_renderer = TextRenderer(video_config, font_size=font_size)
 
     # Calculate score bounds for normalization (unless we're skipping normalization)
@@ -437,16 +440,21 @@ def add_score_bars(
     vid_with_bars = processor.create_video_with_bars(video, bar_height)
     processor.add_base_video_content(vid_with_bars, video, bar_height)
 
+    # Total frames for display (excluding repeated frames at end)
+    total_frames = total_episode_frames if total_episode_frames is not None else len(scores)
+
     # Add score bars for each frame
     for t in range(time_steps):
         # Get current score and action, handling repeated frames
         if t < len(scores):
             current_score = scores[t]
             current_action = actions[t] if t < len(actions) else 0
+            frame_num = t + 1  # 1-indexed for display
         else:
             # For repeated frames, use the last values
             current_score = scores[-1] if scores else 0.0
             current_action = actions[-1] if actions else 0
+            frame_num = total_frames  # Show last frame number for repeated frames
 
         # Normalize score to 0-1 range (or use as-is if skipping normalization)
         if skip_normalization:
@@ -475,13 +483,13 @@ def add_score_bars(
                 "score_bar_bg_color"
             ]
 
-        # Add text overlay with score value
-        score_text = f"{current_score:.3f}"
-        _text_width, text_height = text_renderer.calculate_text_dimensions(score_text)
+        # Add text overlay with frame counter and score value
+        bar_text = f"F{frame_num}/{total_frames} | {current_score:.3f}"
+        _text_width, text_height = text_renderer.calculate_text_dimensions(bar_text)
         text_x, text_y = text_renderer.calculate_text_position(bar_height, text_height)
 
         vid_with_bars[t] = text_renderer.add_text_to_frame(
-            vid_with_bars[t], score_text, (text_x, text_y)
+            vid_with_bars[t], bar_text, (text_x, text_y)
         )
 
     return vid_with_bars
@@ -493,6 +501,7 @@ def add_action_indicator_bars(
     score_renderer: ScoreBarRenderer,
     video_config: dict,
     bar_height: Optional[int] = None,
+    total_episode_frames: Optional[int] = None,
 ) -> np.ndarray:
     """Add action indicator bars to video frames when scores are not available.
 
@@ -502,6 +511,8 @@ def add_action_indicator_bars(
         score_renderer: ScoreBarRenderer instance
         video_config: Video configuration dictionary
         bar_height: Height of the bar in pixels. If None, computed from video dimensions.
+        total_episode_frames: Total number of frames in the episode (for frame counter display).
+                              If None, uses len(actions).
 
     Returns:
         Video with action indicator bars added
@@ -513,22 +524,27 @@ def add_action_indicator_bars(
     if bar_height is None:
         bar_height = processor.calculate_bar_height(height)
 
-    # Create text renderer with font size proportional to bar height
-    font_size = max(10, int(bar_height * 0.7))
+    # Create text renderer with font size proportional to bar height (increased from 0.7 to 0.85)
+    font_size = max(12, int(bar_height * 0.85))
     text_renderer = TextRenderer(video_config, font_size=font_size)
 
     # Create new video with extra height for action bar
     vid_with_bars = processor.create_video_with_bars(video, bar_height)
     processor.add_base_video_content(vid_with_bars, video, bar_height)
 
+    # Total frames for display (excluding repeated frames at end)
+    total_frames = total_episode_frames if total_episode_frames is not None else len(actions)
+
     # Add action indicator bars for each frame
     for t in range(time_steps):
         # Get current action, handling repeated frames
         if t < len(actions):
             current_action = actions[t]
+            frame_num = t + 1  # 1-indexed for display
         else:
             # For repeated frames, use the last action
             current_action = actions[-1] if actions else 0
+            frame_num = total_frames  # Show last frame number for repeated frames
 
         # Get the bar color based on action (green for normal, red for OOD)
         bar_color = score_renderer.get_bar_color(current_action)
@@ -538,13 +554,14 @@ def add_action_indicator_bars(
             :, np.newaxis, np.newaxis
         ]
 
-        # Add text overlay showing the action
-        action_text = "OOD Detected" if current_action == 1 else "Normal"
-        _text_width, text_height = text_renderer.calculate_text_dimensions(action_text)
+        # Add text overlay with frame counter and action status
+        action_status = "OOD" if current_action == 1 else "Normal"
+        bar_text = f"F{frame_num}/{total_frames} | {action_status}"
+        _text_width, text_height = text_renderer.calculate_text_dimensions(bar_text)
         text_x, text_y = text_renderer.calculate_text_position(bar_height, text_height)
 
         vid_with_bars[t] = text_renderer.add_text_to_frame(
-            vid_with_bars[t], action_text, (text_x, text_y)
+            vid_with_bars[t], bar_text, (text_x, text_y)
         )
 
     return vid_with_bars
@@ -767,56 +784,136 @@ def process_and_log_video(
 
     video_logger.debug(f"[ep={episode_idx}] Step 3/6: Adding repeated frames...")
     t0 = time.perf_counter()
-    combined_video = processor.add_repeated_frames(combined_video)
+    agent_video = processor.add_repeated_frames(combined_video)
     timings["add_repeated_frames"] = time.perf_counter() - t0
     video_logger.debug(f"[ep={episode_idx}] Step 3/6: Done ({timings['add_repeated_frames']:.3f}s)")
 
-    # Step 4: Upscale/combine views FIRST, THEN add bars at the final resolution
-    # This ensures bars are sized appropriately for the output resolution
+    # Check if we have human view
     human_obs = video_data.get("human_observations", [])
     has_human_view = include_human_view and human_obs and any(h is not None for h in human_obs)
 
+    # Store total episode frames for display (before repeated frames were added)
+    total_episode_frames = num_frames
+
+    score_renderer = ScoreBarRenderer(video_config)
+    has_scores = video_data["scores"] is not None and any(
+        score is not None for score in video_data["scores"]
+    )
+
     if has_human_view:
-        video_logger.debug(f"[ep={episode_idx}] Step 4/6: Combining agent and human views...")
+        # Step 4: Process agent and human views separately, adding bars to each
+        video_logger.debug(f"[ep={episode_idx}] Step 4/6: Processing agent and human views with separate bars...")
         t0 = time.perf_counter()
-        combined_video = processor.combine_agent_and_human_views(combined_video, human_obs)
-        timings["combine_agent_human_views"] = time.perf_counter() - t0
-        video_logger.debug(f"[ep={episode_idx}] Step 4/6: Done ({timings['combine_agent_human_views']:.3f}s), shape={combined_video.shape}")
+
+        # Get human frame dimensions to scale agent video appropriately
+        human_height, human_width = None, None
+        for h in human_obs:
+            if h is not None:
+                human_height, human_width = h.shape[0], h.shape[1]
+                break
+
+        # Upscale agent video to match human width
+        agent_video_scaled = processor.upscale_video(agent_video, human_width)
+
+        # Add bars to agent view
+        if has_scores:
+            agent_with_bars = add_score_bars(
+                agent_video_scaled,
+                video_data["scores"],
+                video_data["actions"],
+                score_renderer,
+                video_config,
+                skip_normalization=skip_score_normalization,
+                total_episode_frames=total_episode_frames,
+            )
+        else:
+            agent_with_bars = add_action_indicator_bars(
+                agent_video_scaled,
+                video_data["actions"],
+                score_renderer,
+                video_config,
+                total_episode_frames=total_episode_frames,
+            )
+
+        # Process human observations into video array
+        time_steps = agent_video.shape[0]
+        human_video = np.zeros((time_steps, 3, human_height, human_width), dtype=np.uint8)
+        for t in range(time_steps):
+            # Use the corresponding human frame, or last available for repeated frames
+            if t < len(human_obs) and human_obs[t] is not None:
+                human_video[t] = human_obs[t].transpose(2, 0, 1)
+            elif t > 0:
+                # Copy previous frame for repeated frames or missing frames
+                idx = min(t, len(human_obs) - 1)
+                while idx >= 0 and human_obs[idx] is None:
+                    idx -= 1
+                if idx >= 0 and human_obs[idx] is not None:
+                    human_video[t] = human_obs[idx].transpose(2, 0, 1)
+                else:
+                    human_video[t] = 128  # Gray fill if no frames available
+            else:
+                human_video[t] = 128  # Gray fill
+
+        # Add bars to human view
+        if has_scores:
+            human_with_bars = add_score_bars(
+                human_video,
+                video_data["scores"],
+                video_data["actions"],
+                score_renderer,
+                video_config,
+                skip_normalization=skip_score_normalization,
+                total_episode_frames=total_episode_frames,
+            )
+        else:
+            human_with_bars = add_action_indicator_bars(
+                human_video,
+                video_data["actions"],
+                score_renderer,
+                video_config,
+                total_episode_frames=total_episode_frames,
+            )
+
+        # Stack agent (with bars) on top of human (with bars)
+        combined_video = np.concatenate([agent_with_bars, human_with_bars], axis=2)
+
+        timings["process_views_with_bars"] = time.perf_counter() - t0
+        video_logger.debug(f"[ep={episode_idx}] Step 4/6: Done ({timings['process_views_with_bars']:.3f}s), shape={combined_video.shape}")
+
+        # Step 5: Skip (bars already added)
+        video_logger.debug(f"[ep={episode_idx}] Step 5/6: Skipped (bars added in step 4)")
     else:
         # No human view - upscale agent video to minimum output size for readability
         video_logger.debug(f"[ep={episode_idx}] Step 4/6: Upscaling agent view...")
         t0 = time.perf_counter()
         min_size = video_config.get("min_output_size", 512)
-        combined_video = processor.upscale_video(combined_video, min_size)
+        combined_video = processor.upscale_video(agent_video, min_size)
         timings["upscale_video"] = time.perf_counter() - t0
         video_logger.debug(f"[ep={episode_idx}] Step 4/6: Done ({timings['upscale_video']:.3f}s), shape={combined_video.shape}")
 
-    # Step 5: Add bars at the final resolution (after upscaling/combining)
-    score_renderer = ScoreBarRenderer(video_config)
-
-    video_logger.debug(f"[ep={episode_idx}] Step 5/6: Adding score bars...")
-    t0 = time.perf_counter()
-    if video_data["scores"] is not None and any(
-        score is not None for score in video_data["scores"]
-    ):
-        combined_video = add_score_bars(
-            combined_video,
-            video_data["scores"],
-            video_data["actions"],
-            score_renderer,
-            video_config,
-            skip_normalization=skip_score_normalization,
-        )
-    else:
-        # When scores are not available, add action indicator bars instead
-        combined_video = add_action_indicator_bars(
-            combined_video,
-            video_data["actions"],
-            score_renderer,
-            video_config,
-        )
-    timings["add_score_bars"] = time.perf_counter() - t0
-    video_logger.debug(f"[ep={episode_idx}] Step 5/6: Done ({timings['add_score_bars']:.3f}s)")
+        # Step 5: Add bars at the final resolution
+        video_logger.debug(f"[ep={episode_idx}] Step 5/6: Adding score bars...")
+        t0 = time.perf_counter()
+        if has_scores:
+            combined_video = add_score_bars(
+                combined_video,
+                video_data["scores"],
+                video_data["actions"],
+                score_renderer,
+                video_config,
+                skip_normalization=skip_score_normalization,
+                total_episode_frames=total_episode_frames,
+            )
+        else:
+            combined_video = add_action_indicator_bars(
+                combined_video,
+                video_data["actions"],
+                score_renderer,
+                video_config,
+                total_episode_frames=total_episode_frames,
+            )
+        timings["add_score_bars"] = time.perf_counter() - t0
+        video_logger.debug(f"[ep={episode_idx}] Step 5/6: Done ({timings['add_score_bars']:.3f}s)")
 
     # Generate caption
     caption = generate_caption(threshold, afhp, video_data)
