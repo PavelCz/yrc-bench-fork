@@ -44,6 +44,14 @@ env = ProcgenGym3Env(
     level_seeds=[100, 200, 300, 400, 500],
     level_seeds_mode="container"
 )
+
+# Random mode: sample with replacement, cycles forever
+env = ProcgenGym3Env(
+    num=4,
+    env_name="coinrun",
+    level_seeds=[100, 200, 300, 400, 500],
+    level_seeds_mode="random"
+)
 ```
 
 ### Modes
@@ -71,6 +79,16 @@ Seeds are randomly drawn from a pool without replacement. When the pool is empty
 - Never exhausts - cycles forever
 
 Useful for: training where you want to sample from a specific set of levels but in random order, ensuring each level is seen once per epoch.
+
+#### Random Mode (`level_seeds_mode="random"`)
+
+Seeds are randomly sampled with replacement from the full list.
+
+- When an environment resets, it randomly picks a seed from the full list of seeds
+- Seeds can be repeated before all seeds have been seen
+- Never exhausts - cycles forever
+
+Useful for: training where you want to sample from a specific set of levels with replacement, without the constraint that each level must be seen exactly once per epoch.
 
 ### Example (Sequential Mode)
 

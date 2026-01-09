@@ -41,6 +41,9 @@ class VecGame {
     bool seed_container_mode = false;
     std::vector<int> available_seeds;  // seeds remaining in current container cycle
     std::mt19937 container_rng;        // RNG for container mode random selection
+    
+    // Random mode: sample with replacement (always pick randomly from full list)
+    bool seed_random_mode = false;
 
     VecGame(int _nenvs, VecOptions opt_vec);
     ~VecGame();

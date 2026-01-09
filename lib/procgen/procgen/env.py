@@ -135,12 +135,14 @@ class BaseProcgenEnv(CEnv):
         # Convert level_seeds list to comma-separated string for C++ backend
         level_seeds_str = ""
         seed_container_mode = False
+        seed_random_mode = False
         if level_seeds is not None:
             level_seeds_str = ",".join(str(s) for s in level_seeds)
             # Only validate level_seeds_mode when level_seeds is provided
-            assert level_seeds_mode in ("sequential", "container"), \
-                f'level_seeds_mode must be "sequential" or "container", got "{level_seeds_mode}"'
+            assert level_seeds_mode in ("sequential", "container", "random"), \
+                f'level_seeds_mode must be "sequential", "container", or "random", got "{level_seeds_mode}"'
             seed_container_mode = level_seeds_mode == "container"
+            seed_random_mode = level_seeds_mode == "random"
 
         options.update(
             {
@@ -155,6 +157,7 @@ class BaseProcgenEnv(CEnv):
                 "render_human": render_human,
                 "level_seeds": level_seeds_str,
                 "seed_container_mode": seed_container_mode,
+                "seed_random_mode": seed_random_mode,
                 # these will only be used the first time an environment is created in a process
                 "resource_root": resource_root,
             }

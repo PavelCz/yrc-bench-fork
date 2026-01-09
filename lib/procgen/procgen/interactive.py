@@ -123,8 +123,8 @@ def main():
     parser.add_argument(
         "--level-seeds-mode",
         default="sequential",
-        choices=["sequential", "container"],
-        help="how to use level seeds: 'sequential' (in order, stop when exhausted) or 'container' (random draw, refill when empty) " + default_str,
+        choices=["sequential", "container", "random"],
+        help="how to use level seeds: 'sequential' (in order, stop when exhausted), 'container' (random draw, refill when empty), or 'random' (sample with replacement) " + default_str,
     )
     parser.add_argument(
         "--use-env-switch",

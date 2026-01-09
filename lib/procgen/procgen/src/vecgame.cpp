@@ -205,6 +205,7 @@ VecGame::VecGame(int _nenvs, VecOptions opts) {
     opts.consume_bool("render_human", &render_human);
     opts.consume_string("level_seeds", &level_seeds_str);
     opts.consume_bool("seed_container_mode", &seed_container_mode);
+    opts.consume_bool("seed_random_mode", &seed_random_mode);
     // opts.consume_int("random_percent", &random_percent);
 
     shared_level_seeds = parse_seed_list(level_seeds_str);
@@ -213,6 +214,11 @@ VecGame::VecGame(int _nenvs, VecOptions opts) {
     // Initialize container mode
     if (seed_container_mode && !shared_level_seeds.empty()) {
         available_seeds = shared_level_seeds;
+        container_rng.seed(rand_seed);
+    }
+    
+    // Initialize random mode (sample with replacement)
+    if (seed_random_mode && !shared_level_seeds.empty()) {
         container_rng.seed(rand_seed);
     }
 
@@ -557,7 +563,12 @@ int VecGame::acquire_next_seed() {
     
     std::lock_guard<std::mutex> lock(seed_mutex);
     
-    if (seed_container_mode) {
+    if (seed_random_mode) {
+        // Random mode: sample with replacement (always pick from full list)
+        std::uniform_int_distribution<int> dist(0, shared_level_seeds.size() - 1);
+        int idx = dist(container_rng);
+        return shared_level_seeds[idx];
+    } else if (seed_container_mode) {
         // Container mode: random draw with refill
         if (available_seeds.empty()) {
             // Refill the container
