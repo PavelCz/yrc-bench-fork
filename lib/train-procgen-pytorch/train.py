@@ -55,11 +55,17 @@ if __name__=='__main__':
                         choices=['sequential', 'container', 'random', 'fallback'],
                         help='Mode for eval env seeds: sequential, container, random (with replacement), or fallback (ignore seeds file)')
     
-    # RandomEnvSwitchWrapper options
+    # RandomEnvSwitchWrapper options (training)
     parser.add_argument('--switch_env_names', type=str, nargs='+', default=None, 
-                        help='List of environment names to randomly switch between (requires exactly 2 envs)')
+                        help='List of environment names to randomly switch between for training (requires exactly 2 envs)')
     parser.add_argument('--switch_percent',   type=int, default=50, 
                         help='Percentage (0-100) for choosing the first environment in switch_env_names')
+    
+    # RandomEnvSwitchWrapper options (eval)
+    parser.add_argument('--switch_env_names_eval', type=str, nargs='+', default=None, 
+                        help='List of environment names to randomly switch between for eval (requires exactly 2 envs)')
+    parser.add_argument('--switch_percent_eval',   type=int, default=50, 
+                        help='Percentage (0-100) for choosing the first environment in switch_env_names_eval')
 
 
     #multi threading
@@ -145,16 +151,25 @@ if __name__=='__main__':
             seeds_mode = args.train_mode
             seeds_to_use = level_seeds_train if seeds_mode != 'fallback' else None
         
+        # Determine switch settings based on train/eval
+        if is_valid:
+            switch_env_names = args.switch_env_names_eval
+            switch_percent = args.switch_percent_eval
+        else:
+            switch_env_names = args.switch_env_names
+            switch_percent = args.switch_percent
+        
         # Check if we should use RandomEnvSwitchWrapper
-        if args.switch_env_names is not None and not is_valid:
-            if len(args.switch_env_names) != 2:
-                raise ValueError(f"RandomEnvSwitchWrapper requires exactly 2 environments, got {len(args.switch_env_names)}")
+        if switch_env_names is not None:
+            if len(switch_env_names) != 2:
+                raise ValueError(f"RandomEnvSwitchWrapper requires exactly 2 environments, got {len(switch_env_names)}")
             
-            if not (0 <= args.switch_percent <= 100):
-                raise ValueError(f"switch_percent must be between 0 and 100, got {args.switch_percent}")
+            if not (0 <= switch_percent <= 100):
+                raise ValueError(f"switch_percent must be between 0 and 100, got {switch_percent}")
             
-            print(f"Using RandomEnvSwitchWrapper with environments: {args.switch_env_names}")
-            print(f"Probability split: {args.switch_percent}% for {args.switch_env_names[0]}, {100-args.switch_percent}% for {args.switch_env_names[1]}")
+            env_type = "eval" if is_valid else "training"
+            print(f"Using RandomEnvSwitchWrapper for {env_type} with environments: {switch_env_names}")
+            print(f"Probability split: {switch_percent}% for {switch_env_names[0]}, {100-switch_percent}% for {switch_env_names[1]}")
             
             # Build common kwargs for level seeds
             seed_kwargs = {}
@@ -164,9 +179,9 @@ if __name__=='__main__':
             
             # Create two separate ProcgenEnv instances
             venv1 = ProcgenEnv(num_envs=n_envs,
-                              env_name=args.switch_env_names[0],
-                              num_levels=args.num_levels,
-                              start_level=args.start_level,
+                              env_name=switch_env_names[0],
+                              num_levels=0 if is_valid else args.num_levels,
+                              start_level=start_level_val if is_valid else args.start_level,
                               distribution_mode=args.distribution_mode,
                               num_threads=args.num_threads,
                               random_percent=args.random_percent,
@@ -178,9 +193,9 @@ if __name__=='__main__':
             venv1 = VecExtractDictObs(venv1, "rgb")
             
             venv2 = ProcgenEnv(num_envs=n_envs,
-                              env_name=args.switch_env_names[1],
-                              num_levels=args.num_levels,
-                              start_level=args.start_level,
+                              env_name=switch_env_names[1],
+                              num_levels=0 if is_valid else args.num_levels,
+                              start_level=start_level_val if is_valid else args.start_level,
                               distribution_mode=args.distribution_mode,
                               num_threads=args.num_threads,
                               random_percent=args.random_percent,
@@ -192,7 +207,7 @@ if __name__=='__main__':
             venv2 = VecExtractDictObs(venv2, "rgb")
             
             # Wrap with RandomEnvSwitchWrapper
-            venv = RandomEnvSwitchWrapper(venv1, venv2, args.switch_percent)
+            venv = RandomEnvSwitchWrapper(venv1, venv2, switch_percent)
         else:
             # Standard single environment
             # Build kwargs for level seeds
