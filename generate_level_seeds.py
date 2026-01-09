@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Generate deterministic level seeds for policy training, OOD training, and evaluation.
+Generate deterministic level seeds for policy training, OOD training, validation, and evaluation.
 
 This script creates reproducible seed sets that can be used with the procgen-afh
 fork's ordered level seeds feature (level_seeds parameter).
 
 Usage:
-    python generate_level_seeds.py --policy-train 10000 --ood-train 5000 --eval 1000 -o seeds.json
-    python generate_level_seeds.py --paper --ood-train 5000 --eval 1000 -o seeds/paper.json
+    python generate_level_seeds.py --policy-train 10000 --ood-train 5000 --validation 500 --ood-eval 1000 -o seeds.json
+    python generate_level_seeds.py --paper --ood-train 5000 --validation 500 --ood-eval 1000 -o seeds/paper.json
 
 The generated seeds are:
 - Deterministic: Same base seed always produces same seed sets
@@ -16,7 +16,7 @@ The generated seeds are:
 
 Paper mode (--paper):
 - policy_train: sequential seeds [0, 100,000) without shuffling
-- ood_train/eval: randomly shuffled from [100,000, ...) using --base-seed
+- ood_train/validation/ood_eval: randomly shuffled from [100,000, ...) using --base-seed
 """
 
 import argparse
@@ -34,7 +34,8 @@ PAPER_POLICY_TRAIN_SEEDS = 100_000  # Sequential seeds [0, 100000) for policy tr
 def generate_seeds(
     num_policy_train: int,
     num_ood_train: int,
-    num_eval: int,
+    num_validation: int,
+    num_ood_eval: int,
     base_seed: int = 0,
     paper_mode: bool = False,
 ) -> Dict[str, List[int]]:
@@ -49,33 +50,39 @@ def generate_seeds(
     Args:
         num_policy_train: Number of seeds for policy training (ignored in paper_mode)
         num_ood_train: Number of seeds for OOD detector training
-        num_eval: Number of seeds for evaluation
+        num_validation: Number of seeds for validation
+        num_ood_eval: Number of seeds for OOD evaluation
         base_seed: Base random seed for reproducible generation
         paper_mode: If True, use sequential seeds [0, 100000) for policy_train only
 
     Returns:
-        Dictionary with keys 'policy_train', 'ood_train', 'eval' containing seed lists
+        Dictionary with keys 'policy_train', 'ood_train', 'validation', 'ood_eval' containing seed lists
     """
     if paper_mode:
         # Paper mode: sequential seeds [0, 100000) for policy_train
-        # OOD and eval seeds are randomly sampled from a non-overlapping range
+        # Other seeds are randomly sampled from a non-overlapping range
         policy_train_seeds = list(range(PAPER_POLICY_TRAIN_SEEDS))
 
-        # Generate ood_train and eval seeds from range starting after policy_train
+        # Generate other seeds from range starting after policy_train
         # to ensure no overlap
         rng = np.random.default_rng(base_seed)
-        ood_eval_pool = np.arange(
-            PAPER_POLICY_TRAIN_SEEDS, PAPER_POLICY_TRAIN_SEEDS + num_ood_train + num_eval
+        other_pool_size = num_ood_train + num_validation + num_ood_eval
+        other_pool = np.arange(
+            PAPER_POLICY_TRAIN_SEEDS, PAPER_POLICY_TRAIN_SEEDS + other_pool_size
         )
-        rng.shuffle(ood_eval_pool)
+        rng.shuffle(other_pool)
+
+        ood_train_end = num_ood_train
+        validation_end = ood_train_end + num_validation
 
         seeds = {
             "policy_train": policy_train_seeds,
-            "ood_train": ood_eval_pool[:num_ood_train].tolist(),
-            "eval": ood_eval_pool[num_ood_train:].tolist(),
+            "ood_train": other_pool[:ood_train_end].tolist(),
+            "validation": other_pool[ood_train_end:validation_end].tolist(),
+            "ood_eval": other_pool[validation_end:].tolist(),
         }
     else:
-        total_seeds = num_policy_train + num_ood_train + num_eval
+        total_seeds = num_policy_train + num_ood_train + num_validation + num_ood_eval
 
         # Create RNG with base seed for reproducibility
         rng = np.random.default_rng(base_seed)
@@ -87,12 +94,14 @@ def generate_seeds(
 
         # Split into non-overlapping sets
         policy_end = num_policy_train
-        ood_end = policy_end + num_ood_train
+        ood_train_end = policy_end + num_ood_train
+        validation_end = ood_train_end + num_validation
 
         seeds = {
             "policy_train": seed_pool[:policy_end].tolist(),
-            "ood_train": seed_pool[policy_end:ood_end].tolist(),
-            "eval": seed_pool[ood_end:].tolist(),
+            "ood_train": seed_pool[policy_end:ood_train_end].tolist(),
+            "validation": seed_pool[ood_train_end:validation_end].tolist(),
+            "ood_eval": seed_pool[validation_end:].tolist(),
         }
 
     return seeds
@@ -119,7 +128,8 @@ def save_seeds(
             "paper_mode": paper_mode,
             "num_policy_train": len(seeds["policy_train"]),
             "num_ood_train": len(seeds["ood_train"]),
-            "num_eval": len(seeds["eval"]),
+            "num_validation": len(seeds["validation"]),
+            "num_ood_eval": len(seeds["ood_eval"]),
             "description": (
                 "Deterministic level seeds for procgen environments. "
                 "Use with level_seeds parameter in ProcgenGym3Env."
@@ -143,7 +153,8 @@ def save_seeds(
         print(f"  - Mode: paper (policy_train: sequential [0, {PAPER_POLICY_TRAIN_SEEDS}))")
     print(f"  - Policy training: {len(seeds['policy_train'])} seeds")
     print(f"  - OOD training:    {len(seeds['ood_train'])} seeds")
-    print(f"  - Evaluation:      {len(seeds['eval'])} seeds")
+    print(f"  - Validation:      {len(seeds['validation'])} seeds")
+    print(f"  - OOD evaluation:  {len(seeds['ood_eval'])} seeds")
 
 
 def load_seeds(input_path: Path) -> Dict[str, List[int]]:
@@ -169,13 +180,13 @@ def main() -> None:
         epilog="""
 Examples:
   # Generate seeds with custom counts
-  python generate_level_seeds.py --policy-train 50000 --ood-train 10000 --eval 5000 -o seeds/custom.json
+  python generate_level_seeds.py --policy-train 50000 --ood-train 10000 --validation 500 --ood-eval 5000 -o seeds/custom.json
 
   # Use a specific base seed for reproducibility
-  python generate_level_seeds.py --policy-train 10000 --ood-train 5000 --eval 1000 --base-seed 42 -o seeds/seed42.json
+  python generate_level_seeds.py --policy-train 10000 --ood-train 5000 --validation 500 --ood-eval 1000 --base-seed 42 -o seeds/seed42.json
 
   # Paper mode: sequential seeds [0, 100000) for policy_train
-  python generate_level_seeds.py --paper --ood-train 5000 --eval 1000 -o seeds/paper.json
+  python generate_level_seeds.py --paper --ood-train 5000 --validation 500 --ood-eval 1000 -o seeds/paper.json
 
 The generated JSON can be loaded and used with procgen:
 
@@ -183,7 +194,7 @@ The generated JSON can be loaded and used with procgen:
   from procgen import ProcgenGym3Env
 
   seeds = load_seeds("seeds.json")
-  env = ProcgenGym3Env(num=4, env_name="coinrun", level_seeds=seeds["eval"])
+  env = ProcgenGym3Env(num=4, env_name="coinrun", level_seeds=seeds["ood_eval"])
         """,
     )
 
@@ -200,10 +211,16 @@ The generated JSON can be loaded and used with procgen:
         help="Number of seeds for OOD detector training (required)",
     )
     parser.add_argument(
-        "--eval",
+        "--validation",
         type=int,
         default=None,
-        help="Number of seeds for evaluation (required)",
+        help="Number of seeds for validation (required)",
+    )
+    parser.add_argument(
+        "--ood-eval",
+        type=int,
+        default=None,
+        help="Number of seeds for OOD evaluation (required)",
     )
     parser.add_argument(
         "--base-seed",
@@ -223,36 +240,42 @@ The generated JSON can be loaded and used with procgen:
         action="store_true",
         help=(
             f"Paper mode: use sequential seeds [0, {PAPER_POLICY_TRAIN_SEEDS}) for policy_train. "
-            "ood_train and eval use shuffled seeds from a non-overlapping range. "
-            "Ignores --policy-train but respects --ood-train, --eval, --base-seed."
+            "Other seeds use shuffled seeds from a non-overlapping range. "
+            "Ignores --policy-train but respects --ood-train, --validation, --ood-eval, --base-seed."
         ),
     )
 
     args = parser.parse_args()
 
     # Validate arguments
-    if args.ood_train is None or args.eval is None:
-        parser.error("--ood-train and --eval are required")
+    if args.ood_train is None or args.validation is None or args.ood_eval is None:
+        parser.error("--ood-train, --validation, and --ood-eval are required")
 
     if args.paper:
-        # In paper mode, only validate ood_train and eval
-        if args.ood_train < 0 or args.eval < 0:
+        # In paper mode, only validate ood_train, validation, and ood_eval
+        if args.ood_train < 0 or args.validation < 0 or args.ood_eval < 0:
             parser.error("Seed counts must be non-negative")
     else:
         if args.policy_train is None:
             parser.error("--policy-train is required (or use --paper mode)")
 
-        if args.policy_train < 0 or args.ood_train < 0 or args.eval < 0:
+        if (
+            args.policy_train < 0
+            or args.ood_train < 0
+            or args.validation < 0
+            or args.ood_eval < 0
+        ):
             parser.error("Seed counts must be non-negative")
 
-        if args.policy_train + args.ood_train + args.eval == 0:
+        if args.policy_train + args.ood_train + args.validation + args.ood_eval == 0:
             parser.error("At least one phase must have seeds")
 
     # Generate and save seeds
     seeds = generate_seeds(
         num_policy_train=args.policy_train,
         num_ood_train=args.ood_train,
-        num_eval=args.eval,
+        num_validation=args.validation,
+        num_ood_eval=args.ood_eval,
         base_seed=args.base_seed,
         paper_mode=args.paper,
     )
