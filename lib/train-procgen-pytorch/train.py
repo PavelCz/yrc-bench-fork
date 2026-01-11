@@ -134,12 +134,12 @@ if __name__=='__main__':
         with open(args.level_seeds_file) as f:
             seeds_data = json.load(f)
         level_seeds_train = seeds_data['seeds']['policy_train']
-        level_seeds_eval = seeds_data['seeds'].get('eval', None)
+        level_seeds_eval = seeds_data['seeds'].get('validation', None)
         print(f'  - Loaded {len(level_seeds_train)} training seeds (mode: {args.train_mode})')
         if level_seeds_eval:
-            print(f'  - Loaded {len(level_seeds_eval)} eval seeds (mode: {args.eval_mode})')
+            print(f'  - Loaded {len(level_seeds_eval)} validation seeds (mode: {args.eval_mode})')
         else:
-            print(f'  - No eval seeds in file (mode: {args.eval_mode})')
+            print(f'  - No validation seeds in file (mode: {args.eval_mode})')
 
     def create_venv(args, hyperparameters, is_valid=False):
         # Determine which level seeds to use (if any)
