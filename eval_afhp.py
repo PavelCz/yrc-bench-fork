@@ -1,7 +1,8 @@
 from pathlib import Path
+import json
 import os
 import time
-from typing import List
+from typing import List, Optional
 
 import flags
 import YRC.core.configs.utils as config_utils
@@ -22,6 +23,33 @@ from acs.types import CurvePoint
 
 # Import RandomEnvSwitchWrapper for multi-env switching
 from procgen import RandomEnvSwitchWrapper
+
+
+def load_level_seeds(config) -> Optional[List[int]]:
+    """Load ood_eval level seeds from file if configured.
+    
+    Args:
+        config: Configuration object with environment.level_seeds_file path
+        
+    Returns:
+        List of level seeds for OOD evaluation, or None if not configured
+    """
+    level_seeds_file = getattr(config.environment, 'level_seeds_file', None)
+    if level_seeds_file is None:
+        return None
+    
+    print(f'LOADING LEVEL SEEDS FROM {level_seeds_file}...')
+    with open(level_seeds_file) as f:
+        seeds_data = json.load(f)
+    
+    # Use ood_eval seeds for evaluation (always sequential mode)
+    level_seeds = seeds_data['seeds'].get('ood_eval', None)
+    if level_seeds:
+        print(f'  - Loaded {len(level_seeds)} ood_eval seeds (mode: sequential)')
+    else:
+        print('  - No ood_eval seeds in file')
+    
+    return level_seeds
 
 
 def create_raw_env_from_config(env_config, base_config):
@@ -107,6 +135,9 @@ def main():
         and config.evaluation.use_random_env_switch
     )
 
+    # Load level seeds for evaluation (uses ood_eval seeds, always sequential mode)
+    level_seeds = load_level_seeds(config)
+
     if use_random_env_switch:
         # Get configuration for random env switching
         env1_config = config.evaluation.random_env_switch.env1
@@ -134,8 +165,8 @@ def main():
         # Wrap them with RandomEnvSwitchWrapper
         wrapped_test_env = RandomEnvSwitchWrapper(base_env1, base_env2, random_percent)
 
-        # Create normal envs for train/val
-        envs = env_factory.make(config)
+        # Create normal envs for train/val (level seeds only apply to test)
+        envs = env_factory.make(config, level_seeds, "sequential")
 
         # Get the actual weak and strong agents from the test env
         # (test env has the correct agents, unlike train env which may use sim_weak)
@@ -158,7 +189,7 @@ def main():
         ].switch_agent_cost_per_action
         envs["test"].reset()
     else:
-        envs = env_factory.make(config)
+        envs = env_factory.make(config, level_seeds, "sequential")
 
     policy = policy_factory.make(config, envs["train"])
     if config.general.algorithm != "always" and not config.coord_policy.baseline:

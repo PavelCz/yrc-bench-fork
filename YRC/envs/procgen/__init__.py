@@ -1,4 +1,5 @@
 import logging
+from typing import List, Optional
 import torch
 
 from procgen import ProcgenEnv
@@ -8,7 +9,12 @@ from YRC.envs.procgen.policies import ProcgenPolicy
 from YRC.core.configs.global_configs import get_global_variable
 
 
-def create_env(name, config):
+def create_env(
+    name,
+    config,
+    level_seeds: Optional[List[int]] = None,
+    level_seeds_mode: str = "sequential",
+):
     common_config = config.common
 
     # These are the config settigns that might depend on the specific mode, i.e. train, 
@@ -17,6 +23,12 @@ def create_env(name, config):
 
     # Get max_steps if specified in config
     max_steps = getattr(common_config, 'max_steps', None)
+    
+    # Build kwargs for level seeds if provided
+    seed_kwargs = {}
+    if level_seeds is not None:
+        seed_kwargs['level_seeds'] = level_seeds
+        seed_kwargs['level_seeds_mode'] = level_seeds_mode
     
     env = ProcgenEnv(
         env_name=common_config.env_name,
@@ -35,6 +47,7 @@ def create_env(name, config):
         render_mode="rgb_array",
         # Set episode timeout (max steps) directly in procgen C++ backend
         timeout=max_steps,
+        **seed_kwargs,
     )
 
     env = wrappers.VecExtractDictObs(env, "rgb")

@@ -15,8 +15,15 @@ from YRC.core import Evaluator
 from YRC.core.configs import get_global_variable
 
 
-def make(config):
-    base_envs = make_raw_envs(config)
+def make(config, level_seeds=None, level_seeds_mode="sequential"):
+    """Create coordination environments.
+    
+    Args:
+        config: Configuration object
+        level_seeds: Optional list of level seeds to use for test environment
+        level_seeds_mode: Mode for level seeds (sequential, container, random)
+    """
+    base_envs = make_raw_envs(config, level_seeds, level_seeds_mode)
     sim_weak_agent, weak_agent, strong_agent = load_agents(config, base_envs["val_sim"])
 
     coord_envs = {}
@@ -99,16 +106,29 @@ def get_test_eval_info(config, coord_envs):
     return ret
 
 
-def make_raw_envs(config):
+def make_raw_envs(config, level_seeds=None, level_seeds_mode="sequential"):
+    """Create raw environments for each split.
+    
+    Args:
+        config: Configuration object
+        level_seeds: Optional list of level seeds to use for test environment
+        level_seeds_mode: Mode for level seeds (sequential, container, random)
+    """
     module = importlib.import_module(f"YRC.envs.{get_global_variable('benchmark')}")
     create_fn = getattr(module, "create_env")
 
     envs = {}
     for name in ["train", "val_sim", "val_true", "test"]:
+        # Only pass level seeds to test environment
+        kwargs = {}
+        if name == "test" and level_seeds is not None:
+            kwargs['level_seeds'] = level_seeds
+            kwargs['level_seeds_mode'] = level_seeds_mode
+        
         if name == "train" and config.general.skyline:
-            env = create_fn("test", config.environment)
+            env = create_fn("test", config.environment, **kwargs)
         else:
-            env = create_fn(name, config.environment)
+            env = create_fn(name, config.environment, **kwargs)
         # some extra information
         env.name = config.environment.common.env_name
         envs[name] = env
