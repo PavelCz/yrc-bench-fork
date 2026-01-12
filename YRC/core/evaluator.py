@@ -11,20 +11,29 @@ import matplotlib.pyplot as plt
 from YRC.core.video_utils import process_and_log_video, resolve_video_output_folder
 
 
-def _deep_copy_obs(obs: Dict) -> Dict:
-    """Deep copy observation dict to avoid Procgen buffer reuse issues.
+def _deep_copy_obs(obs):
+    """Deep copy observation to avoid Procgen buffer reuse issues.
 
     Procgen (and wrappers like VecFrameStack) reuse internal numpy buffers,
     so storing references to observations results in all frames showing the
     same (latest) state. This function creates independent copies.
+
+    Handles both dict observations (e.g., {"rgb": np.array(...)}) and
+    raw numpy array observations (after VecExtractDictObs wrapper).
     """
-    copied = {}
-    for key, value in obs.items():
-        if isinstance(value, np.ndarray):
-            copied[key] = value.copy()
-        else:
-            copied[key] = value
-    return copied
+    if isinstance(obs, np.ndarray):
+        return obs.copy()
+    elif isinstance(obs, dict):
+        copied = {}
+        for key, value in obs.items():
+            if isinstance(value, np.ndarray):
+                copied[key] = value.copy()
+            else:
+                copied[key] = value
+        return copied
+    else:
+        # Fallback for unknown types
+        return obs
 
 
 def _deep_copy_info(info: Dict) -> Dict:
