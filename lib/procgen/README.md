@@ -2,6 +2,22 @@
 
 This is a fork of the [procgen benchmark](https://github.com/openai/procgen) that implements modifications for the paper Goal Misgeneralization in Deep Reinforcement Learning.
 
+## Changes in this Fork
+
+### New Environment: `maze_afh`
+
+A new maze variant with `random_percent` support for OOD detection experiments (similar to coinrun's `random_percent` flag).
+
+- `random_percent=0`: Cheese placed in top-right corner (like `maze_aisc`)
+- `random_percent=100`: Cheese placed randomly (like `maze`)
+- Intermediate values: Probabilistic mix
+- Exposes `info["randomize_goal"]` to indicate placement type (useful for OOD ground truth)
+
+**Modified files:**
+- `procgen/src/games/maze_afh.cpp`: New game implementation
+- `procgen/env.py`: Added to `ENV_NAMES` and `EXPLORATION_LEVEL_SEEDS`
+- `procgen/CMakeLists.txt`: Added to build
+
 ## Descriptions of the modified environments
 
 * `coinrun_aisc`: Like `coinrun`, but the coin is placed randomly on ground level instead of at the far right end.
@@ -9,6 +25,7 @@ This is a fork of the [procgen benchmark](https://github.com/openai/procgen) tha
 * `heist_aisc_many_chests`: A heavily modified `heist`. Doors are now 'chests' (they do not prevent the agent from passing). Every key can open every chest. The agent is rewarded for opening chests. This version generates twice as many chests as keys. 
 * `heist_aisc_many_keys`: Same as `heist_aisc_many_chests`, but instead has twice as many keys as chests.
 * `maze_aisc`: Like maze, but the cheese is always to be found in the top right corner.
+* `maze_afh`: Like maze, but with `--random_percent` support (similar to coinrun). When `random_percent=0`, cheese is placed in the top right corner (like `maze_aisc`). When `random_percent=100`, cheese is placed randomly (like `maze`). Intermediate values give a probabilistic mix. Exposes `info["randomize_goal"]` to indicate placement type for each level.
 * `maze_yellowgem`: like maze, but the goal is a yellow gem.
 * `maze_redgem_yellowstar`: like maze, but two objects are placed in the maze: a red gem, and a yellow star. The objective is the red gem.
 * `maze_yellowstar_redgem`: Identical to `maze_yellowstar_redgem`, but the objective is instead the yellow star.
