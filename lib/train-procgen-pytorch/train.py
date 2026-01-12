@@ -41,6 +41,7 @@ if __name__=='__main__':
     parser.add_argument('--num_validation_episodes', type=int, default=1024, help='number of validation episodes to run')
 
     parser.add_argument('--random_percent',   type=int, default=0, help='COINRUN: percent of environments in which coin is randomized (only for coinrun)')
+    parser.add_argument('--random_percent_val', type=int, default=None, help='COINRUN: random_percent for validation env (defaults to --random_percent if not set)')
     parser.add_argument('--key_penalty',   type=int, default=0, help='HEIST_AISC: Penalty for picking up keys (divided by 10)')
     parser.add_argument('--step_penalty',   type=int, default=0, help='HEIST_AISC: Time penalty per step (divided by 1000)')
     parser.add_argument('--rand_region',   type=int, default=0, help='MAZE: size of region (in upper left corner) in which goal is sampled.')
@@ -159,6 +160,12 @@ if __name__=='__main__':
             switch_env_names = args.switch_env_names
             switch_percent = args.switch_percent
         
+        # Determine random_percent based on train/eval
+        if is_valid and args.random_percent_val is not None:
+            random_percent = args.random_percent_val
+        else:
+            random_percent = args.random_percent
+        
         # Check if we should use RandomEnvSwitchWrapper
         if switch_env_names is not None:
             if len(switch_env_names) != 2:
@@ -184,7 +191,7 @@ if __name__=='__main__':
                               start_level=start_level_val if is_valid else args.start_level,
                               distribution_mode=args.distribution_mode,
                               num_threads=args.num_threads,
-                              random_percent=args.random_percent,
+                              random_percent=random_percent,
                               step_penalty=args.step_penalty,
                               key_penalty=args.key_penalty,
                               use_backgrounds=not args.disable_backgrounds,
@@ -198,7 +205,7 @@ if __name__=='__main__':
                               start_level=start_level_val if is_valid else args.start_level,
                               distribution_mode=args.distribution_mode,
                               num_threads=args.num_threads,
-                              random_percent=args.random_percent,
+                              random_percent=random_percent,
                               step_penalty=args.step_penalty,
                               key_penalty=args.key_penalty,
                               use_backgrounds=not args.disable_backgrounds,
@@ -222,7 +229,7 @@ if __name__=='__main__':
                               start_level=start_level_val if is_valid else args.start_level,
                               distribution_mode=args.distribution_mode,
                               num_threads=args.num_threads,
-                              random_percent=args.random_percent,
+                              random_percent=random_percent,
                               step_penalty=args.step_penalty,
                               key_penalty=args.key_penalty,
                               use_backgrounds=not args.disable_backgrounds,
