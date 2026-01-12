@@ -83,10 +83,14 @@ def get_test_eval_info(config, coord_envs):
         raise ValueError(
             f"Missing test evaluation info for '{benchmark}/{env_name}'!\n"
             f"Available environments for '{benchmark}': {available_envs}\n\n"
-            f"To add '{env_name}', manually add an entry to 'YRC/core/test_eval_info.json'.\n"
+            f"To add '{env_name}', either:\n"
+            f"  1. Run: python scripts/generate_test_eval_info.py -c CONFIG -en {env_name}\n"
+            f"  2. Manually add an entry to 'YRC/core/test_eval_info.json'\n\n"
             f"If '{env_name}' shares the same dynamics as another environment (e.g., maze_afh ~ maze),\n"
             f"you can copy that environment's stats.\n\n"
-            f"Required fields: episode_length_mean, reward_mean (used for cost calculation)"
+            f"NOTE: These stats are only used for agent switching cost calculations.\n"
+            f"If you're not using switching costs (strong_query_cost_ratio=0, switch_agent_cost_ratio=0),\n"
+            f"the stats don't matter and are only needed for compatibility."
         )
 
     ret = data[benchmark][env_name]
