@@ -56,7 +56,7 @@ class Evaluator:
     }
 
     def __init__(
-        self, config, env_config: Optional[dict] = None, random_env_switch: bool = False
+        self, config, env_config: Optional[dict] = None
     ):
         self.args = config.evaluation
 
@@ -80,43 +80,6 @@ class Evaluator:
         self.skip_score_normalization = (
             metric == "max_prob" or alg_cls == "RandomAlgorithm"
         )
-
-        self.random_env_switch = random_env_switch
-
-    def _random_env_switch_is_ood(self, env, i: int) -> bool:
-        """
-        Determine OOD ground-truth for random-env-switch evaluation.
-
-        Convention:
-        - env0 (venv0) is in-distribution  => OOD GT False
-        - env1 (venv1) is out-of-domain    => OOD GT True
-
-        This relies on `RandomEnvSwitchWrapper.env_selector` being present.
-        We intentionally fail fast if it's missing to avoid silently producing
-        incorrect OOD metrics.
-        """
-        base_env = getattr(env, "base_env", env)
-        if not hasattr(base_env, "env_selector"):
-            raise RuntimeError(
-                "random_env_switch=True but the environment has no `env_selector`. "
-                "Expected the underlying env to be a `RandomEnvSwitchWrapper` (or compatible). "
-                "Make sure you constructed the test env via `RandomEnvSwitchWrapper(env0, env1, ...)` "
-                "and passed that wrapped env into `CoordEnv` / the evaluator. "
-                f"Got base_env type: {type(base_env)}"
-            )
-
-        selector = getattr(base_env, "env_selector")
-        try:
-            # RandomEnvSwitchWrapper uses: True => env0, False => env1
-            is_env0 = bool(selector[i])
-        except Exception as e:
-            raise RuntimeError(
-                "random_env_switch=True but could not index `env_selector` for env idx "
-                f"{i}. Got env_selector type: {type(selector)}"
-            ) from e
-
-        # env1 is OOD
-        return not is_env0
 
     def eval(
         self,
@@ -224,15 +187,6 @@ class Evaluator:
                         ],
                     }
                 )
-                if self.random_env_switch:
-                    logger.experiment.log(
-                        {
-                            "env_0_percentage": summary[split][
-                                "num_finished_episodes_env0"
-                            ]
-                            / summary[split]["num_finished_episodes"],
-                        }
-                    )
 
         return summary
 
@@ -259,8 +213,6 @@ class Evaluator:
             "first_ood_timestep": [],
             # Track total number of finished episodes
             "num_finished_episodes": 0,
-            "num_finished_episodes_env0": 0,
-            "num_finished_episodes_env1": 0,
         }
 
         # A temporary log that only contains stats for the current episode.
@@ -282,19 +234,7 @@ class Evaluator:
         first_ood_timestep = [None] * env.num_envs
 
         obs = env.reset()
-        # Initialize OOD GT for the *current* episode.
-        #
-        # - Coinrun-style tasks populate `info["randomize_goal"]` (handled after stepping).
-        # - Random env switch tasks define OOD GT by which underlying env is selected:
-        #   env0 = in-distribution, env1 = OOD.
-        if self.random_env_switch:
-            # RandomEnvSwitchWrapper uses a boolean env_selector:
-            #   True  => venv0 (env0)
-            #   False => venv1 (env1)
-            # Therefore, OOD GT (env1) is the negation of env_selector.
-            current_level_ood_gt = [
-                self._random_env_switch_is_ood(env, i) for i in range(env.num_envs)
-            ]
+        # OOD GT is determined by `info["randomize_goal"]` (set after first step)
         # Deep copy obs to avoid Procgen buffer reuse issues
         prev_obs = _deep_copy_obs(obs)
         # Track previous info for human-resolution frames (info["rgb"])
@@ -467,20 +407,6 @@ class Evaluator:
                             f"_eval_loop: Progress {num_episodes}/{max_episodes} episodes completed"
                         )
 
-                    if self.random_env_switch:
-                        # Count the env for the episode that just finished.
-                        # `RandomEnvSwitchWrapper` may already have sampled the NEXT
-                        # episode's env_selector by the time we see done=True, so
-                        # we rely on the per-episode GT we already stored.
-                        #
-                        # Convention:
-                        # - env0 (in-distribution) => OOD GT False
-                        # - env1 (OOD)             => OOD GT True
-                        if current_level_ood_gt[i]:
-                            log["num_finished_episodes_env1"] += 1
-                        else:
-                            log["num_finished_episodes_env0"] += 1
-
                     # Check which filters this episode passes
                     episode_data = {
                         "cumulative_reward": episode_log["cumulative_reward"][i],
@@ -574,13 +500,8 @@ class Evaluator:
                 # We update this after we (potentially) save this to log. This is
                 # because gym3 automatically resets the environment at the end of an
                 # episode, so the info dict might be of the next episode.
-                if self.random_env_switch:
-                    # In random env switch mode, GT is determined by which underlying
-                    # env is selected for the (possibly just-reset) current episode.
-                    current_level_ood_gt[i] = self._random_env_switch_is_ood(env, i)
-                else:
-                    # Coinrun-style GT: randomize_goal indicates OOD.
-                    current_level_ood_gt[i] = bool(info[i]["randomize_goal"])
+                # OOD GT is determined by randomize_goal (coinrun, maze_afh, etc.)
+                current_level_ood_gt[i] = bool(info[i]["randomize_goal"])
 
                 # Check if all filters have enough episodes
                 if self._all_video_filters_satisfied():
@@ -623,8 +544,6 @@ class Evaluator:
             # Episode outcome information
             "invisible_coin_collected": log["invisible_coin_collected"],
             "first_ood_timestep": log["first_ood_timestep"],
-            "num_finished_episodes_env0": log["num_finished_episodes_env0"],
-            "num_finished_episodes_env1": log["num_finished_episodes_env1"],
         }
 
     def write_summary(self, split, summary):

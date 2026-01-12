@@ -7,7 +7,7 @@ from common import set_global_seeds, set_global_log_levels
 
 import os, time, yaml, argparse, json
 import gym
-from procgen import ProcgenEnv, RandomEnvSwitchWrapper
+from procgen import ProcgenEnv
 import random
 import torch
 
@@ -55,19 +55,6 @@ if __name__=='__main__':
     parser.add_argument('--eval_mode', type=str, default='sequential',
                         choices=['sequential', 'container', 'random', 'fallback'],
                         help='Mode for eval env seeds: sequential, container, random (with replacement), or fallback (ignore seeds file)')
-    
-    # RandomEnvSwitchWrapper options (training)
-    parser.add_argument('--switch_env_names', type=str, nargs='+', default=None, 
-                        help='List of environment names to randomly switch between for training (requires exactly 2 envs)')
-    parser.add_argument('--switch_percent',   type=int, default=50, 
-                        help='Percentage (0-100) for choosing the first environment in switch_env_names')
-    
-    # RandomEnvSwitchWrapper options (eval)
-    parser.add_argument('--switch_env_names_eval', type=str, nargs='+', default=None, 
-                        help='List of environment names to randomly switch between for eval (requires exactly 2 envs)')
-    parser.add_argument('--switch_percent_eval',   type=int, default=50, 
-                        help='Percentage (0-100) for choosing the first environment in switch_env_names_eval')
-
 
     #multi threading
     parser.add_argument('--num_threads', type=int, default=8)
@@ -152,90 +139,31 @@ if __name__=='__main__':
             seeds_mode = args.train_mode
             seeds_to_use = level_seeds_train if seeds_mode != 'fallback' else None
         
-        # Determine switch settings based on train/eval
-        if is_valid:
-            switch_env_names = args.switch_env_names_eval
-            switch_percent = args.switch_percent_eval
-        else:
-            switch_env_names = args.switch_env_names
-            switch_percent = args.switch_percent
-        
         # Determine random_percent based on train/eval
         if is_valid and args.random_percent_val is not None:
             random_percent = args.random_percent_val
         else:
             random_percent = args.random_percent
         
-        # Check if we should use RandomEnvSwitchWrapper
-        if switch_env_names is not None:
-            if len(switch_env_names) != 2:
-                raise ValueError(f"RandomEnvSwitchWrapper requires exactly 2 environments, got {len(switch_env_names)}")
-            
-            if not (0 <= switch_percent <= 100):
-                raise ValueError(f"switch_percent must be between 0 and 100, got {switch_percent}")
-            
-            env_type = "eval" if is_valid else "training"
-            print(f"Using RandomEnvSwitchWrapper for {env_type} with environments: {switch_env_names}")
-            print(f"Probability split: {switch_percent}% for {switch_env_names[0]}, {100-switch_percent}% for {switch_env_names[1]}")
-            
-            # Build common kwargs for level seeds
-            seed_kwargs = {}
-            if seeds_to_use is not None:
-                seed_kwargs['level_seeds'] = seeds_to_use
-                seed_kwargs['level_seeds_mode'] = seeds_mode
-            
-            # Create two separate ProcgenEnv instances
-            venv1 = ProcgenEnv(num_envs=n_envs,
-                              env_name=switch_env_names[0],
-                              num_levels=0 if is_valid else args.num_levels,
-                              start_level=start_level_val if is_valid else args.start_level,
-                              distribution_mode=args.distribution_mode,
-                              num_threads=args.num_threads,
-                              random_percent=random_percent,
-                              step_penalty=args.step_penalty,
-                              key_penalty=args.key_penalty,
-                              use_backgrounds=not args.disable_backgrounds,
-                              rand_region=args.rand_region,
-                              **seed_kwargs)
-            venv1 = VecExtractDictObs(venv1, "rgb")
-            
-            venv2 = ProcgenEnv(num_envs=n_envs,
-                              env_name=switch_env_names[1],
-                              num_levels=0 if is_valid else args.num_levels,
-                              start_level=start_level_val if is_valid else args.start_level,
-                              distribution_mode=args.distribution_mode,
-                              num_threads=args.num_threads,
-                              random_percent=random_percent,
-                              step_penalty=args.step_penalty,
-                              key_penalty=args.key_penalty,
-                              use_backgrounds=not args.disable_backgrounds,
-                              rand_region=args.rand_region,
-                              **seed_kwargs)
-            venv2 = VecExtractDictObs(venv2, "rgb")
-            
-            # Wrap with RandomEnvSwitchWrapper
-            venv = RandomEnvSwitchWrapper(venv1, venv2, switch_percent)
-        else:
-            # Standard single environment
-            # Build kwargs for level seeds
-            seed_kwargs = {}
-            if seeds_to_use is not None:
-                seed_kwargs['level_seeds'] = seeds_to_use
-                seed_kwargs['level_seeds_mode'] = seeds_mode
-            
-            venv = ProcgenEnv(num_envs=n_envs,
-                              env_name=val_env_name if is_valid else env_name,
-                              num_levels=0 if is_valid else args.num_levels,
-                              start_level=start_level_val if is_valid else args.start_level,
-                              distribution_mode=args.distribution_mode,
-                              num_threads=args.num_threads,
-                              random_percent=random_percent,
-                              step_penalty=args.step_penalty,
-                              key_penalty=args.key_penalty,
-                              use_backgrounds=not args.disable_backgrounds,
-                              rand_region=args.rand_region,
-                              **seed_kwargs)
-            venv = VecExtractDictObs(venv, "rgb")
+        # Build kwargs for level seeds
+        seed_kwargs = {}
+        if seeds_to_use is not None:
+            seed_kwargs['level_seeds'] = seeds_to_use
+            seed_kwargs['level_seeds_mode'] = seeds_mode
+        
+        venv = ProcgenEnv(num_envs=n_envs,
+                          env_name=val_env_name if is_valid else env_name,
+                          num_levels=0 if is_valid else args.num_levels,
+                          start_level=start_level_val if is_valid else args.start_level,
+                          distribution_mode=args.distribution_mode,
+                          num_threads=args.num_threads,
+                          random_percent=random_percent,
+                          step_penalty=args.step_penalty,
+                          key_penalty=args.key_penalty,
+                          use_backgrounds=not args.disable_backgrounds,
+                          rand_region=args.rand_region,
+                          **seed_kwargs)
+        venv = VecExtractDictObs(venv, "rgb")
         
         normalize_rew = hyperparameters.get('normalize_rew', True)
         if normalize_rew:

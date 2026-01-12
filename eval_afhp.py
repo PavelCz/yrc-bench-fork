@@ -21,8 +21,6 @@ from pytorch_lightning.loggers import WandbLogger
 import wandb
 from acs.types import CurvePoint
 
-# Import RandomEnvSwitchWrapper for multi-env switching
-from procgen import RandomEnvSwitchWrapper
 
 
 def load_level_seeds(config) -> Optional[List[int]]:
@@ -52,74 +50,6 @@ def load_level_seeds(config) -> Optional[List[int]]:
     return level_seeds
 
 
-def create_raw_env_from_config(env_config, base_config):
-    """Create a raw (base) environment from custom configuration.
-
-    Args:
-        env_config: Configuration object with gym_name and environment settings
-        base_config: Base config object to get common settings from
-    """
-    benchmark = get_global_variable("benchmark")
-
-    if benchmark == "procgen":
-        from procgen import ProcgenEnv
-        import YRC.envs.procgen.wrappers as wrappers
-
-        # Get common config settings or use defaults
-        common_config = base_config.environment.common
-
-        # Helper function to get attribute with fallback for None values
-        def get_config_value(obj, attr, default):
-            value = getattr(obj, attr, None)
-            return default if value is None else value
-
-        # Create environment with custom settings
-        # Use getattr for config objects (not .get() which is for dicts)
-        env = ProcgenEnv(
-            env_name=get_config_value(env_config, "gym_name", common_config.env_name),
-            num_envs=get_config_value(env_config, "num_envs", common_config.num_envs),
-            num_threads=get_config_value(
-                env_config, "num_threads", common_config.num_threads
-            ),
-            num_levels=get_config_value(env_config, "num_levels", 0),
-            start_level=get_config_value(env_config, "start_level", 0),
-            distribution_mode=get_config_value(env_config, "distribution_mode", "easy"),
-            rand_seed=get_config_value(env_config, "seed", 0),
-            use_backgrounds=get_config_value(
-                env_config, "use_backgrounds", common_config.use_backgrounds
-            ),
-            use_monochrome_assets=get_config_value(
-                env_config, "use_monochrome_assets", common_config.use_monochrome_assets
-            ),
-            restrict_themes=get_config_value(
-                env_config, "restrict_themes", common_config.restrict_themes
-            ),
-            random_percent=get_config_value(env_config, "random_percent", 100),
-            # Enable human-resolution rendering for video logging (512x512 frames in info["rgb"])
-            render_mode="rgb_array",
-            # Set episode timeout (max steps) directly in procgen C++ backend
-            timeout=get_config_value(common_config, "max_steps", None),
-        )
-
-        # Apply standard wrappers
-        env = wrappers.VecExtractDictObs(env, "rgb")
-        if common_config.normalize_rew:
-            env = wrappers.VecNormalize(env, ob=False)
-        env = wrappers.TransposeFrame(env)
-        env = wrappers.ScaledFloatFrame(env)
-
-        # Must be done last
-        env = wrappers.HardResetWrapper(env)
-        env.obs_shape = env.observation_space.shape
-        env.name = get_config_value(env_config, "gym_name", common_config.env_name)
-
-        return env
-    else:
-        raise NotImplementedError(
-            f"Random env switching not yet implemented for benchmark: {benchmark}"
-        )
-
-
 def main():
     args = flags.make()
     args.eval_mode = True
@@ -129,67 +59,10 @@ def main():
     # Record time for profiling purposes
     start_time = time.time()
 
-    # Check if we should use RandomEnvSwitchWrapper
-    use_random_env_switch = (
-        hasattr(config.evaluation, "use_random_env_switch")
-        and config.evaluation.use_random_env_switch
-    )
-
     # Load level seeds for evaluation (uses ood_eval seeds, always sequential mode)
     level_seeds = load_level_seeds(config)
 
-    if use_random_env_switch:
-        # Get configuration for random env switching
-        env1_config = config.evaluation.random_env_switch.env1
-        env2_config = config.evaluation.random_env_switch.env2
-        random_percent = config.evaluation.random_env_switch.random_percent
-
-        # Helper function to get attribute with fallback for None values
-        def get_config_value(obj, attr, default):
-            value = getattr(obj, attr, None)
-            return default if value is None else value
-
-        # Use getattr for config objects (not .get() which is for dicts)
-        env1_name = get_config_value(env1_config, "gym_name", "env1")
-        env2_name = get_config_value(env2_config, "gym_name", "env2")
-
-        print(
-            f"Using RandomEnvSwitchWrapper with {env1_name} and {env2_name} "
-            f"(random_percent={random_percent})"
-        )
-
-        # Create the two base environments with custom configurations
-        base_env1 = create_raw_env_from_config(env1_config, config)
-        base_env2 = create_raw_env_from_config(env2_config, config)
-
-        # Wrap them with RandomEnvSwitchWrapper
-        wrapped_test_env = RandomEnvSwitchWrapper(base_env1, base_env2, random_percent)
-
-        # Create normal envs for train/val (level seeds only apply to test)
-        envs = env_factory.make(config, level_seeds, "sequential")
-
-        # Get the actual weak and strong agents from the test env
-        # (test env has the correct agents, unlike train env which may use sim_weak)
-        actual_weak_agent = envs["test"].weak_agent
-        actual_strong_agent = envs["test"].strong_agent
-
-        # Replace the test env with our wrapped version
-        envs["test"] = envs["train"].__class__(
-            config.coord_env,
-            wrapped_test_env,
-            actual_weak_agent,
-            actual_strong_agent,
-        )
-        # Copy over costs
-        envs["test"].strong_query_cost_per_action = envs[
-            "train"
-        ].strong_query_cost_per_action
-        envs["test"].switch_agent_cost_per_action = envs[
-            "train"
-        ].switch_agent_cost_per_action
-        envs["test"].reset()
-    else:
-        envs = env_factory.make(config, level_seeds, "sequential")
+    envs = env_factory.make(config, level_seeds, "sequential")
 
     policy = policy_factory.make(config, envs["train"])
     if config.general.algorithm != "always" and not config.coord_policy.baseline:
@@ -218,9 +91,7 @@ def main():
             )
             policy.generate_scores(envs["train"], num_rollouts)
 
-    evaluator = Evaluator(
-        config, config.environment, random_env_switch=use_random_env_switch
-    )
+    evaluator = Evaluator(config, config.environment)
 
     coverage_fraction = config.evaluation.coverage_fraction
     threshold_sampler: str = config.evaluation.threshold_sampler
