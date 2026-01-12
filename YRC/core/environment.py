@@ -11,7 +11,6 @@ import json
 
 from copy import deepcopy as dc
 
-from YRC.core import Evaluator
 from YRC.core.configs import get_global_variable
 
 
@@ -76,29 +75,19 @@ def get_test_eval_info(config, coord_envs):
     with open("YRC/core/test_eval_info.json") as f:
         data = json.load(f)
 
-    backup_data = dc(data)
-
     benchmark = config.general.benchmark
     env_name = config.environment.common.env_name
 
     if env_name not in data[benchmark]:
-        logging.info(f"Missing info about {benchmark}-{env_name}!")
-        logging.info("Calculating missing info (taking a few minutes)...")
-        evaluator = Evaluator(config)
-        # eval strong agent on test environment to get statistics
-        summary = evaluator.eval(
-            coord_envs["test"].strong_agent,
-            {"test": coord_envs["test"].base_env},
-            ["test"],
-            num_episodes=coord_envs["test"].num_envs,
-        )["test"]
-        data[benchmark][env_name] = summary
-
-        with open("YRC/core/backup_test_eval_info.json", "w") as f:
-            json.dump(backup_data, f, indent=2)
-        with open("YRC/core/test_eval_info.json", "w") as f:
-            json.dump(data, f, indent=2)
-        logging.info("Saved info!")
+        available_envs = list(data[benchmark].keys())
+        raise ValueError(
+            f"Missing test evaluation info for '{benchmark}/{env_name}'!\n"
+            f"Available environments for '{benchmark}': {available_envs}\n\n"
+            f"To add '{env_name}', manually add an entry to 'YRC/core/test_eval_info.json'.\n"
+            f"If '{env_name}' shares the same dynamics as another environment (e.g., maze_afh ~ maze),\n"
+            f"you can copy that environment's stats.\n\n"
+            f"Required fields: episode_length_mean, reward_mean (used for cost calculation)"
+        )
 
     ret = data[benchmark][env_name]
 
