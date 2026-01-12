@@ -98,6 +98,9 @@ hard-500:
     architecture: impala
     recurrent: False
 
+# Hyperparameters from the Langosco et al. paper.
+# Setting n_envs to 256 and using this with num_threads=4, gives us on average
+# 64 envs/thread, which corresponds to the values they use in the paper.
 paper:
     algo: ppo
     n_envs: 256
