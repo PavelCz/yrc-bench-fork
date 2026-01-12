@@ -16,34 +16,10 @@ evaluation:
     video_episodes_to_collect: 16
     video_filter: ['all']
     
-    # Enable random environment switching
-    use_random_env_switch: True
-    random_env_switch:
-        # Configuration for first environment
-        env1:
-            gym_name: 'maze_aisc'  # Direct gym environment name
-            num_levels: 5120
-            start_level: 300000
-            distribution_mode: 'hard'
-            seed: 300000
-            # Optional: num_envs, num_threads will inherit from common config if not specified
-        
-        # Configuration for second environment
-        env2:
-            gym_name: 'maze'  # Direct gym environment name
-            num_levels: 5120
-            start_level: 300000
-            distribution_mode: 'hard'
-            seed: 300000
-        
-        # Probability (0-100) of choosing env1 on reset for each sub-env
-        # For example, 70 means 70% chance of using env1, 30% chance of using env2
-        random_percent: 50
-    
 # Inherit all settings from common.yaml
 environment: 
     common:
-        env_name: 'maze'
+        env_name: 'maze_afh'
         normalize_rew: False
         num_envs: 8
         num_threads: 8
@@ -73,7 +49,7 @@ environment:
         seed: 300000
         start_level: 300000
         num_levels: 5120
-        random_percent: 50
+        random_percent: 50  # 50% corner placement (maze_aisc), 50% random placement (maze)
 coord_env: null
 coord_policy: null
 algorithm: null
