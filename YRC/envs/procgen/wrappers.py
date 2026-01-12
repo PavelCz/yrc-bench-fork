@@ -258,13 +258,13 @@ class VecFrameStack(VecEnvWrapper):
         for i, new in enumerate(news):
             if new:
                 self.stackedobs[i] = 0
-        self.stackedobs[..., -obs.shape[-1]:] = obs
+        self.stackedobs[..., -obs.shape[-1] :] = obs
         return self.stackedobs, rews, news, infos
 
     def reset(self):
         obs = self.venv.reset()
         self.stackedobs[...] = 0
-        self.stackedobs[..., -obs.shape[-1]:] = obs
+        self.stackedobs[..., -obs.shape[-1] :] = obs
         return self.stackedobs
 
 
@@ -299,7 +299,7 @@ class RunningMeanStd(object):
 
 
 def update_mean_var_count_from_moments(
-        mean, var, count, batch_mean, batch_var, batch_count
+    mean, var, count, batch_mean, batch_var, batch_count
 ):
     delta = batch_mean - mean
     tot_count = count + batch_count
@@ -321,14 +321,14 @@ class VecNormalize(VecEnvWrapper):
     """
 
     def __init__(
-            self,
-            venv,
-            ob=True,
-            ret=True,
-            clipob=10.0,
-            cliprew=10.0,
-            gamma=0.99,
-            epsilon=1e-8,
+        self,
+        venv,
+        ob=True,
+        ret=True,
+        clipob=10.0,
+        cliprew=10.0,
+        gamma=0.99,
+        epsilon=1e-8,
     ):
         VecEnvWrapper.__init__(self, venv)
 
@@ -488,6 +488,7 @@ class RandomEnvSwitchWrapper(VecEnvWrapper):
         obs2, rews2, dones2, infos2 = self.venv2.step_wait()
 
         # Select results from the CURRENT environment BEFORE switching
+        # We'll use copies so we can modify obs for switched sub-envs
         obs = np.where(self.env_selector[:, None, None, None], obs1, obs2)
         rews = np.where(self.env_selector, rews1, rews2)
         dones = np.where(self.env_selector, dones1, dones2)
@@ -496,10 +497,54 @@ class RandomEnvSwitchWrapper(VecEnvWrapper):
             for i in range(self.num_envs)
         ]
 
-        # NOW switch environments for any sub-env that is done
+        # Track which sub-envs need to switch to each environment
+        switch_to_env1 = []
+        switch_to_env2 = []
+
+        # Determine switches for any sub-env that is done
         for i, done in enumerate(dones):
             if done:
-                self.env_selector[i] = np.random.random() < self.random_percent
+                old_selector = self.env_selector[i]
+                new_selector = np.random.random() < self.random_percent
+                self.env_selector[i] = new_selector
+
+                # Track if we're switching to a DIFFERENT environment
+                if old_selector != new_selector:
+                    if new_selector:  # Switching TO env1
+                        switch_to_env1.append(i)
+                    else:  # Switching TO env2
+                        switch_to_env2.append(i)
+
+        # For sub-envs that switched to a different environment, we need to force-reset
+        # that environment and use its observation. This ensures the first frame of the
+        # new episode is from the correct environment.
+        #
+        # In Procgen, action=-1 forces a reset for that specific sub-env.
+        # Other sub-envs get action=0 (a no-op that advances them by one step).
+
+        if switch_to_env1:
+            # Force reset env1 for sub-envs that switched to it
+            reset_actions = np.zeros(self.num_envs, dtype=np.int32)
+            for i in switch_to_env1:
+                reset_actions[i] = -1
+            self.venv1.step_async(reset_actions)
+            reset_obs1, _, _, reset_infos1 = self.venv1.step_wait()
+            # Update observations and infos for switched sub-envs
+            for i in switch_to_env1:
+                obs[i] = reset_obs1[i]
+                infos[i] = reset_infos1[i]
+
+        if switch_to_env2:
+            # Force reset env2 for sub-envs that switched to it
+            reset_actions = np.zeros(self.num_envs, dtype=np.int32)
+            for i in switch_to_env2:
+                reset_actions[i] = -1
+            self.venv2.step_async(reset_actions)
+            reset_obs2, _, _, reset_infos2 = self.venv2.step_wait()
+            # Update observations and infos for switched sub-envs
+            for i in switch_to_env2:
+                obs[i] = reset_obs2[i]
+                infos[i] = reset_infos2[i]
 
         return obs, rews, dones, infos
 
@@ -516,6 +561,5 @@ class RandomEnvSwitchWrapper(VecEnvWrapper):
         imgs1 = self.venv1.get_images()
         imgs2 = self.venv2.get_images()
         return [
-            imgs1[i] if self.env_selector[i] else imgs2[i]
-            for i in range(self.num_envs)
+            imgs1[i] if self.env_selector[i] else imgs2[i] for i in range(self.num_envs)
         ]
