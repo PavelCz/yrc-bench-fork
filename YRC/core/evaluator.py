@@ -189,13 +189,15 @@ class Evaluator:
                 )
                 self._process_and_log_videos(split, threshold, afhp, logger)
 
-                logger.experiment.log(
-                    {
-                        "num_finished_episodes": summary[split][
-                            "num_finished_episodes"
-                        ],
-                    }
-                )
+                wandb_metrics = {
+                    "num_finished_episodes": summary[split][
+                        "num_finished_episodes"
+                    ],
+                }
+                # Add randomize_goal_percentage if available
+                if summary[split].get("randomize_goal_percentage") is not None:
+                    wandb_metrics["randomize_goal_percentage"] = summary[split]["randomize_goal_percentage"]
+                logger.experiment.log(wandb_metrics)
 
         return summary
 
@@ -550,6 +552,8 @@ class Evaluator:
             "ood_accuracy": ood_accuracy,
             "level_ood_gt": log["level_ood_gt"],
             "level_ood_pred": log["level_ood_pred"],
+            # Variant percentage (percentage of random goal placements)
+            "randomize_goal_percentage": float(np.mean(log["level_ood_gt"])) * 100 if log.get("level_ood_gt") and len(log["level_ood_gt"]) > 0 else None,
             # Episode outcome information
             "invisible_coin_collected": log["invisible_coin_collected"],
             "first_ood_timestep": log["first_ood_timestep"],
@@ -571,6 +575,8 @@ class Evaluator:
         log_str += f"   Action {self.LOGGED_ACTION} fraction: {summary[f'action_{self.LOGGED_ACTION}_frac']:7.2f}\n"
         log_str += f"   OOD Pred Percentage: {summary['ood_pred_percentage']:7.2f}\n"
         log_str += f"   OOD Accuracy: {summary['ood_accuracy']:7.2f}\n"
+        if summary.get('randomize_goal_percentage') is not None:
+            log_str += f"   Random Goal %: {summary['randomize_goal_percentage']:7.2f}%\n"
         log_str += "   Raw Rewards: "
         for r in summary["raw_returns"]:
             log_str += f"{r:.2f},"
