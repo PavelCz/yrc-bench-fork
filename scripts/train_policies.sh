@@ -16,6 +16,7 @@ TRAIN_DIR="${PROJECT_ROOT}/lib/train-procgen-pytorch"
 # 1-4           | same as ID  | {ID}.json        | random     | (not set)
 #
 CONDA_ENV="ood-stable"
+ENV_TYPE="coinrun"  # "coinrun" or "maze"
 EXP_PREFIX="icml2"
 EXPERIMENT_ID=0
 LEVEL_SEEDS_FOLDER="/nas/ucb/czempin/data/goal-misgen/seeds/icml"
@@ -38,6 +39,26 @@ else
     NUM_LEVELS=""
 fi
 
+# Set environment-specific parameters
+if [ "$ENV_TYPE" = "coinrun" ]; then
+    ENV_NAME="coinrun"
+    VAL_ENV_NAME="coinrun"
+    DEFAULT_SEED=6033
+elif [ "$ENV_TYPE" = "maze" ]; then
+    ENV_NAME="maze_afh"
+    VAL_ENV_NAME="maze_afh"
+    DEFAULT_SEED=1080
+else
+    echo "Error: ENV_TYPE must be 'coinrun' or 'maze', got '$ENV_TYPE'"
+    exit 1
+fi
+
+# Override seed for experiment 0. The default seed is the one used in the original
+# paper.
+if [ "$EXPERIMENT_ID" -eq 0 ]; then
+    SEED="$DEFAULT_SEED"
+fi
+
 for random_percent in "${RANDOM_PERCENTS[@]}"; do
     exp_name="${EXP_PREFIX}_${random_percent}p"
 
@@ -58,8 +79,8 @@ for random_percent in "${RANDOM_PERCENTS[@]}"; do
             --train_mode $TRAIN_MODE \
             --eval_mode sequential \
             --exp_name $exp_name \
-            --env_name coinrun \
-            --val_env_name coinrun \
+            --env_name $ENV_NAME \
+            --val_env_name $VAL_ENV_NAME \
             --random_percent $random_percent \
             --random_percent_val 50 \
             --distribution_mode hard \
