@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Get script directory and project paths
+# Get script directory and project paths (resolve symlinks for slurm compatibility)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(realpath "$(dirname "$SCRIPT_DIR")")"
 TRAIN_SCRIPT="${PROJECT_ROOT}/lib/train-procgen-pytorch/train.py"
 
 # Configuration
