@@ -7,7 +7,7 @@ TRAIN_SCRIPT="${PROJECT_ROOT}/lib/train-procgen-pytorch/train.py"
 
 # Configuration
 #
-# Different experiment configs correspond to different "seeds." Experiment 0 
+# Different experiment configs correspond to different "seeds." Experiment 0
 # reproduces the settings from the original paper by Langosco et al.
 #
 # EXPERIMENT_ID | SEED        | LEVEL_SEEDS_FILE | TRAIN_MODE | NUM_LEVELS
@@ -15,6 +15,7 @@ TRAIN_SCRIPT="${PROJECT_ROOT}/lib/train-procgen-pytorch/train.py"
 # 0             | 6033        | 0.json           | fallback   | 100000
 # 1-4           | same as ID  | {ID}.json        | random     | (not set)
 #
+CONDA_ENV="ood-stable"
 EXP_PREFIX="icml2"
 EXPERIMENT_ID=0
 LEVEL_SEEDS_FOLDER="/nas/ucb/czempin/data/goal-misgen/seeds/icml"
@@ -52,7 +53,7 @@ for random_percent in "${RANDOM_PERCENTS[@]}"; do
         --mem=128G \
         --job-name="$exp_name" \
         --output="${LOG_DIR}/${exp_name}.out" \
-        --wrap="conda run -n ood-stable python $TRAIN_SCRIPT \
+        --wrap="conda run -n $CONDA_ENV python $TRAIN_SCRIPT \
             --level_seeds_file ${LEVEL_SEEDS_FOLDER}/${LEVEL_SEEDS_FILE} \
             --train_mode $TRAIN_MODE \
             --eval_mode sequential \
