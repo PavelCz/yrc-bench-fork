@@ -874,6 +874,9 @@ def process_and_log_video(
         human_video = np.zeros(
             (time_steps, 3, human_height, human_width), dtype=np.uint8
         )
+        # Note: The first human frame (t=0) will be gray because env.reset() does not
+        # return an info dict with "rgb". The human-resolution frame is only available
+        # in info["rgb"] after env.step(), so the first frame is unavailable.
         for t in range(time_steps):
             # Use the corresponding human frame, or last available for repeated frames
             if t < len(human_obs) and human_obs[t] is not None:
@@ -888,7 +891,7 @@ def process_and_log_video(
                 else:
                     human_video[t] = 128  # Gray fill if no frames available
             else:
-                human_video[t] = 128  # Gray fill
+                human_video[t] = 128  # Gray fill (first frame unavailable from reset)
 
         # Add bars to human view
         if has_scores:

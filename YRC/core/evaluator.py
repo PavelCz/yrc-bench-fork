@@ -248,8 +248,9 @@ class Evaluator:
         # OOD GT is determined by `info["randomize_goal"]` (set after first step)
         # Deep copy obs to avoid Procgen buffer reuse issues
         prev_obs = _deep_copy_obs(obs)
-        # Track previous info for human-resolution frames (info["rgb"])
-        # On first frame after reset, this will be empty dicts (no human frame available)
+        # Track previous info for human-resolution frames (info["rgb"]).
+        # env.reset() does not return info, so the first human frame is unavailable.
+        # This means the first frame of the human view in videos will be gray.
         prev_info = [{} for _ in range(env.num_envs)]
 
         for i in range(env.num_envs):
