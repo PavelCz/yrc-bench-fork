@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Get script directory and project paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+TRAIN_SCRIPT="${PROJECT_ROOT}/lib/train-procgen-pytorch/train.py"
+
 # Configuration
 #
 # Different experiment configs correspond to different "seeds." Experiment 0 
@@ -47,7 +52,7 @@ for random_percent in "${RANDOM_PERCENTS[@]}"; do
         --mem=128G \
         --job-name="$exp_name" \
         --output="${LOG_DIR}/${exp_name}.out" \
-        --wrap="conda run -n ood-stable python train.py \
+        --wrap="conda run -n ood-stable python $TRAIN_SCRIPT \
             --level_seeds_file ${LEVEL_SEEDS_FOLDER}/${LEVEL_SEEDS_FILE} \
             --train_mode $TRAIN_MODE \
             --eval_mode sequential \
