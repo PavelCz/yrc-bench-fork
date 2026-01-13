@@ -10,6 +10,28 @@ reproducing the experiments from the paper.
 > [!NOTE]
 > What follows is the original readme.
 
+## Level Seeds and Train Modes
+
+The training script supports loading specific level seeds from a JSON file and controlling how they are sampled during training and evaluation.
+
+### Usage
+
+```bash
+python train.py --level_seeds_file PATH/TO/seeds.json --train_mode MODE --eval_mode MODE
+```
+
+### Train/Eval Modes
+
+- **`sequential`**: Seeds are consumed in exact order across all parallel environments. When an environment resets, it gets the next available seed from the shared list. When all seeds are exhausted, environments freeze (return `done=False`, `reward=0`). Useful for evaluation on a fixed set of test levels where each level should be played exactly once.
+
+- **`container`**: Seeds are randomly drawn from a pool *without* replacement. When the pool is empty, it refills with all original seeds and cycles continue. Each seed is used exactly once per cycle. Never exhausts - cycles forever. Useful for training where you want to sample from a specific set of levels in random order, ensuring each level is seen once per epoch.
+
+- **`random`**: Seeds are randomly sampled *with* replacement from the full list. Seeds can be repeated before all seeds have been seen. Never exhausts - cycles forever. Useful for training with maximum randomization over the seed set.
+
+- **`fallback`**: Ignores the `level_seeds_file` entirely. Uses default Procgen behavior (random level generation based on `num_levels`, `start_level`, etc.). Useful when you don't want to use a specific seed set.
+
+---
+
 This code is based on a fork of [this repository](https://github.com/joonleesky/train-procgen-pytorch) by Hojoon Lee.
 It includes scripts for training RL agents on [modified procgen environments](https://github.com/JacobPfau/procgenAISC) and producing the figures for the paper [Goal Misgeneralization in Deep Reinforcement Learning](https://arxiv.org/abs/2105.14111).
 
