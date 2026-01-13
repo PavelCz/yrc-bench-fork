@@ -3,7 +3,7 @@
 # Get script directory and project paths (resolve symlinks for slurm compatibility)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(realpath "$(dirname "$SCRIPT_DIR")")"
-TRAIN_SCRIPT="${PROJECT_ROOT}/lib/train-procgen-pytorch/train.py"
+TRAIN_DIR="${PROJECT_ROOT}/lib/train-procgen-pytorch"
 
 # Configuration
 #
@@ -53,7 +53,7 @@ for random_percent in "${RANDOM_PERCENTS[@]}"; do
         --mem=128G \
         --job-name="$exp_name" \
         --output="${LOG_DIR}/${exp_name}.out" \
-        --wrap="conda run -n $CONDA_ENV python $TRAIN_SCRIPT \
+        --wrap="cd $TRAIN_DIR && conda run -n $CONDA_ENV python train.py \
             --level_seeds_file ${LEVEL_SEEDS_FOLDER}/${LEVEL_SEEDS_FILE} \
             --train_mode $TRAIN_MODE \
             --eval_mode sequential \
