@@ -14,13 +14,19 @@ This is a fork of YRC-Bench (Yield and Request Control Benchmark) focused exclus
 
 ## Development Environment
 
-**Important:** All commands should be run within the `ood` conda environment:
+There are two conda environments:
+- **`ood`**: For development and testing
+- **`ood-stable`**: For running final experiments (frozen dependencies)
+
 ```bash
-# Using conda run (recommended)
+# Development (using conda run, recommended)
 conda run -n ood <command>
 
 # Or activate the environment first
 conda activate ood
+
+# Final experiments
+conda run -n ood-stable <command>
 ```
 
 ## Key Commands
