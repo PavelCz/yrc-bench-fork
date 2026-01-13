@@ -83,4 +83,5 @@ class Algorithm:
 
     def update_wandb_log(self, wandb_log, split, summary):
         for k, v in summary.items():
-            wandb_log[f"{split}/{k}"] = v
+            if v is not None:
+                wandb_log[f"{split}/{k}"] = v

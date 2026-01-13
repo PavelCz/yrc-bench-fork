@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 import argparse
 
-from procgen import ProcgenGym3Env, RandomEnvSwitchWrapper
+from procgen import ProcgenGym3Env
 from .env import ENV_NAMES
-from gym3 import Interactive, VideoRecorderWrapper, unwrap, ToBaselinesVecEnv, FromBaselinesVecEnv
+from gym3 import Interactive, VideoRecorderWrapper, unwrap
 
 class ProcgenInteractive(Interactive):
     def __init__(self, *args, **kwargs):
@@ -40,7 +40,7 @@ class ProcgenInteractive(Interactive):
         super()._update(dt, keys_clicked, keys_pressed)
 
 
-def make_interactive(vision, record_dir, use_env_switch=False, env_name_1=None, switch_percent=50, **kwargs):
+def make_interactive(vision, record_dir, **kwargs):
     info_key = None
     ob_key = None
     if vision == "human":
@@ -49,29 +49,7 @@ def make_interactive(vision, record_dir, use_env_switch=False, env_name_1=None, 
     else:
         ob_key = "rgb"
 
-    keys_to_act_fn = None
-    
-    if use_env_switch and env_name_1 is not None:
-        # Create two environments and wrap them with RandomEnvSwitchWrapper
-        # Need to get env_name from kwargs
-        env_name_0 = kwargs.pop('env_name', None)
-        if env_name_0 is None:
-            raise ValueError("env_name must be provided when using env switch")
-        
-        # Create both gym3 environments
-        env0_gym3 = ProcgenGym3Env(num=1, env_name=env_name_0, **kwargs)
-        env1_gym3 = ProcgenGym3Env(num=1, env_name=env_name_1, **kwargs)
-        
-        # Convert to baselines format, wrap, and convert back
-        env0_baselines = ToBaselinesVecEnv(env0_gym3)
-        env1_baselines = ToBaselinesVecEnv(env1_gym3)
-        wrapped_baselines = RandomEnvSwitchWrapper(env0_baselines, env1_baselines, switch_percent)
-        env = FromBaselinesVecEnv(wrapped_baselines)
-        
-        # Define keys_to_act using env0_gym3 (since key mapping is same for both)
-        keys_to_act_fn = lambda keys: env0_gym3.callmethod("keys_to_act", [keys])[0]
-    else:
-        env = ProcgenGym3Env(num=1, **kwargs)
+    env = ProcgenGym3Env(num=1, **kwargs)
     
     if record_dir is not None:
         env = VideoRecorderWrapper(
@@ -125,23 +103,6 @@ def main():
         default="sequential",
         choices=["sequential", "container", "random"],
         help="how to use level seeds: 'sequential' (in order, stop when exhausted), 'container' (random draw, refill when empty), or 'random' (sample with replacement) " + default_str,
-    )
-    parser.add_argument(
-        "--use-env-switch",
-        action="store_true",
-        default=False,
-        help="use the RandomEnvSwitchWrapper to randomly switch between two environments",
-    )
-    parser.add_argument(
-        "--env-name-1",
-        help="name of second game to switch with (required if --use-env-switch is set)",
-        choices=ENV_NAMES + ["coinrun_old"],
-    )
-    parser.add_argument(
-        "--switch-percent",
-        type=int,
-        default=50,
-        help="probability (0-100) of using env-name (vs env-name-1) on reset " + default_str,
     )
 
     advanced_group = parser.add_argument_group("advanced optional switch arguments")
@@ -213,10 +174,6 @@ def main():
 
     args = parser.parse_args()
     
-    # Validate env switch arguments
-    if args.use_env_switch and args.env_name_1 is None:
-        parser.error("--env-name-1 is required when --use-env-switch is set")
-    
     # Validate level seed arguments
     if args.level_seed is not None and args.level_seeds is not None:
         parser.error("--level-seed and --level-seeds are mutually exclusive")
@@ -247,9 +204,6 @@ def main():
     ia = make_interactive(
         args.vision, 
         record_dir=args.record_dir, 
-        use_env_switch=args.use_env_switch,
-        env_name_1=args.env_name_1,
-        switch_percent=args.switch_percent,
         env_name=args.env_name, 
         **kwargs
     )

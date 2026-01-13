@@ -124,58 +124,25 @@ python eval.py -c configs/minigrid_random.yaml -n DoorKey_always_random_qc02 -en
 python eval.py -c configs/procgen_threshold.yaml -n coinrun_threshold_margin_qc06 -en coinrun -sim YRC/checkpoints/procgen/coinrun/sim_weak/model_40009728.pth -weak YRC/checkpoints/procgen/coinrun/weak/model_80019456.pth -strong YRC/checkpoints/procgen/coinrun/strong/model_200015872.pth -cp_metric margin -f_n best_val_true.ckpt -query_cost 0.6 -seed 12
 ```
 
-#### AFHP Evaluation with Random Environment Switching
+#### AFHP Evaluation with Mixed Environments
 
-For advanced evaluation scenarios, you can use `eval_afhp.py` with the `RandomEnvSwitchWrapper` to randomly switch between two different environment configurations during evaluation.
+For environments that support `random_percent` (like `coinrun` and `maze_afh`), you can create mixed ID/OOD evaluation scenarios by setting `random_percent` in your config. This controls the probability of goal randomization per level.
 
-To use this feature, add the following configuration to your YAML file:
+For example, with `maze_afh`:
 
 ```yaml
-evaluation:
-    coverage_fraction: 0.05
-    threshold_sampler: 'ood_percentage'
-    
-    # Enable random environment switching
-    use_random_env_switch: True
-    random_env_switch:
-        # Configuration for first environment
-        env1:
-            gym_name: 'maze'  # Direct gym environment name
-            num_levels: 5120
-            start_level: 300000
-            distribution_mode: 'hard'
-            seed: 300000
-            random_percent: 50
-        
-        # Configuration for second environment
-        env2:
-            gym_name: 'maze_aisc'  # Different gym environment
-            num_levels: 2560
-            start_level: 400000
-            distribution_mode: 'hard'
-            seed: 400000
-            random_percent: 100
-        
-        # Probability (0-100) of choosing env1 on reset for each sub-env
-        # For example, 70 means 70% chance of using env1, 30% chance of using env2
-        random_percent: 70
+environment:
+    common:
+        env_name: 'maze_afh'
+    test:
+        random_percent: 50  # 50% corner placement (ID), 50% random placement (OOD)
 ```
 
-See `configs/eval/maze/random_env_switch_example.yaml` for a complete example configuration.
+- `random_percent=0`: Always deterministic placement (e.g., cheese in corner for `maze_afh`)
+- `random_percent=100`: Always random placement
+- `random_percent=50`: 50/50 probabilistic mix
 
-Each environment configuration (`env1` and `env2`) requires:
-- `gym_name`: The direct gym environment name (e.g., 'maze', 'maze_aisc', 'coinrun')
-- `num_levels`, `start_level`, `distribution_mode`, `seed`, `random_percent`: Environment-specific settings
-
-Optional settings that inherit from `environment.common` if not specified:
-- `num_envs`, `num_threads`, `use_backgrounds`, `use_monochrome_assets`, `restrict_themes`
-
-Then run:
-```bash
-python eval_afhp.py -c configs/eval/maze/random_env_switch_example.yaml -n maze_random_switch -en maze -sim PATH/TO/SIM_WEAK_AGENT.pt -weak PATH/TO/WEAK_AGENT.pt -strong PATH/TO/STRONG_AGENT.pt -query_cost 1.0
-```
-
-The `RandomEnvSwitchWrapper` will randomly choose between the two specified gym environments each time a sub-environment resets, according to the configured probability. This allows you to evaluate performance on a mixture of different gym environments (e.g., `maze` vs `maze_aisc`) in a single run.
+The environment exposes `info["randomize_goal"]` to indicate placement type for OOD detection. See `configs/eval/maze/timestep_random.yaml` for a complete example.
 
 ### Analyzing the Results
 All the scripts required to analyze the results are located in the `analyzing` directory. The scripts are designed to analyze the results of the experiments and generate the plots and tables presented in the paper. To do so, once the experiments are done, edit the `constants.py` file according to the environments and algorithms used in the experiments. Then, run the following command first to extract the raw results from the `experiments` directory:

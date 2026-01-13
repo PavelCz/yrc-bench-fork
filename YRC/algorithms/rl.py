@@ -92,6 +92,7 @@ class PPOAlgorithm(Algorithm):
         log["reward"], log["env_reward"] = [], []
         log["action_1"] = []
         log["action_prob"] = []
+        log["randomize_goal"] = []
 
         # NOTE: set policy to eval mode when collecting trajectories
         policy.eval()
@@ -121,6 +122,9 @@ class PPOAlgorithm(Algorithm):
                 self.total_reward["reward"][i] += reward[i]
                 if "env_reward" in info[i]:
                     self.total_reward["env_reward"][i] += info[i]["env_reward"]
+                # Track randomize_goal for variant percentage logging
+                if "randomize_goal" in info[i]:
+                    log["randomize_goal"].append(info[i]["randomize_goal"])
                 if next_done[i]:
                     # print("===>", step, reward[i], np.mean(log["reward"]))
                     log["reward"].append(self.total_reward["reward"][i])
@@ -264,7 +268,8 @@ class PPOAlgorithm(Algorithm):
             "value_mean": float(np.mean(log["value"])),
             "value_std": float(np.std(log["value"])),
             "action_1": float(np.mean(log["action_1"])),
-            "action_prob": float(np.mean(log["action_prob"]))
+            "action_prob": float(np.mean(log["action_prob"])),
+            "randomize_goal_percentage": float(np.mean(log["randomize_goal"])) * 100 if log.get("randomize_goal") and len(log["randomize_goal"]) > 0 else None,
         }
 
     def write_summary(self, summary):
@@ -286,7 +291,9 @@ class PPOAlgorithm(Algorithm):
         log_str += f"value {summary['value_mean']:7.4f} ± {summary['value_std']:7.4f}\n"
 
         log_str += f"   Action 1 frac: {summary['action_1']:7.2f}\n"
-        log_str += f"   Action prob: {summary['action_prob']:7.2f}"
+        log_str += f"   Action prob: {summary['action_prob']:7.2f}\n"
+        if summary.get('randomize_goal_percentage') is not None:
+            log_str += f"   Random Goal %: {summary['randomize_goal_percentage']:7.2f}%"
 
         logging.info(log_str)
 

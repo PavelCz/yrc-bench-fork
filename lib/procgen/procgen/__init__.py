@@ -6,8 +6,7 @@ __version__ = open(version_path).read()
 
 from .env import ProcgenEnv, ProcgenGym3Env
 from .gym_registration import register_environments
-from .wrappers import RandomEnvSwitchWrapper
 
 register_environments()
 
-__all__ = ["ProcgenEnv", "ProcgenGym3Env", "RandomEnvSwitchWrapper"]
+__all__ = ["ProcgenEnv", "ProcgenGym3Env"]
