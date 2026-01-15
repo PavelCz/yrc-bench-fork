@@ -20,21 +20,24 @@ Usage: $(basename "$0") -e ENV_TYPE -x EXPERIMENT_ID
 Train policies for goal misgeneralization experiments.
 
 Required arguments:
-    -e, --env ENV_TYPE        Environment type: "coinrun" or "maze"
+    -e, --env ENV_TYPE        Environment type: "coinrun", "maze", or "heist"
     -x, --experiment ID       Experiment ID: 0-4
 
 Optional arguments:
     -h, --help                Show this help message
 
 Experiment configurations:
-    EXPERIMENT_ID | SEED              | LEVEL_SEEDS_FILE | TRAIN_MODE | NUM_LEVELS
-    --------------|-------------------|------------------|------------|------------
-    0             | 6033/1080 (env)   | 0.json           | fallback   | 100000
-    1-4           | same as ID        | {ID}.json        | random     | (not set)
+    EXPERIMENT_ID | SEED                   | LEVEL_SEEDS_FILE | TRAIN_MODE | NUM_LEVELS
+    --------------|------------------------|------------------|------------|------------
+    0             | 6033/1080/1111 (env)   | 0.json           | fallback   | 100000
+    1-4           | same as ID             | {ID}.json        | random     | (not set)
+
+    Default seeds by environment: coinrun=6033, maze=1080, heist=1111
 
 Examples:
     $(basename "$0") -e coinrun -x 0
     $(basename "$0") --env maze --experiment 2
+    $(basename "$0") --env heist --experiment 0
 EOF
     exit 1
 }
@@ -75,8 +78,8 @@ if [ -z "$EXPERIMENT_ID" ]; then
 fi
 
 # Validate ENV_TYPE
-if [ "$ENV_TYPE" != "coinrun" ] && [ "$ENV_TYPE" != "maze" ]; then
-    echo "Error: ENV_TYPE must be 'coinrun' or 'maze', got '$ENV_TYPE'"
+if [ "$ENV_TYPE" != "coinrun" ] && [ "$ENV_TYPE" != "maze" ] && [ "$ENV_TYPE" != "heist" ]; then
+    echo "Error: ENV_TYPE must be 'coinrun', 'maze', or 'heist', got '$ENV_TYPE'"
     exit 1
 fi
 
@@ -109,6 +112,10 @@ elif [ "$ENV_TYPE" = "maze" ]; then
     ENV_NAME="maze_afh"
     VAL_ENV_NAME="maze_afh"
     DEFAULT_SEED=1080
+elif [ "$ENV_TYPE" = "heist" ]; then
+    ENV_NAME="heist_afh"
+    VAL_ENV_NAME="heist_afh"
+    DEFAULT_SEED=1111
 fi
 
 # Set seed based on experiment ID
