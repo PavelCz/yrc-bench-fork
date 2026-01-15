@@ -148,7 +148,7 @@ for random_percent in "${RANDOM_PERCENTS[@]}"; do
         --time=3-00:00:00 \
         --mem=128G \
         --job-name="$exp_name" \
-        --output="${LOG_DIR}/${exp_name}.out" \
+        --output="${LOG_DIR}/${exp_name}_%j.out" \
         --wrap="cd $TRAIN_DIR && conda run -n $CONDA_ENV python train.py \
             --level_seeds_file ${LEVEL_SEEDS_FOLDER}/${LEVEL_SEEDS_FILE} \
             --train_mode $TRAIN_MODE \
