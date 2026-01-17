@@ -40,7 +40,8 @@ ENVS = ["maze", "coinrun"]
 
 # Method to config file mapping
 METHOD_CONFIGS = {
-    "max-prob": "threshold.yaml",
+    "max-prob": "max_prob.yaml",
+    "max-logit": "max_logit.yaml",
     "lb-random": "level_based_random.yaml",
     "ts-random": "timestep_random.yaml",
 }
@@ -48,6 +49,7 @@ METHOD_CONFIGS = {
 # Method to run name suffix mapping
 METHOD_NAMES = {
     "max-prob": "max_prob",
+    "max-logit": "max_logit",
     "lb-random": "lb_random",
     "ts-random": "ts_random",
 }
