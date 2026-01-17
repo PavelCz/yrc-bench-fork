@@ -214,6 +214,7 @@ def main():
     parser.add_argument("--env", required=True, choices=ENVS, help="Environment to evaluate")
     parser.add_argument("--method", required=True, choices=list(METHOD_CONFIGS.keys()), help="Evaluation method")
     parser.add_argument("--prefix", required=True, help="Experiment group prefix")
+    parser.add_argument("--exp-ids", type=int, nargs="+", default=[0, 1, 2, 3, 4], help="Experiment IDs to run (default: 0 1 2 3 4)")
     parser.add_argument("--num-levels", type=int, default=EVAL_DEFAULTS["num_levels"], help="Number of levels")
     parser.add_argument("--video-episodes", type=int, default=EVAL_DEFAULTS["video_episodes_to_collect"], help="Video episodes to collect")
     parser.add_argument("--video-filter", default=EVAL_DEFAULTS["video_filter"], help="Video filter")
@@ -242,8 +243,8 @@ def main():
         print(f"Prefix: {args.prefix}")
         print()
 
-    # Loop over experiment IDs 0-4
-    for exp_id in range(5):
+    # Loop over experiment IDs
+    for exp_id in args.exp_ids:
         # Get checkpoints for this experiment
         checkpoints = get_checkpoints(args.env, exp_id)
         if args.sim:
