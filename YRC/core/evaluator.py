@@ -69,7 +69,11 @@ class Evaluator:
     ):
         self.args = config.evaluation
 
-        self.eval_run_dir = Path(config.eval_run_dir)
+        # Use eval_run_dir if available (eval mode), otherwise fall back to experiment_dir
+        if hasattr(config, "eval_run_dir") and config.eval_run_dir is not None:
+            self.eval_run_dir = Path(config.eval_run_dir)
+        else:
+            self.eval_run_dir = Path(config.experiment_dir)
 
         self.collected_states = []
         self.done_saving_actions_for_vid = False
