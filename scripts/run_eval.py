@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
+from typing import Optional
 
 
 # SLURM configuration
@@ -60,7 +61,7 @@ def get_env_folder(env: str) -> str:
 EXPECTED_TIMESTEPS = 200015872
 
 
-def find_newest_timestamp_dir(parent_dir: Path) -> Path | None:
+def find_newest_timestamp_dir(parent_dir: Path) -> Optional[Path]:
     """Find the newest timestamp directory in parent_dir.
 
     Looks for dirs matching format: YYYY-MM-DD__HH-MM-SS__seed_*
@@ -89,7 +90,7 @@ def find_newest_timestamp_dir(parent_dir: Path) -> Path | None:
     return newest
 
 
-def find_best_model_checkpoint(ts_dir: Path) -> Path | None:
+def find_best_model_checkpoint(ts_dir: Path) -> Optional[Path]:
     """Find the model checkpoint with highest timesteps.
 
     Looks for files matching format: model_*.pth
