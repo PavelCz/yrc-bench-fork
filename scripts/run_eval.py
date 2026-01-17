@@ -4,6 +4,7 @@ Script to run evaluation jobs in parallel via SLURM sbatch.
 """
 
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -56,12 +57,86 @@ def get_env_folder(env: str) -> str:
         return f"{env}_afh"
 
 
+EXPECTED_TIMESTEPS = 200015872
+
+
+def find_newest_timestamp_dir(parent_dir: Path) -> Path | None:
+    """Find the newest timestamp directory in parent_dir.
+
+    Looks for dirs matching format: YYYY-MM-DD__HH-MM-SS__seed_*
+    Returns the newest one based on the timestamp in the name.
+    Prints a warning if multiple exist.
+    """
+    if not parent_dir.exists():
+        return None
+
+    # Find all timestamp directories
+    timestamp_dirs = []
+    for d in parent_dir.iterdir():
+        if d.is_dir() and "__seed_" in d.name:
+            timestamp_dirs.append(d)
+
+    if not timestamp_dirs:
+        return None
+
+    if len(timestamp_dirs) > 1:
+        print(f"Warning: Multiple timestamp dirs in {parent_dir}, using newest:")
+        for d in sorted(timestamp_dirs, key=lambda x: x.name):
+            print(f"  - {d.name}")
+
+    # Sort by name (timestamp format sorts lexicographically)
+    newest = sorted(timestamp_dirs, key=lambda x: x.name)[-1]
+    return newest
+
+
+def find_best_model_checkpoint(ts_dir: Path) -> Path | None:
+    """Find the model checkpoint with highest timesteps.
+
+    Looks for files matching format: model_*.pth
+    Returns the one with highest timesteps number.
+    Prints a warning if highest is not EXPECTED_TIMESTEPS.
+    """
+    if not ts_dir.exists():
+        return None
+
+    model_files = []
+    for f in ts_dir.iterdir():
+        if f.is_file() and f.name.startswith("model_") and f.name.endswith(".pth"):
+            match = re.match(r"model_(\d+)\.pth", f.name)
+            if match:
+                timesteps = int(match.group(1))
+                model_files.append((timesteps, f))
+
+    if not model_files:
+        return None
+
+    # Sort by timesteps and get the highest
+    model_files.sort(key=lambda x: x[0])
+    highest_timesteps, best_model = model_files[-1]
+
+    if highest_timesteps != EXPECTED_TIMESTEPS:
+        print(f"Warning: {ts_dir.name} has max timesteps {highest_timesteps}, expected {EXPECTED_TIMESTEPS}")
+
+    return best_model
+
+
 def get_checkpoints(env: str, exp_id: int) -> dict:
     """Get checkpoint paths based on environment and experiment ID."""
     env_folder = get_env_folder(env)
-    base_path = f"{CHECKPOINT_BASE_PATH}/{env_folder}"
-    weak = f"{base_path}/icml2_{env}_exp{exp_id}_0p/weak.pt"
-    strong = f"{base_path}/icml2_{env}_exp{exp_id}_50p/strong.pt"
+    base_path = Path(CHECKPOINT_BASE_PATH) / env_folder
+
+    weak_parent = base_path / f"icml2_{env}_exp{exp_id}_0p"
+    strong_parent = base_path / f"icml2_{env}_exp{exp_id}_50p"
+
+    weak_ts_dir = find_newest_timestamp_dir(weak_parent)
+    strong_ts_dir = find_newest_timestamp_dir(strong_parent)
+
+    weak_model = find_best_model_checkpoint(weak_ts_dir) if weak_ts_dir else None
+    strong_model = find_best_model_checkpoint(strong_ts_dir) if strong_ts_dir else None
+
+    weak = str(weak_model) if weak_model else str(weak_parent / "NOT_FOUND")
+    strong = str(strong_model) if strong_model else str(strong_parent / "NOT_FOUND")
+
     return {"sim": weak, "weak": weak, "strong": strong}
 
 
