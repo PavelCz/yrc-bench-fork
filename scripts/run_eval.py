@@ -32,6 +32,9 @@ EVAL_DEFAULTS = {
 # Base path for checkpoints
 CHECKPOINT_BASE_PATH = "/nas/ucb/czempin/data/goal-misgen/policy/icml"
 
+# Base path for level seeds
+SEEDS_BASE_PATH = "/nas/ucb/czempin/data/goal-misgen/seeds/icml"
+
 # Environment choices
 ENVS = ["maze", "coinrun"]
 
@@ -160,6 +163,7 @@ def build_sbatch_command(job_name: str, eval_args: dict) -> str:
         f"-sim {eval_args['sim']}",
         f"-weak {eval_args['weak']}",
         f"-strong {eval_args['strong']}",
+        f"-level_seeds_file {eval_args['level_seeds_file']}",
     ]
     eval_cmd = " \\\n        ".join(eval_cmd_parts)
 
@@ -249,15 +253,22 @@ def main():
         if args.strong:
             checkpoints["strong"] = args.strong
 
-        # Validate checkpoints exist
+        # Get level seeds file path
+        level_seeds_file = Path(SEEDS_BASE_PATH) / f"{exp_id}.json"
+
+        # Validate checkpoints and seeds file exist
         missing = False
         for name, path in checkpoints.items():
             if not Path(path).exists():
                 print(f"Warning: exp{exp_id} {name} checkpoint not found: {path}")
                 missing = True
 
+        if not level_seeds_file.exists():
+            print(f"Warning: exp{exp_id} level seeds file not found: {level_seeds_file}")
+            missing = True
+
         if missing:
-            print(f"Skipping exp{exp_id} due to missing checkpoints\n")
+            print(f"Skipping exp{exp_id} due to missing files\n")
             continue
 
         # Build job name and experiment group
@@ -271,6 +282,7 @@ def main():
             print(f"  Experiment group: {experiment_group}")
             print(f"  Weak:   {checkpoints['weak']}")
             print(f"  Strong: {checkpoints['strong']}")
+            print(f"  Seeds:  {level_seeds_file}")
             print()
             continue
 
@@ -284,6 +296,7 @@ def main():
             "cp_rolling_average": args.cp_rolling_average,
             "video_logging_mode": args.video_logging_mode,
             "video_filter_mode": args.video_filter_mode,
+            "level_seeds_file": str(level_seeds_file),
             **checkpoints,
         }
 
