@@ -225,6 +225,18 @@ def main():
     config_file = METHOD_CONFIGS[args.method]
     config_path = f"configs/eval/{args.env}/{config_file}"
 
+    # Validate config file exists
+    if not Path(config_path).exists():
+        print(f"Error: Config file not found: {config_path}")
+        return 1
+
+    if args.dry_run:
+        print(f"Config: {config_path}")
+        print(f"Environment: {args.env}")
+        print(f"Method: {args.method}")
+        print(f"Prefix: {args.prefix}")
+        print()
+
     # Loop over experiment IDs 0-4
     for exp_id in range(5):
         # Get checkpoints for this experiment
@@ -244,13 +256,22 @@ def main():
                 missing = True
 
         if missing:
-            print(f"Skipping exp{exp_id} due to missing checkpoints")
+            print(f"Skipping exp{exp_id} due to missing checkpoints\n")
             continue
 
         # Build job name and experiment group
         method_name = METHOD_NAMES[args.method]
         job_name = f"{args.env}_{method_name}_exp{exp_id}"
         experiment_group = f"{args.prefix}_{args.env}_exp{exp_id}"
+
+        if args.dry_run:
+            print(f"=== exp{exp_id} ===")
+            print(f"  Job name: {job_name}")
+            print(f"  Experiment group: {experiment_group}")
+            print(f"  Weak:   {checkpoints['weak']}")
+            print(f"  Strong: {checkpoints['strong']}")
+            print()
+            continue
 
         eval_args = {
             "config": config_path,
@@ -265,7 +286,7 @@ def main():
             **checkpoints,
         }
 
-        submit_job(job_name, eval_args, dry_run=args.dry_run)
+        submit_job(job_name, eval_args, dry_run=False)
 
     return 0
 
