@@ -12,26 +12,47 @@ from pathlib import Path
 from YRC.core.configs import ConfigDict
 from typing import List
 import torch
+import time
 
 # Algorithms that support training without threshold search.
 ALGORITHMS = ["ood", "lightning_ae"]
 
 def main():
+    total_start = time.time()
+
+    print("Loading config...")
+    start = time.time()
     args = flags.make()
     config: ConfigDict = config_utils.load(args.config, flags=args)
+    print(f"Config loaded in {time.time() - start:.2f}s")
 
+    print("Creating environments...")
+    start = time.time()
     envs = env_factory.make(config)
+    print(f"Environments created in {time.time() - start:.2f}s")
+
+    print("Creating policy...")
+    start = time.time()
     policy = policy_factory.make(config, envs["train"])
+    print(f"Policy created in {time.time() - start:.2f}s")
+
+    print("Creating evaluator...")
+    start = time.time()
     evaluator = Evaluator(config)
+    print(f"Evaluator created in {time.time() - start:.2f}s")
 
     if config.training.rollout_dir is not None:
-
+        print("Loading rollouts...")
+        start = time.time()
         experiment_dir = Path(str(get_global_variable("experiment_dir")))
 
         output_dir = experiment_dir.parent
         rollout_dir = output_dir / config.training.rollout_dir
         rollout_obs = load_rollouts_from_file(rollout_dir, config)
+        print(f"Rollouts loaded in {time.time() - start:.2f}s")
 
+    print("Processing features...")
+    start = time.time()
     ae_inputs: List[torch.Tensor]
     if config.coord_policy.feature_type == "obs":
         ae_inputs = rollout_obs
@@ -48,6 +69,7 @@ def main():
         raise ValueError(
             f"Feature type {config.coord_policy.feature_type} currently not supported"
         )
+    print(f"Features processed in {time.time() - start:.2f}s")
 
     if hasattr(policy, "logger"):
 
@@ -79,6 +101,8 @@ def main():
             "threshold search."
         )
 
+    print("Starting training...")
+    start = time.time()
     algorithm = algo_factory.make(config, envs["train"])
     algorithm.train(
         policy=policy,
@@ -89,6 +113,8 @@ def main():
         eval_splits=["val_sim", "val_true"],
         do_threshold_search=False,
     )
+    print(f"Training completed in {time.time() - start:.2f}s")
+    print(f"Total time: {time.time() - total_start:.2f}s")
     wandb.finish()
 
 
