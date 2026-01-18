@@ -4,10 +4,37 @@ import YRC.core.environment as env_factory
 from YRC.core.configs.global_configs import get_global_variable
 from pathlib import Path
 from YRC.core.rollout_helper import RolloutHelper
-from typing import List
+from typing import List, Optional
 import torch
 import json
 import time
+
+
+def load_level_seeds(config) -> Optional[List[int]]:
+    """Load policy_train level seeds from file if configured.
+
+    Args:
+        config: Configuration object with environment.level_seeds_file path
+
+    Returns:
+        List of level seeds for policy training, or None if not configured
+    """
+    level_seeds_file = getattr(config.environment, 'level_seeds_file', None)
+    if level_seeds_file is None:
+        return None
+
+    print(f'Loading level seeds from {level_seeds_file}...')
+    with open(level_seeds_file) as f:
+        seeds_data = json.load(f)
+
+    # Use policy_train seeds for gathering rollouts (always sequential mode)
+    level_seeds = seeds_data['seeds'].get('policy_train', None)
+    if level_seeds:
+        print(f'  - Loaded {len(level_seeds)} policy_train seeds (mode: sequential)')
+    else:
+        print('  - No policy_train seeds in file')
+
+    return level_seeds
 
 
 def main():
@@ -20,9 +47,12 @@ def main():
     config = config_utils.load(args.config, flags=args)
     print(f"Config loaded in {time.time() - start:.2f}s")
 
+    # Load level seeds for OOD training (uses ood_train seeds, always sequential mode)
+    level_seeds = load_level_seeds(config)
+
     print("Creating environments...")
     start = time.time()
-    envs = env_factory.make(config)
+    envs = env_factory.make(config, level_seeds, "sequential")
     print(f"Environments created in {time.time() - start:.2f}s")
 
     num_rollouts = config.algorithm.num_rollouts
