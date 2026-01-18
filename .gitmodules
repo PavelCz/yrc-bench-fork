@@ -1,9 +1,6 @@
 [submodule "lib/cliport"]
 	path = lib/cliport
 	url = https://github.com/modanesh/cliport.git
-[submodule "lib/pyod"]
-	path = lib/pyod
-	url = https://github.com/modanesh/pyod.git
 [submodule "lib/Minigrid"]
 	path = lib/Minigrid
 	url = https://github.com/modanesh/Minigrid.git
