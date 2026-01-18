@@ -275,7 +275,7 @@ class DeepSVDD(BaseDetector):
                  batch_size=32,
                  dropout_rate=0.2, l2_regularizer=0.1, feature_type="obs", benchmark="procgen", validation_size=0.1,
                  preprocessing=True,
-                 verbose=1, random_state=None, contamination=0.1, input_shape=None):
+                 verbose=1, random_state=None, contamination=0.1, input_shape=None, logger=None):
         super(DeepSVDD, self).__init__(contamination=contamination)
 
         self.n_features = n_features
@@ -298,6 +298,7 @@ class DeepSVDD(BaseDetector):
         self.model_ = None
         self.best_model_dict = None
         self.input_shape = input_shape
+        self.logger = logger  # Wandb logger for training metrics
 
         if self.random_state is not None:
             torch.manual_seed(self.random_state)
@@ -395,6 +396,15 @@ class DeepSVDD(BaseDetector):
                 epoch_loss += loss.item()
             epoch_loss /= len(dataloader)
             logging.info(f"Epoch {epoch + 1}/{self.epochs}, Loss: {epoch_loss}")
+
+            # Log to wandb if logger is available
+            if self.logger is not None:
+                self.logger.log_metrics({
+                    "train/loss": epoch_loss,
+                    "train/epoch": epoch + 1,
+                    "train/best_loss": best_loss if epoch_loss >= best_loss else epoch_loss,
+                }, step=epoch + 1)
+
             if epoch_loss < best_loss:
                 best_loss = epoch_loss
                 best_model_dict = self.model_.state_dict()

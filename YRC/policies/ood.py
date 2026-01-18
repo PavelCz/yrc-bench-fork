@@ -26,6 +26,7 @@ class OODPolicy(Policy):
         self.clf_name = None
         self.device = get_global_variable("device")
         self.feature_type = config.coord_policy.feature_type
+        self.logger = None  # Will be set by train.py for wandb logging
         
         # Rolling average setup
         self.rolling_average: Optional[str] = getattr(self.args, 'rolling_average', None)
@@ -180,6 +181,7 @@ class OODPolicy(Policy):
                 input_shape=dummy_obs_shape,
                 feature_type=self.feature_type,
                 benchmark=get_global_variable("benchmark"),
+                logger=self.logger,
             )
             self.clf.model_.to(self.device)
         elif self.args.method == "AutoEncoder":
