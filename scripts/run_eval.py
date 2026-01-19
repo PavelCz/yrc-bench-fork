@@ -22,7 +22,7 @@ SLURM_CONFIG = {
 # Default evaluation configuration
 EVAL_DEFAULTS = {
     "video_episodes_to_collect": 16,
-    "num_levels": 10240,
+    "num_levels": 5000,
     "video_filter": "all",
     "cp_rolling_average": "none",
     "video_logging_mode": "wandb",
