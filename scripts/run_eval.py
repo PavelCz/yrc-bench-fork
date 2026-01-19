@@ -29,11 +29,19 @@ EVAL_DEFAULTS = {
     "video_filter_mode": "any",
 }
 
-# Base path for checkpoints
-CHECKPOINT_BASE_PATH = "/nas/ucb/czempin/data/goal-misgen/policy/icml"
-
-# Base path for level seeds
-SEEDS_BASE_PATH = "/nas/ucb/czempin/data/goal-misgen/seeds/icml"
+# Server-specific paths
+SERVER_PATHS = {
+    "chai": {
+        "checkpoint_base": "/nas/ucb/czempin/data/goal-misgen/policy/icml",
+        "seeds_base": "/nas/ucb/czempin/data/goal-misgen/seeds/icml",
+        "svdd_base": "/nas/ucb/czempin/data/goal-misgen/trained_svdd",
+    },
+    "snoopy": {
+        "checkpoint_base": "/scr/pavel/data/goal-misgen/policy/icml",
+        "seeds_base": "/scr/pavel/data/goal-misgen/seeds/icml",
+        "svdd_base": "/scr/pavel/data/goal-misgen/trained_svdd",
+    },
+}
 
 # Environment choices
 ENVS = ["maze", "coinrun"]
@@ -44,6 +52,8 @@ METHOD_CONFIGS = {
     "max-logit": "max_logit.yaml",
     "lb-random": "level_based_random.yaml",
     "ts-random": "timestep_random.yaml",
+    "svdd-image": "image_svdd.yaml",
+    "svdd-latent": "latent_svdd.yaml",
 }
 
 # Method to run name suffix mapping
@@ -52,7 +62,12 @@ METHOD_NAMES = {
     "max-logit": "max_logit",
     "lb-random": "lb_random",
     "ts-random": "ts_random",
+    "svdd-image": "svdd_image",
+    "svdd-latent": "svdd_latent",
 }
+
+# Methods that require a trained SVDD policy
+SVDD_METHODS = {"svdd-image", "svdd-latent"}
 
 
 def get_env_folder(env: str) -> str:
@@ -61,6 +76,15 @@ def get_env_folder(env: str) -> str:
         return "coinrun"
     else:
         return f"{env}_afh"
+
+
+def get_svdd_feature_type(method: str) -> str:
+    """Get the SVDD feature type from method name."""
+    if method == "svdd-image":
+        return "image"
+    elif method == "svdd-latent":
+        return "latent"
+    return ""
 
 
 EXPECTED_TIMESTEPS = 200015872
@@ -126,10 +150,10 @@ def find_best_model_checkpoint(ts_dir: Path) -> Optional[Path]:
     return best_model
 
 
-def get_checkpoints(env: str, exp_id: int) -> dict:
+def get_checkpoints(env: str, exp_id: int, checkpoint_base_path: str) -> dict:
     """Get checkpoint paths based on environment and experiment ID."""
     env_folder = get_env_folder(env)
-    base_path = Path(CHECKPOINT_BASE_PATH) / env_folder
+    base_path = Path(checkpoint_base_path) / env_folder
 
     weak_parent = base_path / f"icml2_{env}_exp{exp_id}_0p"
     strong_parent = base_path / f"icml2_{env}_exp{exp_id}_50p"
@@ -144,6 +168,21 @@ def get_checkpoints(env: str, exp_id: int) -> dict:
     strong = str(strong_model) if strong_model else str(strong_parent / "NOT_FOUND")
 
     return {"sim": weak, "weak": weak, "strong": strong}
+
+
+def get_svdd_policy_path(env: str, exp_id: int, method: str, svdd_base_path: str) -> Optional[str]:
+    """Get the trained SVDD policy path."""
+    feature_type = get_svdd_feature_type(method)
+    if not feature_type:
+        return None
+
+    # Format: svdd_{env}_{feature_type}_exp{id}
+    policy_dir = Path(svdd_base_path) / f"svdd_{env}_{feature_type}_exp{exp_id}"
+
+    if not policy_dir.exists():
+        return None
+
+    return str(policy_dir)
 
 
 def build_sbatch_command(job_name: str, eval_args: dict) -> str:
@@ -167,6 +206,13 @@ def build_sbatch_command(job_name: str, eval_args: dict) -> str:
         f"-strong {eval_args['strong']}",
         f"-level_seeds_file {eval_args['level_seeds_file']}",
     ]
+
+    # Add SVDD-specific arguments if present
+    if eval_args.get('svdd_policy_path'):
+        eval_cmd_parts.append(f"-cp_model_path {eval_args['svdd_policy_path']}")
+    if eval_args.get('cp_feature'):
+        eval_cmd_parts.append(f"-cp_feature {eval_args['cp_feature']}")
+
     eval_cmd = " \\\n        ".join(eval_cmd_parts)
 
     sbatch_script = f"""#!/bin/bash
@@ -213,6 +259,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="Run evaluation jobs via SLURM")
     parser.add_argument("--dry-run", action="store_true", help="Print commands without submitting")
+    parser.add_argument("--server", choices=["chai", "snoopy"], default="chai", help="Server to use for paths (default: chai)")
     parser.add_argument("--env", required=True, choices=ENVS, help="Environment to evaluate")
     parser.add_argument("--method", required=True, choices=list(METHOD_CONFIGS.keys()), help="Evaluation method")
     parser.add_argument("--prefix", required=True, help="Experiment group prefix")
@@ -229,6 +276,12 @@ def main():
     parser.add_argument("--strong", help="Override strong checkpoint path")
     args = parser.parse_args()
 
+    # Get server-specific paths
+    paths = SERVER_PATHS[args.server]
+    checkpoint_base_path = paths["checkpoint_base"]
+    seeds_base_path = paths["seeds_base"]
+    svdd_base_path = paths["svdd_base"]
+
     # Get config file path
     config_file = METHOD_CONFIGS[args.method]
     config_path = f"configs/eval/{args.env}/{config_file}"
@@ -239,6 +292,7 @@ def main():
         return 1
 
     if args.dry_run:
+        print(f"Server: {args.server}")
         print(f"Config: {config_path}")
         print(f"Environment: {args.env}")
         print(f"Method: {args.method}")
@@ -248,7 +302,7 @@ def main():
     # Loop over experiment IDs
     for exp_id in args.exp_ids:
         # Get checkpoints for this experiment
-        checkpoints = get_checkpoints(args.env, exp_id)
+        checkpoints = get_checkpoints(args.env, exp_id, checkpoint_base_path)
         if args.sim:
             checkpoints["sim"] = args.sim
         if args.weak:
@@ -257,7 +311,14 @@ def main():
             checkpoints["strong"] = args.strong
 
         # Get level seeds file path
-        level_seeds_file = Path(SEEDS_BASE_PATH) / f"{exp_id}.json"
+        level_seeds_file = Path(seeds_base_path) / f"{exp_id}.json"
+
+        # Get SVDD policy path if needed
+        svdd_policy_path = None
+        cp_feature = None
+        if args.method in SVDD_METHODS:
+            svdd_policy_path = get_svdd_policy_path(args.env, exp_id, args.method, svdd_base_path)
+            cp_feature = "obs" if args.method == "svdd-image" else "hidden"
 
         # Validate checkpoints and seeds file exist
         missing = False
@@ -268,6 +329,10 @@ def main():
 
         if not level_seeds_file.exists():
             print(f"Warning: exp{exp_id} level seeds file not found: {level_seeds_file}")
+            missing = True
+
+        if args.method in SVDD_METHODS and svdd_policy_path is None:
+            print(f"Warning: exp{exp_id} SVDD policy not found at {svdd_base_path}/svdd_{args.env}_{get_svdd_feature_type(args.method)}_exp{exp_id}")
             missing = True
 
         if missing:
@@ -286,6 +351,9 @@ def main():
             print(f"  Weak:   {checkpoints['weak']}")
             print(f"  Strong: {checkpoints['strong']}")
             print(f"  Seeds:  {level_seeds_file}")
+            if svdd_policy_path:
+                print(f"  SVDD policy: {svdd_policy_path}")
+                print(f"  Feature type: {cp_feature}")
             print()
             continue
 
@@ -300,6 +368,8 @@ def main():
             "video_logging_mode": args.video_logging_mode,
             "video_filter_mode": args.video_filter_mode,
             "level_seeds_file": str(level_seeds_file),
+            "svdd_policy_path": svdd_policy_path,
+            "cp_feature": cp_feature,
             **checkpoints,
         }
 
