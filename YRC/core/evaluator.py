@@ -272,6 +272,9 @@ class Evaluator:
         # Upper bound to prevent infinite loops if videos are hard to collect
         episode_upper_bound = max_episodes * 5
 
+        # Track which environments have exhausted their seeds (sequential mode only)
+        seeds_exhausted = np.array([False] * env.num_envs)
+
         while num_episodes < episode_upper_bound and (
             num_episodes < max_episodes or not self.done_saving_actions_for_vid
         ):
@@ -308,6 +311,19 @@ class Evaluator:
                     action[i] = int(current_level_ood_pred[i])
 
             obs, reward, done, info = env.step(action)
+
+            # Check for seeds_exhausted in sequential mode (Procgen-specific)
+            for i in range(env.num_envs):
+                if info[i].get("seeds_exhausted", False):
+                    seeds_exhausted[i] = True
+
+            # If all environments have exhausted their seeds, we should stop
+            if seeds_exhausted.all():
+                logging.info(
+                    f"All environments have exhausted their seeds. "
+                    f"Completed {num_episodes} episodes."
+                )
+                break
 
             for i in range(env.num_envs):
                 if "env_reward" in info[i]:
@@ -528,6 +544,13 @@ class Evaluator:
             prev_info = [_deep_copy_info(info[i]) for i in range(env.num_envs)]
 
             has_done |= done
+
+        # Warn if we finished fewer episodes than requested due to seed exhaustion
+        if num_episodes < max_episodes:
+            logging.warning(
+                f"Evaluation stopped early: completed {num_episodes}/{max_episodes} episodes. "
+                f"This can happen when using sequential seed mode with exactly as many seeds as num_levels."
+            )
 
         logging.debug(
             f"_eval_loop: Completed - {num_episodes} episodes evaluated, {log['num_finished_episodes']} finished"
