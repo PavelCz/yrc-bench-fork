@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Optional
 
 
+# Conda environment
+CONDA_ENV = "ood-stable"
+
 # SLURM configuration
 SLURM_CONFIG = {
     "qos": "default",
@@ -147,7 +150,7 @@ def build_sbatch_command(job_name: str, train_args: dict) -> str:
     slurm_args = " ".join(f"--{k}={v}" for k, v in SLURM_CONFIG.items())
 
     train_cmd_parts = [
-        "python train.py",
+        f"conda run -n {CONDA_ENV} python train.py",
         f"-wandb_group {train_args['wandb_group']}",
         f"-c {train_args['config']}",
         f"-n {train_args['name']}",

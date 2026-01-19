@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Optional
 
 
+# Conda environment
+CONDA_ENV = "ood-stable"
+
 # SLURM configuration
 SLURM_CONFIG = {
     "qos": "default",
@@ -140,7 +143,7 @@ def build_sbatch_command(job_name: str, gather_args: dict) -> str:
     slurm_args = " ".join(f"--{k}={v}" for k, v in SLURM_CONFIG.items())
 
     gather_cmd_parts = [
-        "python gather_rollouts.py",
+        f"conda run -n {CONDA_ENV} python gather_rollouts.py",
         f"-wandb_mode {gather_args['wandb_mode']}",
         f"-c {gather_args['config']}",
         f"-n {gather_args['name']}",

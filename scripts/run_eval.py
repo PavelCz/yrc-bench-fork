@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Optional
 
 
+# Conda environment
+CONDA_ENV = "ood-stable"
+
 # SLURM configuration
 SLURM_CONFIG = {
     "qos": "default",
@@ -191,7 +194,7 @@ def build_sbatch_command(job_name: str, eval_args: dict) -> str:
     slurm_args = " ".join(f"--{k}={v}" for k, v in SLURM_CONFIG.items())
 
     eval_cmd_parts = [
-        "python eval_afhp.py",
+        f"conda run -n {CONDA_ENV} python eval_afhp.py",
         f"-c {eval_args['config']}",
         f"-n {eval_args['name']}",
         "-defer_to_oracle",
