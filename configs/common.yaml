@@ -5,6 +5,7 @@ coord_policy:
     threshold:
         cls: ThresholdPolicy
         metric: 'logit'
+        ensemble_members: null
     timestep_random:
         cls: TimestepRandomPolicy
         baseline: False

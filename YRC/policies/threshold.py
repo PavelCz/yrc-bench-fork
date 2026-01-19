@@ -1,14 +1,16 @@
-import os
-import numpy as np
-from copy import deepcopy as dc
 import collections
-
-import torch
+import importlib
 import logging
+import os
+from copy import deepcopy as dc
+from typing import Optional
+
+import numpy as np
+import torch
 from torch.distributions.categorical import Categorical
+
 from YRC.core import Policy
 from YRC.core.configs.global_configs import get_global_variable
-from typing import Optional
 
 
 class ThresholdPolicy(Policy):
@@ -37,12 +39,39 @@ class ThresholdPolicy(Policy):
             for _ in range(env.num_envs):
                 self.rolling_average_buffers.append(
                     collections.deque(
-                        self.rolling_average_size*[float("-inf")], self.rolling_average_size
+                        self.rolling_average_size * [float("-inf")],
+                        self.rolling_average_size,
                     )
                 )
 
         # Store training scores for percentile computation (used in AFHP eval)
         self._train_scores = None
+
+        # Ensemble for ensemble_variance metric
+        self.ensemble_members = None
+        if self.args.metric == "ensemble_variance":
+            ensemble_paths = getattr(self.args, "ensemble_members", None)
+            if not ensemble_paths:
+                raise ValueError(
+                    "ensemble_variance metric requires -cp_ensemble_members"
+                )
+
+            # Load ensemble members
+            benchmark = get_global_variable("benchmark")
+            module = importlib.import_module(f"YRC.envs.{benchmark}")
+            load_fn = getattr(module, "load_policy")
+
+            members = []
+            for path in ensemble_paths:
+                member = load_fn(path, env.base_env)
+                member.eval()
+                members.append(member)
+
+            # Create EnsemblePolicy wrapper and replace self.agent
+            EnsemblePolicy = getattr(module, "EnsemblePolicy")
+            self.agent = EnsemblePolicy(members)
+            self.ensemble_members = members
+            logging.info(f"Loaded ensemble with {len(members)} members")
 
     def act(self, obs, greedy=False, return_scores_and_recons=False):
         if get_global_variable("benchmark") == "cliport":
@@ -50,12 +79,21 @@ class ThresholdPolicy(Policy):
             attention_flat = obs["weak_logit"][:, :attention_size]
             transport_flat = obs["weak_logit"][:, attention_size:]
             if not torch.is_tensor(attention_flat):
-                attention_flat = torch.from_numpy(attention_flat).float().to(self.device)
+                attention_flat = (
+                    torch.from_numpy(attention_flat).float().to(self.device)
+                )
             if not torch.is_tensor(transport_flat):
-                transport_flat = torch.from_numpy(transport_flat).float().to(self.device)
+                transport_flat = (
+                    torch.from_numpy(transport_flat).float().to(self.device)
+                )
             attention_score = self._compute_score(attention_flat)
             transport_score = self._compute_score(transport_flat)
-            score = torch.mean(torch.stack([attention_score, transport_score])).unsqueeze(0)
+            score = torch.mean(
+                torch.stack([attention_score, transport_score])
+            ).unsqueeze(0)
+        elif self.args.metric == "ensemble_variance":
+            env_obs = obs["env_obs"]
+            score = self._compute_ensemble_score(env_obs)
         else:
             weak_logit = obs["weak_logit"]
             if not torch.is_tensor(weak_logit):
@@ -91,8 +129,12 @@ class ThresholdPolicy(Policy):
         scores = []
 
         while not has_done.all():
-            logit = agent.forward(obs["env_obs"])
-            score = self._compute_score(logit)
+            if self.args.metric == "ensemble_variance":
+                score = self._compute_ensemble_score(obs["env_obs"])
+                logit = agent.forward(obs["env_obs"])  # mean logits from ensemble
+            else:
+                logit = agent.forward(obs["env_obs"])
+                score = self._compute_score(logit)
 
             if env.num_envs == 1:
                 scores.append(score.item())
@@ -144,36 +186,82 @@ class ThresholdPolicy(Policy):
                 f"Neg energy metric not implemented for threshold policy"
             )
             score = logit.logsumexp(dim=-1)
+        elif metric == "ensemble_variance":
+            raise ValueError("ensemble_variance should use _compute_ensemble_score")
         else:
             raise NotImplementedError(f"Unrecognized metric: {metric}")
 
         # Store original scores before applying rolling average
         score_original = score.clone() if self.rolling_average is not None else None
-        
+
         if self.rolling_average is not None:
             for i in range(len(self.rolling_average_buffers)):
                 self.rolling_average_buffers[i].append(score[i].item())
 
                 if self.rolling_average == "mean":
-                    score[i] = torch.mean(torch.tensor(self.rolling_average_buffers[i])).item()
+                    score[i] = torch.mean(
+                        torch.tensor(self.rolling_average_buffers[i])
+                    ).item()
                 elif self.rolling_average == "median":
-                    score[i] = torch.median(torch.tensor(self.rolling_average_buffers[i])).item()
+                    score[i] = torch.median(
+                        torch.tensor(self.rolling_average_buffers[i])
+                    ).item()
                 else:
-                    raise NotImplementedError(f"Unrecognized rolling average: {self.rolling_average}")
+                    raise NotImplementedError(
+                        f"Unrecognized rolling average: {self.rolling_average}"
+                    )
 
         # Store the scores for potential retrieval (used by evaluator for histograms)
         self.last_scores_original = score_original
-        self.last_scores_rolling_avg = score if self.rolling_average is not None else None
+        self.last_scores_rolling_avg = (
+            score if self.rolling_average is not None else None
+        )
+
+        return score
+
+    def _compute_ensemble_score(self, obs):
+        """Compute variance of softmax outputs across ensemble members."""
+        member_logits = [m.forward(obs) for m in self.ensemble_members]
+        stacked = torch.stack(member_logits)  # [M, B, A]
+        probs = torch.softmax(stacked / self.params["score_temp"], dim=-1)
+        variance = torch.var(probs, dim=0)  # [B, A]
+        score = variance.mean(dim=-1)  # [B]
+
+        # Store original scores before applying rolling average
+        score_original = score.clone() if self.rolling_average is not None else None
+
+        if self.rolling_average is not None:
+            for i in range(len(self.rolling_average_buffers)):
+                self.rolling_average_buffers[i].append(score[i].item())
+
+                if self.rolling_average == "mean":
+                    score[i] = torch.mean(
+                        torch.tensor(self.rolling_average_buffers[i])
+                    ).item()
+                elif self.rolling_average == "median":
+                    score[i] = torch.median(
+                        torch.tensor(self.rolling_average_buffers[i])
+                    ).item()
+                else:
+                    raise NotImplementedError(
+                        f"Unrecognized rolling average: {self.rolling_average}"
+                    )
+
+        # Store the scores for potential retrieval (used by evaluator for histograms)
+        self.last_scores_original = score_original
+        self.last_scores_rolling_avg = (
+            score if self.rolling_average is not None else None
+        )
 
         return score
 
     def reset_rolling_average_buffer(self, index: int) -> None:
-        """Reset the rolling average buffer for a given index. The index corresponds 
+        """Reset the rolling average buffer for a given index. The index corresponds
         to the environment index.
         """
         if self.rolling_average is not None:
             self.rolling_average_buffers[index] = collections.deque(
-                self.rolling_average_size*[float("-inf")], self.rolling_average_size
+                self.rolling_average_size * [float("-inf")], self.rolling_average_size
             )
 
     def update_params(self, params):
@@ -192,11 +280,12 @@ class ThresholdPolicy(Policy):
         if metric == "max_prob":
             # Percentile means what percentile of the scores are below the threshold
             # percentile 100 -> all are below, set threshold to max, which is 1 since
-            # we are working with probabilities. 
+            # we are working with probabilities.
             # percentile 0 -> vice versa
             return percentile * 0.01
-        elif metric == "max_logit":
-            # For max_logit, we need the actual training score distribution
+        elif metric in ("max_logit", "ensemble_variance"):
+            # For max_logit and ensemble_variance, we need the actual training
+            # score distribution
             if self._train_scores is None:
                 raise ValueError(
                     "Training scores not available. Call generate_scores() first."
