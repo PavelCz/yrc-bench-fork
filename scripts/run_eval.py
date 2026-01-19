@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Optional
 
 
-# Conda environment
-CONDA_ENV = "ood-stable"
+# Default conda environment
+DEFAULT_CONDA_ENV = "ood-stable"
 
 # SLURM configuration
 SLURM_CONFIG = {
@@ -189,12 +189,12 @@ def get_svdd_model_path(env: str, exp_id: int, method: str, svdd_base_path: str)
     return None
 
 
-def build_sbatch_command(job_name: str, eval_args: dict) -> str:
+def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str) -> str:
     """Build the sbatch command string."""
     slurm_args = " ".join(f"--{k}={v}" for k, v in SLURM_CONFIG.items())
 
     eval_cmd_parts = [
-        f"conda run -n {CONDA_ENV} python eval_afhp.py",
+        f"conda run -n {conda_env} python eval_afhp.py",
         f"-c {eval_args['config']}",
         f"-n {eval_args['name']}",
         "-defer_to_oracle",
@@ -231,9 +231,9 @@ srun {slurm_args} \\
     return sbatch_script
 
 
-def submit_job(job_name: str, eval_args: dict, dry_run: bool = False) -> None:
+def submit_job(job_name: str, eval_args: dict, conda_env: str, dry_run: bool = False) -> None:
     """Submit a single job via sbatch."""
-    sbatch_script = build_sbatch_command(job_name, eval_args)
+    sbatch_script = build_sbatch_command(job_name, eval_args, conda_env)
 
     if dry_run:
         print(f"=== Job: {job_name} ===")
@@ -263,6 +263,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="Run evaluation jobs via SLURM")
     parser.add_argument("--dry-run", action="store_true", help="Print commands without submitting")
+    parser.add_argument("--conda-env", default=DEFAULT_CONDA_ENV, help=f"Conda environment to use (default: {DEFAULT_CONDA_ENV})")
     parser.add_argument("--server", choices=["chai", "snoopy"], default="chai", help="Server to use for paths (default: chai)")
     parser.add_argument("--env", required=True, choices=ENVS, help="Environment to evaluate")
     parser.add_argument("--method", required=True, choices=list(METHOD_CONFIGS.keys()), help="Evaluation method")
@@ -378,7 +379,7 @@ def main():
             **checkpoints,
         }
 
-        submit_job(job_name, eval_args, dry_run=False)
+        submit_job(job_name, eval_args, args.conda_env, dry_run=False)
 
     return 0
 
