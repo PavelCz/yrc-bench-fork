@@ -15,8 +15,8 @@ SLURM_CONFIG = {
     "qos": "default",
     "gres": "gpu:1",
     "time": "3-00:00:00",
-    "mem": "256G",
-    "cpus-per-task": "32",
+    "mem": "100G",
+    "cpus-per-task": "30",
 }
 
 # Default evaluation configuration

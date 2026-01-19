@@ -159,7 +159,7 @@ for member in "${MEMBERS[@]}"; do
     sbatch --qos=default \
         --gres=gpu:1 \
         --time=3-00:00:00 \
-        --mem=128G \
+        --mem=100G \
         --job-name="$exp_name" \
         --output="${LOG_DIR}/${exp_name}_%j.out" \
         --wrap="cd $TRAIN_DIR && conda run -n $CONDA_ENV python train.py \
