@@ -170,19 +170,20 @@ def get_checkpoints(env: str, exp_id: int, checkpoint_base_path: str) -> dict:
     return {"sim": weak, "weak": weak, "strong": strong}
 
 
-def get_svdd_policy_path(env: str, exp_id: int, method: str, svdd_base_path: str) -> Optional[str]:
-    """Get the trained SVDD policy path."""
+def get_svdd_policy_name(env: str, exp_id: int, method: str) -> str:
+    """Get the SVDD policy directory name."""
     feature_type = get_svdd_feature_type(method)
-    if not feature_type:
-        return None
-
     # Format: svdd_{env}_{feature_type}_exp{id}
-    policy_dir = Path(svdd_base_path) / f"svdd_{env}_{feature_type}_exp{exp_id}"
+    return f"svdd_{env}_{feature_type}_exp{exp_id}"
 
-    if not policy_dir.exists():
-        return None
 
-    return str(policy_dir)
+def get_svdd_model_path(env: str, exp_id: int, method: str, svdd_base_path: str) -> Optional[str]:
+    """Get the full path to the trained SVDD model file, or None if it doesn't exist."""
+    policy_name = get_svdd_policy_name(env, exp_id, method)
+    model_file = Path(svdd_base_path) / policy_name / "trained.joblib"
+    if model_file.exists():
+        return str(model_file)
+    return None
 
 
 def build_sbatch_command(job_name: str, eval_args: dict) -> str:
@@ -208,10 +209,10 @@ def build_sbatch_command(job_name: str, eval_args: dict) -> str:
     ]
 
     # Add SVDD-specific arguments if present
-    if eval_args.get('svdd_policy_path'):
-        eval_cmd_parts.append(f"-cp_model_path {eval_args['svdd_policy_path']}")
     if eval_args.get('cp_feature'):
         eval_cmd_parts.append(f"-cp_feature {eval_args['cp_feature']}")
+    if eval_args.get('svdd_model_path'):
+        eval_cmd_parts.append(f"-f_n {eval_args['svdd_model_path']}")
 
     eval_cmd = " \\\n        ".join(eval_cmd_parts)
 
@@ -313,11 +314,11 @@ def main():
         # Get level seeds file path
         level_seeds_file = Path(seeds_base_path) / f"{exp_id}.json"
 
-        # Get SVDD policy path if needed
-        svdd_policy_path = None
+        # Get SVDD-specific settings if needed
+        svdd_model_path = None
         cp_feature = None
         if args.method in SVDD_METHODS:
-            svdd_policy_path = get_svdd_policy_path(args.env, exp_id, args.method, svdd_base_path)
+            svdd_model_path = get_svdd_model_path(args.env, exp_id, args.method, svdd_base_path)
             cp_feature = "obs" if args.method == "svdd-image" else "hidden"
 
         # Validate checkpoints and seeds file exist
@@ -331,8 +332,9 @@ def main():
             print(f"Warning: exp{exp_id} level seeds file not found: {level_seeds_file}")
             missing = True
 
-        if args.method in SVDD_METHODS and svdd_policy_path is None:
-            print(f"Warning: exp{exp_id} SVDD policy not found at {svdd_base_path}/svdd_{args.env}_{get_svdd_feature_type(args.method)}_exp{exp_id}")
+        if args.method in SVDD_METHODS and svdd_model_path is None:
+            svdd_policy_name = get_svdd_policy_name(args.env, exp_id, args.method)
+            print(f"Warning: exp{exp_id} SVDD model not found at {svdd_base_path}/{svdd_policy_name}/trained.joblib")
             missing = True
 
         if missing:
@@ -351,8 +353,8 @@ def main():
             print(f"  Weak:   {checkpoints['weak']}")
             print(f"  Strong: {checkpoints['strong']}")
             print(f"  Seeds:  {level_seeds_file}")
-            if svdd_policy_path:
-                print(f"  SVDD policy: {svdd_policy_path}")
+            if svdd_model_path:
+                print(f"  SVDD model: {svdd_model_path}")
                 print(f"  Feature type: {cp_feature}")
             print()
             continue
@@ -368,7 +370,7 @@ def main():
             "video_logging_mode": args.video_logging_mode,
             "video_filter_mode": args.video_filter_mode,
             "level_seeds_file": str(level_seeds_file),
-            "svdd_policy_path": svdd_policy_path,
+            "svdd_model_path": svdd_model_path,
             "cp_feature": cp_feature,
             **checkpoints,
         }
