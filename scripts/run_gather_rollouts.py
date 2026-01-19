@@ -143,7 +143,7 @@ def build_sbatch_command(job_name: str, gather_args: dict) -> str:
     slurm_args = " ".join(f"--{k}={v}" for k, v in SLURM_CONFIG.items())
 
     gather_cmd_parts = [
-        f"conda run -n {CONDA_ENV} python gather_rollouts.py",
+        f"conda run -n {CONDA_ENV} -- python gather_rollouts.py",
         f"-wandb_mode {gather_args['wandb_mode']}",
         f"-c {gather_args['config']}",
         f"-n {gather_args['name']}",

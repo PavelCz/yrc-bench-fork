@@ -194,7 +194,7 @@ def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str) -> str:
     slurm_args = " ".join(f"--{k}={v}" for k, v in SLURM_CONFIG.items())
 
     eval_cmd_parts = [
-        f"conda run -n {conda_env} python eval_afhp.py",
+        f"conda run -n {conda_env} -- python eval_afhp.py",
         f"-c {eval_args['config']}",
         f"-n {eval_args['name']}",
         "-defer_to_oracle",
