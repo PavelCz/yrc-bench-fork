@@ -61,7 +61,8 @@ class ThresholdPolicy(Policy):
             module = importlib.import_module(f"YRC.envs.{benchmark}")
             load_fn = getattr(module, "load_policy")
 
-            members = []
+            # Start with weak agent as first ensemble member
+            members = [self.agent]
             for path in ensemble_paths:
                 member = load_fn(path, env.base_env)
                 member.eval()
@@ -71,7 +72,10 @@ class ThresholdPolicy(Policy):
             EnsemblePolicy = getattr(module, "EnsemblePolicy")
             self.agent = EnsemblePolicy(members)
             self.ensemble_members = members
-            logging.info(f"Loaded ensemble with {len(members)} members")
+            logging.info(
+                f"Loaded ensemble with {len(members)} members "
+                f"(weak agent + {len(ensemble_paths)} additional)"
+            )
 
     def act(self, obs, greedy=False, return_scores_and_recons=False):
         if get_global_variable("benchmark") == "cliport":
