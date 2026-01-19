@@ -135,12 +135,11 @@ def get_checkpoints(env: str, exp_id: int) -> dict:
     return {"sim": weak, "weak": weak, "strong": strong}
 
 
-def get_rollout_dir(env: str, exp_id: int, feature_type: str) -> str:
+def get_rollout_dir(env: str, exp_id: int) -> str:
     """Get the rollout directory path."""
-    env_folder = get_env_folder(env)
-    # Format: rollouts_{env}_exp{id}_{feature_type}
-    rollout_name = f"rollouts_{env}_exp{exp_id}_{feature_type}"
-    return str(Path(ROLLOUTS_BASE_PATH) / env_folder / rollout_name)
+    # Format: /scr/pavel/data/goal-misgen/rollouts/icml/{env}/gather_{env}_exp{id}/
+    rollout_name = f"gather_{env}_exp{exp_id}"
+    return str(Path(ROLLOUTS_BASE_PATH) / env / rollout_name)
 
 
 def build_sbatch_command(job_name: str, train_args: dict) -> str:
@@ -254,7 +253,7 @@ def main():
         if args.rollout_dir:
             rollout_dir = args.rollout_dir
         else:
-            rollout_dir = get_rollout_dir(args.env, exp_id, args.feature_type)
+            rollout_dir = get_rollout_dir(args.env, exp_id)
 
         # Get seed for this experiment ID
         seed = EXP_ID_TO_SEED.get(exp_id, exp_id)
