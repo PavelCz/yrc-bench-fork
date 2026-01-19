@@ -142,8 +142,8 @@ def build_sbatch_command(job_name: str, gather_args: dict) -> str:
     """Build the sbatch command string."""
     slurm_args = " ".join(f"--{k}={v}" for k, v in SLURM_CONFIG.items())
 
-    gather_cmd_parts = [
-        f"conda run -n {CONDA_ENV} -- python gather_rollouts.py",
+    python_args = [
+        "python gather_rollouts.py",
         f"-wandb_mode {gather_args['wandb_mode']}",
         f"-c {gather_args['config']}",
         f"-n {gather_args['name']}",
@@ -159,7 +159,7 @@ def build_sbatch_command(job_name: str, gather_args: dict) -> str:
         f"-level_seeds_file {gather_args['level_seeds_file']}",
         f"-query_cost {gather_args['query_cost']}",
     ]
-    gather_cmd = " \\\n        ".join(gather_cmd_parts)
+    python_cmd = " ".join(python_args)
 
     sbatch_script = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
@@ -167,8 +167,7 @@ def build_sbatch_command(job_name: str, gather_args: dict) -> str:
 #SBATCH --error=logs/slurm/%x_%j.err
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in SLURM_CONFIG.items())}
 
-srun {slurm_args} \\
-    {gather_cmd}
+srun {slurm_args} -- conda run --no-capture-output -n {CONDA_ENV} -- {python_cmd}
 """
     return sbatch_script
 

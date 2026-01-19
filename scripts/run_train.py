@@ -149,8 +149,8 @@ def build_sbatch_command(job_name: str, train_args: dict) -> str:
     """Build the sbatch command string."""
     slurm_args = " ".join(f"--{k}={v}" for k, v in SLURM_CONFIG.items())
 
-    train_cmd_parts = [
-        f"conda run -n {CONDA_ENV} -- python train.py",
+    python_args = [
+        "python train.py",
         f"-wandb_group {train_args['wandb_group']}",
         f"-c {train_args['config']}",
         f"-n {train_args['name']}",
@@ -167,7 +167,7 @@ def build_sbatch_command(job_name: str, train_args: dict) -> str:
         f"-seed {train_args['seed']}",
         "-over",
     ]
-    train_cmd = " \\\n        ".join(train_cmd_parts)
+    python_cmd = " ".join(python_args)
 
     sbatch_script = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
@@ -175,8 +175,7 @@ def build_sbatch_command(job_name: str, train_args: dict) -> str:
 #SBATCH --error=logs/slurm/%x_%j.err
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in SLURM_CONFIG.items())}
 
-srun {slurm_args} \\
-    {train_cmd}
+srun {slurm_args} -- conda run --no-capture-output -n {CONDA_ENV} -- {python_cmd}
 """
     return sbatch_script
 

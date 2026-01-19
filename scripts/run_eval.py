@@ -193,8 +193,9 @@ def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str) -> str:
     """Build the sbatch command string."""
     slurm_args = " ".join(f"--{k}={v}" for k, v in SLURM_CONFIG.items())
 
-    eval_cmd_parts = [
-        f"conda run -n {conda_env} -- python eval_afhp.py",
+    # Build the python command arguments
+    python_args = [
+        "python eval_afhp.py",
         f"-c {eval_args['config']}",
         f"-n {eval_args['name']}",
         "-defer_to_oracle",
@@ -213,11 +214,12 @@ def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str) -> str:
 
     # Add SVDD-specific arguments if present
     if eval_args.get('cp_feature'):
-        eval_cmd_parts.append(f"-cp_feature {eval_args['cp_feature']}")
+        python_args.append(f"-cp_feature {eval_args['cp_feature']}")
     if eval_args.get('svdd_model_path'):
-        eval_cmd_parts.append(f"-f_n {eval_args['svdd_model_path']}")
+        python_args.append(f"-f_n {eval_args['svdd_model_path']}")
 
-    eval_cmd = " \\\n        ".join(eval_cmd_parts)
+    # Join python args as single line
+    python_cmd = " ".join(python_args)
 
     sbatch_script = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
@@ -225,8 +227,7 @@ def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str) -> str:
 #SBATCH --error=logs/slurm/%x_%j.err
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in SLURM_CONFIG.items())}
 
-srun {slurm_args} \\
-    {eval_cmd}
+srun {slurm_args} -- conda run --no-capture-output -n {conda_env} -- {python_cmd}
 """
     return sbatch_script
 
