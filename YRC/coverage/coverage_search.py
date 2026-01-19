@@ -58,8 +58,9 @@ def create_ood_percentage_threshold_sampler(
 
     def _eval_with_threshold(threshold: float) -> Tuple[float, float, Dict[str, Any]]:
         update_policy_params(policy, threshold)
+        # Don't close environments between evaluations - the sampler runs multiple evals
         summary = evaluator.eval(
-            policy, envs, [split], logger=logger, threshold=threshold
+            policy, envs, [split], logger=logger, threshold=threshold, close_envs=False
         )
         level_ood_preds = summary[split]["level_ood_pred"]
         target_metric = float(np.mean(level_ood_preds))
@@ -135,8 +136,9 @@ def create_afhp_threshold_sampler(
 
     def _eval_with_threshold(threshold: float) -> Tuple[float, float, Dict[str, Any]]:
         update_policy_params(policy, threshold)
+        # Don't close environments between evaluations - the sampler runs multiple evals
         summary = evaluator.eval(
-            policy, envs, [split], logger=logger, threshold=threshold
+            policy, envs, [split], logger=logger, threshold=threshold, close_envs=False
         )
         afhp = summary[split]["action_1_frac"] * 100.0
         performance = float(summary[split]["env_return_mean"])  # Y-axis

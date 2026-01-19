@@ -102,6 +102,7 @@ class Evaluator:
         num_episodes=None,
         logger: Optional[WandbLogger] = None,
         threshold: Optional[float] = None,
+        close_envs: bool = True,
     ):
         args = self.args
         policy.eval()
@@ -181,7 +182,8 @@ class Evaluator:
                 ),
             )
 
-            envs[split].close()
+            if close_envs:
+                envs[split].close()
 
             # Process and log videos if logger is available
             logging.debug(
@@ -312,18 +314,8 @@ class Evaluator:
 
             obs, reward, done, info = env.step(action)
 
-            # Check for seeds_exhausted in sequential mode (Procgen-specific)
-            for i in range(env.num_envs):
-                if info[i].get("seeds_exhausted", False):
-                    seeds_exhausted[i] = True
-
-            # If all environments have exhausted their seeds, we should stop
-            if seeds_exhausted.all():
-                logging.info(
-                    f"All environments have exhausted their seeds. "
-                    f"Completed {num_episodes} episodes."
-                )
-                break
+            # Track episodes completed this step (for seed exhaustion check)
+            episodes_completed_this_step = 0
 
             for i in range(env.num_envs):
                 if "env_reward" in info[i]:
@@ -430,6 +422,7 @@ class Evaluator:
 
                     # Always increment episode counter (for upper bound check)
                     num_episodes += 1
+                    episodes_completed_this_step += 1
                     # Track total finished episodes
                     log["num_finished_episodes"] += 1
 
@@ -538,12 +531,28 @@ class Evaluator:
                 # Check if all filters have enough episodes
                 if self._all_video_filters_satisfied():
                     self.done_saving_actions_for_vid = True
+
+                # Check for seeds_exhausted in sequential mode (Procgen-specific)
+                # This is checked per-environment AFTER processing done signals
+                if info[i].get("seeds_exhausted", False):
+                    seeds_exhausted[i] = True
+
             # Deep copy obs and info to avoid Procgen buffer reuse issues
             prev_obs = _deep_copy_obs(obs)
             # Update prev_info for human-resolution frames on next iteration
             prev_info = [_deep_copy_info(info[i]) for i in range(env.num_envs)]
 
             has_done |= done
+
+            # If all environments have exhausted their seeds, we should stop
+            # This check is AFTER processing done signals so we count episodes that
+            # completed on the same step that exhaustion was detected
+            if seeds_exhausted.all():
+                logging.info(
+                    f"All environments have exhausted their seeds. "
+                    f"Completed {num_episodes} episodes (including {episodes_completed_this_step} this step)."
+                )
+                break
 
         # Warn if we finished fewer episodes than requested due to seed exhaustion
         if num_episodes < max_episodes:

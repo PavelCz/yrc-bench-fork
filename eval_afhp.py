@@ -40,10 +40,10 @@ def load_level_seeds(config) -> Optional[List[int]]:
     with open(level_seeds_file) as f:
         seeds_data = json.load(f)
     
-    # Use ood_eval seeds for evaluation (always sequential mode)
+    # Use ood_eval seeds for evaluation (container mode for sampler compatibility)
     level_seeds = seeds_data['seeds'].get('ood_eval', None)
     if level_seeds:
-        print(f'  - Loaded {len(level_seeds)} ood_eval seeds (mode: sequential)')
+        print(f'  - Loaded {len(level_seeds)} ood_eval seeds (mode: container)')
     else:
         print('  - No ood_eval seeds in file')
     
@@ -59,10 +59,12 @@ def main():
     # Record time for profiling purposes
     start_time = time.time()
 
-    # Load level seeds for evaluation (uses ood_eval seeds, always sequential mode)
+    # Load level seeds for evaluation
+    # Use "container" mode so seeds can be reused across multiple evaluations in the sampler
+    # Container mode: random draw without replacement, refills when empty
     level_seeds = load_level_seeds(config)
 
-    envs = env_factory.make(config, level_seeds, "sequential")
+    envs = env_factory.make(config, level_seeds, "container")
 
     policy = policy_factory.make(config, envs["train"])
     if config.general.algorithm != "always" and not config.coord_policy.baseline:
