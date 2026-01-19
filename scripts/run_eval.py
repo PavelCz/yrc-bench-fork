@@ -227,7 +227,9 @@ def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str) -> str:
 #SBATCH --error=logs/slurm/%x_%j.err
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in SLURM_CONFIG.items())}
 
-srun {slurm_args} -- conda run --no-capture-output -n {conda_env} -- {python_cmd}
+eval "$(conda shell.bash hook)"
+conda activate {conda_env}
+srun {slurm_args} {python_cmd}
 """
     return sbatch_script
 
