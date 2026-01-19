@@ -21,7 +21,7 @@ import numpy as np
 def create_ood_percentage_threshold_sampler(
     policy,
     evaluator: Evaluator,
-    envs,
+    envs_factory,
     split: str,
     *,
     coverage_fraction: float = 0.10,
@@ -38,7 +38,8 @@ def create_ood_percentage_threshold_sampler(
     Args:
         policy: Policy object with threshold evaluation capabilities
         evaluator: Evaluator object for running policy evaluations
-        envs: Environment(s) to evaluate on
+        envs_factory: Callable that returns fresh environments, ensuring each
+            evaluation sees the same seeds in the same order
         split: Data split to use for evaluation ("train", "val", "test")
         coverage_fraction: Maximum allowed normalized neighbor gap on both axes
         max_total_evals: Global evaluation budget (includes re-runs)
@@ -58,9 +59,11 @@ def create_ood_percentage_threshold_sampler(
 
     def _eval_with_threshold(threshold: float) -> Tuple[float, float, Dict[str, Any]]:
         update_policy_params(policy, threshold)
-        # Don't close environments between evaluations - the sampler runs multiple evals
+        # Create fresh environments for each evaluation to ensure reproducibility
+        # Each evaluation sees the same seeds in the same order
+        envs = envs_factory()
         summary = evaluator.eval(
-            policy, envs, [split], logger=logger, threshold=threshold, close_envs=False
+            policy, envs, [split], logger=logger, threshold=threshold, close_envs=True
         )
         level_ood_preds = summary[split]["level_ood_pred"]
         target_metric = float(np.mean(level_ood_preds))
@@ -99,7 +102,7 @@ def create_ood_percentage_threshold_sampler(
 def create_afhp_threshold_sampler(
     policy,
     evaluator: Evaluator,
-    envs,
+    envs_factory,
     split: str,
     *,
     coverage_fraction: float = 0.10,
@@ -116,7 +119,8 @@ def create_afhp_threshold_sampler(
     Args:
         policy: Policy object with threshold evaluation capabilities
         evaluator: Evaluator object for running policy evaluations
-        envs: Environment(s) to evaluate on
+        envs_factory: Callable that returns fresh environments, ensuring each
+            evaluation sees the same seeds in the same order
         split: Data split to use for evaluation ("train", "val", "test")
         coverage_fraction: Maximum allowed normalized neighbor gap on both axes
         max_total_evals: Global evaluation budget (includes re-runs)
@@ -136,9 +140,11 @@ def create_afhp_threshold_sampler(
 
     def _eval_with_threshold(threshold: float) -> Tuple[float, float, Dict[str, Any]]:
         update_policy_params(policy, threshold)
-        # Don't close environments between evaluations - the sampler runs multiple evals
+        # Create fresh environments for each evaluation to ensure reproducibility
+        # Each evaluation sees the same seeds in the same order
+        envs = envs_factory()
         summary = evaluator.eval(
-            policy, envs, [split], logger=logger, threshold=threshold, close_envs=False
+            policy, envs, [split], logger=logger, threshold=threshold, close_envs=True
         )
         afhp = summary[split]["action_1_frac"] * 100.0
         performance = float(summary[split]["env_return_mean"])  # Y-axis

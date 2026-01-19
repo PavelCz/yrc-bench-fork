@@ -40,10 +40,10 @@ def load_level_seeds(config) -> Optional[List[int]]:
     with open(level_seeds_file) as f:
         seeds_data = json.load(f)
     
-    # Use ood_eval seeds for evaluation (container mode for sampler compatibility)
+    # Use ood_eval seeds for evaluation (sequential mode, fresh envs per eval)
     level_seeds = seeds_data['seeds'].get('ood_eval', None)
     if level_seeds:
-        print(f'  - Loaded {len(level_seeds)} ood_eval seeds (mode: container)')
+        print(f'  - Loaded {len(level_seeds)} ood_eval seeds (mode: sequential)')
     else:
         print('  - No ood_eval seeds in file')
     
@@ -60,11 +60,15 @@ def main():
     start_time = time.time()
 
     # Load level seeds for evaluation
-    # Use "container" mode so seeds can be reused across multiple evaluations in the sampler
-    # Container mode: random draw without replacement, refills when empty
     level_seeds = load_level_seeds(config)
 
-    envs = env_factory.make(config, level_seeds, "container")
+    # Create environment factory for the sampler
+    # Each evaluation gets fresh environments with the same seeds in sequential order
+    def make_envs():
+        return env_factory.make(config, level_seeds, "sequential")
+
+    # Create initial environments for policy creation and score generation
+    envs = make_envs()
 
     policy = policy_factory.make(config, envs["train"])
     if config.general.algorithm != "always" and not config.coord_policy.baseline:
@@ -129,11 +133,15 @@ def main():
     # Create the joint-coverage sampler via YRC wrapper (adapts to new abcs API)
     max_total_evals = 200
 
+    # Close initial environments - the sampler will create fresh ones for each evaluation
+    for split_name in envs:
+        envs[split_name].close()
+
     if threshold_sampler == "afhp":
         sampler = create_afhp_threshold_sampler(
             policy=policy,
             evaluator=evaluator,
-            envs=envs,
+            envs_factory=make_envs,
             split=split,
             coverage_fraction=coverage_fraction,
             max_total_evals=max_total_evals,
@@ -143,7 +151,7 @@ def main():
         sampler = create_ood_percentage_threshold_sampler(
             policy=policy,
             evaluator=evaluator,
-            envs=envs,
+            envs_factory=make_envs,
             split=split,
             coverage_fraction=coverage_fraction,
             max_total_evals=max_total_evals,
