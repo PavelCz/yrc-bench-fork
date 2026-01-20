@@ -108,7 +108,7 @@ class ThresholdPolicy(Policy):
         action = (score > self.params["threshold"]).int()
 
         if return_scores_and_recons:
-            return action.cpu().numpy(), score.cpu().numpy(), None
+            return action.cpu().numpy(), score.detach().cpu().numpy(), None
 
         return action.cpu().numpy()
 
@@ -225,11 +225,12 @@ class ThresholdPolicy(Policy):
 
     def _compute_ensemble_score(self, obs):
         """Compute variance of softmax outputs across ensemble members."""
-        member_logits = [m.forward(obs) for m in self.ensemble_members]
-        stacked = torch.stack(member_logits)  # [M, B, A]
-        probs = torch.softmax(stacked / self.params["score_temp"], dim=-1)
-        variance = torch.var(probs, dim=0)  # [B, A]
-        score = variance.mean(dim=-1)  # [B]
+        with torch.no_grad():
+            member_logits = [m.forward(obs) for m in self.ensemble_members]
+            stacked = torch.stack(member_logits)  # [M, B, A]
+            probs = torch.softmax(stacked / self.params["score_temp"], dim=-1)
+            variance = torch.var(probs, dim=0)  # [B, A]
+            score = variance.mean(dim=-1)  # [B]
 
         # Store original scores before applying rolling average
         score_original = score.clone() if self.rolling_average is not None else None
