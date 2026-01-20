@@ -210,6 +210,7 @@ def plot_icml_results(
     method_filter: Optional[List[str]] = None,
     use_stderr: bool = True,
     disable_horizontal_lines: bool = False,
+    disable_random_line: bool = False,
     save_path: Optional[str] = None,
 ):
     """
@@ -225,6 +226,7 @@ def plot_icml_results(
         method_filter: Methods to exclude
         use_stderr: If True, use standard error; otherwise use standard deviation
         disable_horizontal_lines: Disable weak/oracle reference lines
+        disable_random_line: Disable random baseline diagonal line
         save_path: Path to save the figure
     """
     results = extract_icml_results(eval_dir, prefix_filter, env_filter)
@@ -254,6 +256,9 @@ def plot_icml_results(
     # Store weak/oracle performance for reference lines
     all_first_performances = []
     all_last_performances = []
+    # Track x range for random baseline line
+    all_x_min = []
+    all_x_max = []
 
     for method_idx, method in enumerate(valid_methods):
         exp_data = results[method]
@@ -280,6 +285,9 @@ def plot_icml_results(
                     # Track first/last for reference lines
                     all_first_performances.append(y[0])
                     all_last_performances.append(y[-1])
+                    # Track x range
+                    all_x_min.append(x.min())
+                    all_x_max.append(x.max())
             except Exception as e:
                 print(f"Warning: Failed to load {data_path}: {e}")
                 continue
@@ -354,6 +362,23 @@ def plot_icml_results(
             linestyle="--",
             alpha=0.7,
             label="Oracle",
+        )
+
+    # Add random baseline diagonal line (from weak to oracle)
+    if not disable_random_line and all_first_performances and all_x_min:
+        mean_first = np.mean(all_first_performances)
+        mean_last = np.mean(all_last_performances)
+        x_min = min(all_x_min)
+        x_max = max(all_x_max)
+
+        plt.plot(
+            [x_min, x_max],
+            [mean_first, mean_last],
+            color="gray",
+            linestyle=":",
+            alpha=0.7,
+            linewidth=2,
+            label="Random",
         )
 
     # Labels and title
@@ -454,6 +479,11 @@ def main():
         help="Disable weak/oracle reference lines",
     )
     parser.add_argument(
+        "--disable_random_line",
+        action="store_true",
+        help="Disable random baseline diagonal line",
+    )
+    parser.add_argument(
         "--save",
         type=str,
         default=None,
@@ -488,6 +518,7 @@ def main():
         method_filter=args.method_filter,
         use_stderr=not args.use_std,
         disable_horizontal_lines=args.disable_horizontal_lines,
+        disable_random_line=args.disable_random_line,
         save_path=args.save,
     )
 
