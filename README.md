@@ -34,6 +34,9 @@ For RL-based and OOD detection-based algorithms, the following feature types are
 - Raw image observations + Weak agent's hidden features + Weak agent's action distributions
 
 ### Installation
+
+Note that procgen requires that a version of cmake and QT5 is installed.
+
 1. Clone the repository:
 ```bash
 git clone https://github.com/modanesh/YRC-Bench.git
