@@ -5,7 +5,7 @@ import torch
 from procgen import ProcgenEnv
 import YRC.envs.procgen.wrappers as wrappers
 from YRC.envs.procgen.models import ProcgenModel
-from YRC.envs.procgen.policies import ProcgenPolicy
+from YRC.envs.procgen.policies import EnsemblePolicy, ProcgenPolicy
 from YRC.core.configs.global_configs import get_global_variable
 
 
