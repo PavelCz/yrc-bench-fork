@@ -240,9 +240,12 @@ def get_ensemble_member_paths(
     return member_paths
 
 
-def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str) -> str:
+def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str, qos: str = "default") -> str:
     """Build the sbatch command string."""
-    slurm_args = " ".join(f"--{k}={v}" for k, v in SLURM_CONFIG.items())
+    # Override QOS in SLURM config
+    slurm_config = SLURM_CONFIG.copy()
+    slurm_config["qos"] = qos
+    slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
 
     # Build the python command arguments
     python_args = [
@@ -282,7 +285,7 @@ def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str) -> str:
 #SBATCH --job-name={job_name}
 #SBATCH --output=logs/slurm/%x_%j.out
 #SBATCH --error=logs/slurm/%x_%j.err
-{chr(10).join(f"#SBATCH --{k}={v}" for k, v in SLURM_CONFIG.items())}
+{chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
 
 eval "$(conda shell.bash hook)"
 conda activate {conda_env}
@@ -292,10 +295,10 @@ srun {slurm_args} {python_cmd}
 
 
 def submit_job(
-    job_name: str, eval_args: dict, conda_env: str, dry_run: bool = False
+    job_name: str, eval_args: dict, conda_env: str, qos: str = "default", dry_run: bool = False
 ) -> None:
     """Submit a single job via sbatch."""
-    sbatch_script = build_sbatch_command(job_name, eval_args, conda_env)
+    sbatch_script = build_sbatch_command(job_name, eval_args, conda_env, qos)
 
     if dry_run:
         print(f"=== Job: {job_name} ===")
@@ -337,6 +340,12 @@ def main():
         choices=["chai", "snoopy"],
         default="chai",
         help="Server to use for paths (default: chai)",
+    )
+    parser.add_argument(
+        "--qos",
+        choices=["default", "high"],
+        default="default",
+        help="SLURM QOS to use (default: default)",
     )
     parser.add_argument(
         "--env", required=True, choices=ENVS, help="Environment to evaluate"
@@ -524,7 +533,7 @@ def main():
             **checkpoints,
         }
 
-        submit_job(job_name, eval_args, args.conda_env, dry_run=False)
+        submit_job(job_name, eval_args, args.conda_env, args.qos, dry_run=False)
 
     return 0
 
