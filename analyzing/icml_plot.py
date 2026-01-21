@@ -384,10 +384,11 @@ def plot_icml_results(
     # Labels and title
     env_str = env_filter if env_filter else "all"
     prefix_str = prefix_filter if prefix_filter else "all"
+    error_type = "SE" if use_stderr else "SD"
 
     plt.xlabel(x_data_key)
     plt.ylabel(y_data_key)
-    plt.title(f"{y_data_key} vs {x_data_key} ({env_str}, prefix={prefix_str})")
+    plt.title(f"{y_data_key} vs {x_data_key} ({env_str}, prefix={prefix_str}, shaded={error_type})")
     plt.legend(loc="best")
     plt.grid(True, alpha=0.3)
 
