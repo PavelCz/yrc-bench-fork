@@ -21,7 +21,7 @@ Train ensemble policies for uncertainty-based OOD detection experiments.
 
 Required arguments:
     -e, --env ENV_TYPE        Environment type: "coinrun", "maze", or "heist"
-    -x, --experiment ID       Experiment ID: 0-2
+    -x, --experiment ID       Experiment ID: 0-4
 
 Optional arguments:
     -m, --member ID           Train only a specific ensemble member (0-3)
@@ -90,8 +90,8 @@ if [ "$ENV_TYPE" != "coinrun" ] && [ "$ENV_TYPE" != "maze" ] && [ "$ENV_TYPE" !=
 fi
 
 # Validate EXPERIMENT_ID is a number 0-2
-if ! [[ "$EXPERIMENT_ID" =~ ^[0-2]$ ]]; then
-    echo "Error: EXPERIMENT_ID must be an integer between 0 and 2, got '$EXPERIMENT_ID'"
+if ! [[ "$EXPERIMENT_ID" =~ ^[0-4]$ ]]; then
+    echo "Error: EXPERIMENT_ID must be an integer between 0 and 4, got '$EXPERIMENT_ID'"
     exit 1
 fi
 
