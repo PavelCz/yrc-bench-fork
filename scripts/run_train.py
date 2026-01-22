@@ -35,11 +35,17 @@ EXP_ID_TO_SEED = {
     2: 2,
 }
 
-# Base path for checkpoints
-CHECKPOINT_BASE_PATH = "/scr/pavel/data/goal-misgen/policy/icml"
-
-# Base path for rollouts
-ROLLOUTS_BASE_PATH = "/scr/pavel/data/goal-misgen/rollouts/icml"
+# Server-specific paths
+SERVER_PATHS = {
+    "chai": {
+        "checkpoint_base": "/nas/ucb/czempin/data/goal-misgen/policy/icml",
+        "rollouts_base": "/nas/ucb/czempin/data/goal-misgen/rollouts/icml",
+    },
+    "snoopy": {
+        "checkpoint_base": "/scr/pavel/data/goal-misgen/policy/icml",
+        "rollouts_base": "/scr/pavel/data/goal-misgen/rollouts/icml",
+    },
+}
 
 # Environment choices
 ENVS = ["coinrun", "maze"]
@@ -113,15 +119,17 @@ def find_best_model_checkpoint(ts_dir: Path) -> Optional[Path]:
     highest_timesteps, best_model = model_files[-1]
 
     if highest_timesteps != EXPECTED_TIMESTEPS:
-        print(f"Warning: {ts_dir.name} has max timesteps {highest_timesteps}, expected {EXPECTED_TIMESTEPS}")
+        print(
+            f"Warning: {ts_dir.name} has max timesteps {highest_timesteps}, expected {EXPECTED_TIMESTEPS}"
+        )
 
     return best_model
 
 
-def get_checkpoints(env: str, exp_id: int) -> dict:
+def get_checkpoints(env: str, exp_id: int, checkpoint_base_path: str) -> dict:
     """Get checkpoint paths based on environment and experiment ID."""
     env_folder = get_env_folder(env)
-    base_path = Path(CHECKPOINT_BASE_PATH) / env_folder
+    base_path = Path(checkpoint_base_path) / env_folder
 
     weak_parent = base_path / f"icml2_{env}_exp{exp_id}_0p"
     strong_parent = base_path / f"icml2_{env}_exp{exp_id}_50p"
@@ -138,11 +146,11 @@ def get_checkpoints(env: str, exp_id: int) -> dict:
     return {"sim": weak, "weak": weak, "strong": strong}
 
 
-def get_rollout_dir(env: str, exp_id: int) -> str:
+def get_rollout_dir(env: str, exp_id: int, rollouts_base_path: str) -> str:
     """Get the rollout directory path."""
-    # Format: /scr/pavel/data/goal-misgen/rollouts/icml/{env}/gather_{env}_exp{id}/
+    # Format: {rollouts_base}/{env}/gather_{env}_exp{id}/
     rollout_name = f"gather_{env}_exp{exp_id}"
-    return str(Path(ROLLOUTS_BASE_PATH) / env / rollout_name)
+    return str(Path(rollouts_base_path) / env / rollout_name)
 
 
 def build_sbatch_command(job_name: str, train_args: dict) -> str:
@@ -213,15 +221,52 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Run DeepSVDD training jobs via SLURM")
-    parser.add_argument("--dry-run", action="store_true", help="Print commands without submitting")
-    parser.add_argument("--env", required=True, choices=ENVS, help="Environment to train on")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print commands without submitting"
+    )
+    parser.add_argument(
+        "--server",
+        choices=["chai", "snoopy"],
+        default="snoopy",
+        help="Server to use for paths (default: snoopy)",
+    )
+    parser.add_argument(
+        "--env", required=True, choices=ENVS, help="Environment to train on"
+    )
     parser.add_argument("--prefix", required=True, help="Experiment group prefix")
-    parser.add_argument("--exp-ids", type=int, nargs="+", default=[0, 1, 2], help="Experiment IDs to run (default: 0 1 2)")
-    parser.add_argument("--feature-type", required=True, choices=FEATURE_TYPES, help="Feature type: obs (observations) or hidden (latent)")
-    parser.add_argument("--num-rollouts", type=int, default=TRAIN_DEFAULTS["num_rollouts"], help="Number of rollouts")
-    parser.add_argument("--config", default=TRAIN_DEFAULTS["config"], help="Config file path")
-    parser.add_argument("--cp-method", default=TRAIN_DEFAULTS["cp_method"], help="Coordination policy method")
-    parser.add_argument("--query-cost", type=float, default=TRAIN_DEFAULTS["query_cost"], help="Query cost")
+    parser.add_argument(
+        "--exp-ids",
+        type=int,
+        nargs="+",
+        default=[0, 1, 2],
+        help="Experiment IDs to run (default: 0 1 2)",
+    )
+    parser.add_argument(
+        "--feature-type",
+        required=True,
+        choices=FEATURE_TYPES,
+        help="Feature type: obs (observations) or hidden (latent)",
+    )
+    parser.add_argument(
+        "--num-rollouts",
+        type=int,
+        default=TRAIN_DEFAULTS["num_rollouts"],
+        help="Number of rollouts",
+    )
+    parser.add_argument(
+        "--config", default=TRAIN_DEFAULTS["config"], help="Config file path"
+    )
+    parser.add_argument(
+        "--cp-method",
+        default=TRAIN_DEFAULTS["cp_method"],
+        help="Coordination policy method",
+    )
+    parser.add_argument(
+        "--query-cost",
+        type=float,
+        default=TRAIN_DEFAULTS["query_cost"],
+        help="Query cost",
+    )
     parser.add_argument("--rollout-dir", help="Override rollout directory path")
     # Override checkpoints if needed
     parser.add_argument("--sim", help="Override sim weak checkpoint path")
@@ -234,7 +279,13 @@ def main():
         print(f"Error: Config file not found: {args.config}")
         return 1
 
+    # Get server-specific paths
+    paths = SERVER_PATHS[args.server]
+    checkpoint_base_path = paths["checkpoint_base"]
+    rollouts_base_path = paths["rollouts_base"]
+
     if args.dry_run:
+        print(f"Server: {args.server}")
         print(f"Config: {args.config}")
         print(f"Environment: {args.env}")
         print(f"Feature type: {args.feature_type}")
@@ -245,7 +296,7 @@ def main():
     # Loop over experiment IDs
     for exp_id in args.exp_ids:
         # Get checkpoints for this experiment
-        checkpoints = get_checkpoints(args.env, exp_id)
+        checkpoints = get_checkpoints(args.env, exp_id, checkpoint_base_path)
         if args.sim:
             checkpoints["sim"] = args.sim
         if args.weak:
@@ -257,7 +308,7 @@ def main():
         if args.rollout_dir:
             rollout_dir = args.rollout_dir
         else:
-            rollout_dir = get_rollout_dir(args.env, exp_id)
+            rollout_dir = get_rollout_dir(args.env, exp_id, rollouts_base_path)
 
         # Get seed for this experiment ID
         seed = EXP_ID_TO_SEED.get(exp_id, exp_id)
