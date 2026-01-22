@@ -45,6 +45,21 @@ METHOD_NAMES = {
     "oc-random": "Level-Based Random",
 }
 
+# Data key display names mapping
+DATA_KEY_NAMES = {
+    "afhp": "Ask-For-Help Percentage (AFHP, per timestep)",
+    "ood_pred_percentage": "Ask-For-Help Percentage (AFHP)",
+    "performance": "Average Reward",
+    "ood_accuracy": "OOD Accuracy",
+    "true_positive": "True Positive Rate",
+    "false_positive": "False Positive Rate",
+    "true_negative": "True Negative Rate",
+    "false_negative": "False Negative Rate",
+    "episode_length_mean": "Mean Episode Length",
+    "episode_length_success_mean": "Mean Episode Length (Success)",
+    "first_ood_timestep_mean": "Mean First OOD Timestep",
+}
+
 
 def parse_experiment_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
     """
@@ -386,9 +401,13 @@ def plot_icml_results(
     prefix_str = prefix_filter if prefix_filter else "all"
     error_type = "SE" if use_stderr else "SD"
 
-    plt.xlabel(x_data_key)
-    plt.ylabel(y_data_key)
-    plt.title(f"{y_data_key} vs {x_data_key} ({env_str}, prefix={prefix_str}, shaded={error_type})")
+    # Get display names for axis labels
+    x_label = DATA_KEY_NAMES.get(x_data_key, x_data_key)
+    y_label = DATA_KEY_NAMES.get(y_data_key, y_data_key)
+
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    plt.title(f"{y_label} vs {x_label} ({env_str}, prefix={prefix_str}, shaded={error_type})")
     plt.legend(loc="best")
     plt.grid(True, alpha=0.3)
 
