@@ -227,6 +227,7 @@ def plot_icml_results(
     disable_horizontal_lines: bool = False,
     disable_random_line: bool = False,
     save_path: Optional[str] = None,
+    title: Optional[str] = None,
 ):
     """
     Plot ICML results with aggregation across experiments.
@@ -243,6 +244,7 @@ def plot_icml_results(
         disable_horizontal_lines: Disable weak/oracle reference lines
         disable_random_line: Disable random baseline diagonal line
         save_path: Path to save the figure
+        title: Custom title for the plot (overrides auto-generated title)
     """
     results = extract_icml_results(eval_dir, prefix_filter, env_filter)
 
@@ -407,7 +409,14 @@ def plot_icml_results(
 
     plt.xlabel(x_label)
     plt.ylabel(y_label)
-    plt.title(f"{y_label} vs {x_label} ({env_str}, prefix={prefix_str}, shaded={error_type})")
+
+    # Use custom title if provided, otherwise generate one
+    if title:
+        plt.title(title)
+    else:
+        plt.title(
+            f"{y_label} vs {x_label} ({env_str}, prefix={prefix_str}, shaded={error_type})"
+        )
     plt.legend(loc="best")
     plt.grid(True, alpha=0.3)
 
@@ -510,6 +519,12 @@ def main():
         help="Path to save the figure (if not specified, displays interactively)",
     )
     parser.add_argument(
+        "--title",
+        type=str,
+        default=None,
+        help="Custom title for the plot (overrides auto-generated title)",
+    )
+    parser.add_argument(
         "--list",
         action="store_true",
         help="List available methods and exit",
@@ -540,6 +555,7 @@ def main():
         disable_horizontal_lines=args.disable_horizontal_lines,
         disable_random_line=args.disable_random_line,
         save_path=args.save,
+        title=args.title,
     )
 
 
