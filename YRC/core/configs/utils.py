@@ -232,7 +232,7 @@ def load(yaml_file_or_str, flags=None) -> ConfigDict:
 def update_config(source, target):
     for k in source.keys():
         if isinstance(source[k], dict):
-            if k not in target:
+            if k not in target or target[k] is None:
                 target[k] = {}
             update_config(source[k], target[k])
         elif source[k] is not None:

@@ -50,9 +50,9 @@ environment:
         start_level: 300000
         num_levels: 5120
         random_percent: 50
-coord_env: null
+coord_env: {}
 coord_policy:
     cls: WaitPolicy
     rolling_average: 'none'
     rolling_average_size: 10
-algorithm: null
+algorithm: {}
