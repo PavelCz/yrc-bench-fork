@@ -197,6 +197,21 @@ def extract_from_data(data, key: str) -> np.ndarray:
             else:
                 performances.append(np.nan)
         return np.array(performances)
+    elif key == "performance_asked_correctly":
+        # Performance only for episodes where agent asked for help AND level is OOD (true positive)
+        performances = []
+        for element in data["meta"]:
+            test_summary = element["summary"]["test"]
+            raw_returns = np.array(test_summary["raw_returns"])
+            level_ood_pred = np.array(test_summary["level_ood_pred"])
+            level_ood_gt = np.array(test_summary["level_ood_gt"])
+            # Filter to true positives: asked for help and level is actually OOD
+            tp_mask = (level_ood_pred == 1) & (level_ood_gt == 1)
+            if tp_mask.sum() > 0:
+                performances.append(raw_returns[tp_mask].mean())
+            else:
+                performances.append(np.nan)
+        return np.array(performances)
     elif key == "afhp":
         return data["afhps"]
     elif key == "episode_length_mean":

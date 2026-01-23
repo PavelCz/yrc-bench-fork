@@ -52,6 +52,7 @@ DATA_KEY_NAMES = {
     "performance": "Average Reward",
     "performance_asked": "Average Reward (Asked for Help)",
     "performance_not_asked": "Average Reward (Did Not Ask)",
+    "performance_asked_correctly": "Average Reward (True Positive)",
     "ood_accuracy": "OOD Accuracy",
     "true_positive": "True Positive Rate",
     "false_positive": "False Positive Rate",
@@ -61,6 +62,9 @@ DATA_KEY_NAMES = {
     "episode_length_success_mean": "Mean Episode Length (Success)",
     "first_ood_timestep_mean": "Mean First OOD Timestep",
 }
+
+# Keys that filter by asking behavior (need special handling for reference lines)
+FILTERED_PERFORMANCE_KEYS = {"performance_asked", "performance_asked_correctly"}
 
 
 def parse_experiment_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
@@ -310,8 +314,8 @@ def plot_icml_results(
                     all_x_min.append(x.min())
                     all_x_max.append(x.max())
 
-                    # For performance_asked, also get unfiltered weak performance
-                    if y_data_key == "performance_asked":
+                    # For filtered performance keys, also get unfiltered weak performance
+                    if y_data_key in FILTERED_PERFORMANCE_KEYS:
                         _, y_unfiltered = extract_x_and_y_values(
                             eval_data, x_data_key, "performance"
                         )
@@ -378,8 +382,8 @@ def plot_icml_results(
         mean_first = np.mean(all_first_performances)
         mean_last = np.mean(all_last_performances)
 
-        # For performance_asked, use unfiltered weak performance
-        if y_data_key == "performance_asked" and all_weak_performances:
+        # For filtered performance keys, use unfiltered weak performance
+        if y_data_key in FILTERED_PERFORMANCE_KEYS and all_weak_performances:
             weak_perf = np.mean(all_weak_performances)
         else:
             weak_perf = mean_first
@@ -400,21 +404,16 @@ def plot_icml_results(
         )
 
     # Add random baseline diagonal line (from weak to oracle)
-    # Skip for performance_asked since the random baseline doesn't apply
-    if not disable_random_line and all_first_performances and all_x_min and y_data_key != "performance_asked":
+    # Skip for filtered performance keys since the random baseline doesn't apply
+    if not disable_random_line and all_first_performances and all_x_min and y_data_key not in FILTERED_PERFORMANCE_KEYS:
+        mean_first = np.mean(all_first_performances)
         mean_last = np.mean(all_last_performances)
         x_min = min(all_x_min)
         x_max = max(all_x_max)
 
-        # For performance_asked, use unfiltered weak performance
-        if y_data_key == "performance_asked" and all_weak_performances:
-            random_start = np.mean(all_weak_performances)
-        else:
-            random_start = np.mean(all_first_performances)
-
         plt.plot(
             [x_min, x_max],
-            [random_start, mean_last],
+            [mean_first, mean_last],
             color="gray",
             linestyle=":",
             alpha=0.7,
