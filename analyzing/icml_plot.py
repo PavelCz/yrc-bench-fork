@@ -43,7 +43,7 @@ METHOD_NAMES = {
     "latent-svdd": "Latent SVDD",
     "random": "Timestep Random",
     "oc-random": "Level-Based Random",
-    "wait_then_ask": "Wait Then Ask",
+    "wait": "Wait",
 }
 
 # Data key display names mapping

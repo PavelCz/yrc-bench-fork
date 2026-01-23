@@ -13,7 +13,7 @@ from YRC.policies.ood import OODPolicy
 from YRC.policies.lightning_ae import LightningAEPolicy
 from YRC.policies.base import TimestepRandomPolicy, LevelBasedRandomPolicy
 from YRC.policies.threshold import ThresholdPolicy
-from YRC.policies.heuristic import ExponentialHeuristicPolicy, WaitThenAskPolicy
+from YRC.policies.heuristic import ExponentialHeuristicPolicy, WaitPolicy
 from YRC.core import Evaluator
 import numpy as np
 
@@ -203,7 +203,7 @@ def update_policy_params(policy, threshold):
             threshold = 1.0
         policy.update_params(threshold)
 
-    elif isinstance(policy, WaitThenAskPolicy):
+    elif isinstance(policy, WaitPolicy):
         if threshold == float("inf"):
             # Never ask for help - set very high timestep threshold
             threshold = 10000

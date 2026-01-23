@@ -74,7 +74,7 @@ class ExponentialHeuristicPolicy(Policy):
         return (100 - percentile) * 0.01
 
 
-class WaitThenAskPolicy(Policy):
+class WaitPolicy(Policy):
     """
     Simple heuristic: wait for n timesteps, then always ask for help.
 

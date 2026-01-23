@@ -15,8 +15,8 @@ coord_policy:
     heuristic:
         cls: ExponentialHeuristicPolicy
         baseline: False
-    wait_then_ask:
-        cls: WaitThenAskPolicy
+    wait:
+        cls: WaitPolicy
         baseline: False
     ppo:
         cls: PPOPolicy

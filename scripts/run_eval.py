@@ -58,6 +58,7 @@ METHOD_CONFIGS = {
     "svdd-image": "image_svdd.yaml",
     "svdd-latent": "latent_svdd.yaml",
     "ensemble": "ensemble_variance.yaml",
+    "wait": "wait.yaml",
 }
 
 # Method to run name suffix mapping
@@ -69,6 +70,7 @@ METHOD_NAMES = {
     "svdd-image": "svdd_image",
     "svdd-latent": "svdd_latent",
     "ensemble": "ensemble",
+    "wait": "wait",
 }
 
 # Methods that require a trained SVDD policy
