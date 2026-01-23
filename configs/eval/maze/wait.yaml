@@ -12,7 +12,7 @@ wandb:
 # Evaluation settings
 evaluation:
     coverage_fraction: 0.05
-    threshold_sampler: 'afhp'
+    threshold_sampler: 'ood_percentage'
     video_episodes_to_collect: 16
     video_filter: ['all']
 
@@ -53,4 +53,6 @@ environment:
 coord_env: null
 coord_policy:
     cls: WaitPolicy
+    rolling_average: 'none'
+    rolling_average_size: 10
 algorithm: null
