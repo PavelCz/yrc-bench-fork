@@ -51,5 +51,6 @@ environment:
         num_levels: 5120
         random_percent: 50  # 50% corner placement (maze_aisc), 50% random placement (maze)
 coord_env: null
-coord_policy: null
+coord_policy:
+    cls: WaitPolicy
 algorithm: null
