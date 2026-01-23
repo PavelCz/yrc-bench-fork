@@ -275,6 +275,8 @@ def plot_icml_results(
     # Store weak/oracle performance for reference lines
     all_first_performances = []
     all_last_performances = []
+    # Track unfiltered weak agent performance (for performance_asked)
+    all_weak_performances = []
     # Track x range for random baseline line
     all_x_min = []
     all_x_max = []
@@ -307,6 +309,14 @@ def plot_icml_results(
                     # Track x range
                     all_x_min.append(x.min())
                     all_x_max.append(x.max())
+
+                    # For performance_asked, also get unfiltered weak performance
+                    if y_data_key == "performance_asked":
+                        _, y_unfiltered = extract_x_and_y_values(
+                            eval_data, x_data_key, "performance"
+                        )
+                        if len(y_unfiltered) > 0:
+                            all_weak_performances.append(y_unfiltered[0])
             except Exception as e:
                 print(f"Warning: Failed to load {data_path}: {e}")
                 continue
@@ -368,15 +378,19 @@ def plot_icml_results(
         mean_first = np.mean(all_first_performances)
         mean_last = np.mean(all_last_performances)
 
-        # Skip weak agent line for performance_asked (weak agent never asks)
-        if y_data_key != "performance_asked":
-            plt.axhline(
-                y=mean_first,
-                color="red",
-                linestyle="--",
-                alpha=0.7,
-                label="Weak Agent",
-            )
+        # For performance_asked, use unfiltered weak performance
+        if y_data_key == "performance_asked" and all_weak_performances:
+            weak_perf = np.mean(all_weak_performances)
+        else:
+            weak_perf = mean_first
+
+        plt.axhline(
+            y=weak_perf,
+            color="red",
+            linestyle="--",
+            alpha=0.7,
+            label="Weak Agent",
+        )
         plt.axhline(
             y=mean_last,
             color="blue",
@@ -386,15 +400,21 @@ def plot_icml_results(
         )
 
     # Add random baseline diagonal line (from weak to oracle)
-    if not disable_random_line and all_first_performances and all_x_min:
-        mean_first = np.mean(all_first_performances)
+    # Skip for performance_asked since the random baseline doesn't apply
+    if not disable_random_line and all_first_performances and all_x_min and y_data_key != "performance_asked":
         mean_last = np.mean(all_last_performances)
         x_min = min(all_x_min)
         x_max = max(all_x_max)
 
+        # For performance_asked, use unfiltered weak performance
+        if y_data_key == "performance_asked" and all_weak_performances:
+            random_start = np.mean(all_weak_performances)
+        else:
+            random_start = np.mean(all_first_performances)
+
         plt.plot(
             [x_min, x_max],
-            [mean_first, mean_last],
+            [random_start, mean_last],
             color="gray",
             linestyle=":",
             alpha=0.7,
