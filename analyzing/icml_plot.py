@@ -393,14 +393,14 @@ def plot_icml_results(
             color="red",
             linestyle="--",
             alpha=0.7,
-            label="Weak Agent",
+            label="Primary Agent",
         )
         plt.axhline(
             y=mean_last,
             color="blue",
             linestyle="--",
             alpha=0.7,
-            label="Oracle",
+            label="Expert",
         )
 
     # Add random baseline diagonal line (from weak to oracle)
