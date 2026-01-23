@@ -68,6 +68,7 @@ DATA_KEY_NAMES = {
 # Keys that filter by asking behavior (need special handling for reference lines)
 FILTERED_PERFORMANCE_KEYS = {
     "performance_asked",
+    "performance_not_asked",
     "performance_asked_correctly",
     "performance_not_asked_correctly",
     "performance_not_asked_incorrectly",
