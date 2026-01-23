@@ -50,6 +50,8 @@ DATA_KEY_NAMES = {
     "afhp": "Ask-For-Help Percentage (AFHP, per timestep)",
     "ood_pred_percentage": "Ask-For-Help Percentage (AFHP)",
     "performance": "Average Reward",
+    "performance_asked": "Average Reward (Asked for Help)",
+    "performance_not_asked": "Average Reward (Did Not Ask)",
     "ood_accuracy": "OOD Accuracy",
     "true_positive": "True Positive Rate",
     "false_positive": "False Positive Rate",
@@ -366,13 +368,15 @@ def plot_icml_results(
         mean_first = np.mean(all_first_performances)
         mean_last = np.mean(all_last_performances)
 
-        plt.axhline(
-            y=mean_first,
-            color="red",
-            linestyle="--",
-            alpha=0.7,
-            label="Weak Agent",
-        )
+        # Skip weak agent line for performance_asked (weak agent never asks)
+        if y_data_key != "performance_asked":
+            plt.axhline(
+                y=mean_first,
+                color="red",
+                linestyle="--",
+                alpha=0.7,
+                label="Weak Agent",
+            )
         plt.axhline(
             y=mean_last,
             color="blue",

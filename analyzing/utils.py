@@ -169,6 +169,34 @@ def extract_from_data(data, key: str) -> np.ndarray:
         return np.array(fns)
     elif key == "performance":
         return data["performances"]
+    elif key == "performance_asked":
+        # Performance only for episodes where the agent asked for help
+        performances = []
+        for element in data["meta"]:
+            test_summary = element["summary"]["test"]
+            raw_returns = np.array(test_summary["raw_returns"])
+            level_ood_pred = np.array(test_summary["level_ood_pred"])
+            # Filter to episodes where agent asked for help
+            asked_mask = level_ood_pred == 1
+            if asked_mask.sum() > 0:
+                performances.append(raw_returns[asked_mask].mean())
+            else:
+                performances.append(np.nan)
+        return np.array(performances)
+    elif key == "performance_not_asked":
+        # Performance only for episodes where the agent did NOT ask for help
+        performances = []
+        for element in data["meta"]:
+            test_summary = element["summary"]["test"]
+            raw_returns = np.array(test_summary["raw_returns"])
+            level_ood_pred = np.array(test_summary["level_ood_pred"])
+            # Filter to episodes where agent did not ask for help
+            not_asked_mask = level_ood_pred == 0
+            if not_asked_mask.sum() > 0:
+                performances.append(raw_returns[not_asked_mask].mean())
+            else:
+                performances.append(np.nan)
+        return np.array(performances)
     elif key == "afhp":
         return data["afhps"]
     elif key == "episode_length_mean":
