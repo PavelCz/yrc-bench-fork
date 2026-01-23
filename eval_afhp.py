@@ -74,7 +74,7 @@ def main():
     if config.general.algorithm != "always" and not config.coord_policy.baseline:
         # The following algorithms do not need to load a model, because they do not
         # need the training step:
-        algorithms = ["timestep_random", "level_based_random", "threshold", "heuristic"]
+        algorithms = ["timestep_random", "level_based_random", "threshold", "heuristic", "wait_then_ask"]
         if config.general.algorithm not in algorithms:
             policy.load_model(os.path.join(config.experiment_dir, config.file_name))
 
