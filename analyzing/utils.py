@@ -168,6 +168,22 @@ def extract_from_data(data, key: str) -> np.ndarray:
             fns.append(fn_count / pos_count)
         return np.array(fns)
     elif key == "performance":
+        # Validate that stored performances match manually calculated values
+        stored_performances = data["performances"]
+        calculated_performances = []
+        for element in data["meta"]:
+            test_summary = element["summary"]["test"]
+            raw_returns = np.array(test_summary["raw_returns"])
+            calculated_performances.append(raw_returns.mean())
+        calculated_performances = np.array(calculated_performances)
+
+        # Check if they match (within floating point tolerance)
+        if not np.allclose(stored_performances, calculated_performances, rtol=1e-5):
+            print("Warning: Stored performances do not match calculated performances!")
+            print(f"  Stored: {stored_performances}")
+            print(f"  Calculated: {calculated_performances}")
+            print(f"  Difference: {stored_performances - calculated_performances}")
+
         return data["performances"]
     elif key == "performance_asked":
         # Performance only for episodes where the agent asked for help
@@ -209,6 +225,21 @@ def extract_from_data(data, key: str) -> np.ndarray:
             tp_mask = (level_ood_pred == 1) & (level_ood_gt == 1)
             if tp_mask.sum() > 0:
                 performances.append(raw_returns[tp_mask].mean())
+            else:
+                performances.append(np.nan)
+        return np.array(performances)
+    elif key == "performance_not_asked_correctly":
+        # Performance only for episodes where agent did NOT ask AND level is NOT OOD (true negative)
+        performances = []
+        for element in data["meta"]:
+            test_summary = element["summary"]["test"]
+            raw_returns = np.array(test_summary["raw_returns"])
+            level_ood_pred = np.array(test_summary["level_ood_pred"])
+            level_ood_gt = np.array(test_summary["level_ood_gt"])
+            # Filter to true negatives: did not ask and level is not OOD
+            tn_mask = (level_ood_pred == 0) & (level_ood_gt == 0)
+            if tn_mask.sum() > 0:
+                performances.append(raw_returns[tn_mask].mean())
             else:
                 performances.append(np.nan)
         return np.array(performances)

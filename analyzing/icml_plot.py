@@ -53,6 +53,7 @@ DATA_KEY_NAMES = {
     "performance_asked": "Average Reward (Asked for Help)",
     "performance_not_asked": "Average Reward (Did Not Ask)",
     "performance_asked_correctly": "Average Reward (True Positive)",
+    "performance_not_asked_correctly": "Average Reward (True Negative)",
     "ood_accuracy": "OOD Accuracy",
     "true_positive": "True Positive Rate",
     "false_positive": "False Positive Rate",
@@ -64,7 +65,11 @@ DATA_KEY_NAMES = {
 }
 
 # Keys that filter by asking behavior (need special handling for reference lines)
-FILTERED_PERFORMANCE_KEYS = {"performance_asked", "performance_asked_correctly"}
+FILTERED_PERFORMANCE_KEYS = {
+    "performance_asked",
+    "performance_asked_correctly",
+    "performance_not_asked_correctly",
+}
 
 
 def parse_experiment_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
