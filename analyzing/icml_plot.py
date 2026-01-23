@@ -404,16 +404,20 @@ def plot_icml_results(
         )
 
     # Add random baseline diagonal line (from weak to oracle)
-    # Skip for filtered performance keys since the random baseline doesn't apply
-    if not disable_random_line and all_first_performances and all_x_min and y_data_key not in FILTERED_PERFORMANCE_KEYS:
-        mean_first = np.mean(all_first_performances)
+    if not disable_random_line and all_first_performances and all_x_min:
         mean_last = np.mean(all_last_performances)
         x_min = min(all_x_min)
         x_max = max(all_x_max)
 
+        # For filtered performance keys, use unfiltered weak performance
+        if y_data_key in FILTERED_PERFORMANCE_KEYS and all_weak_performances:
+            random_start = np.mean(all_weak_performances)
+        else:
+            random_start = np.mean(all_first_performances)
+
         plt.plot(
             [x_min, x_max],
-            [mean_first, mean_last],
+            [random_start, mean_last],
             color="gray",
             linestyle=":",
             alpha=0.7,
