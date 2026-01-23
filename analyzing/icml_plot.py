@@ -54,6 +54,7 @@ DATA_KEY_NAMES = {
     "performance_not_asked": "Average Reward (Did Not Ask)",
     "performance_asked_correctly": "Average Reward (True Positive)",
     "performance_not_asked_correctly": "Average Reward (True Negative)",
+    "performance_not_asked_incorrectly": "Average Reward (False Negative)",
     "ood_accuracy": "OOD Accuracy",
     "true_positive": "True Positive Rate",
     "false_positive": "False Positive Rate",
@@ -69,6 +70,7 @@ FILTERED_PERFORMANCE_KEYS = {
     "performance_asked",
     "performance_asked_correctly",
     "performance_not_asked_correctly",
+    "performance_not_asked_incorrectly",
 }
 
 

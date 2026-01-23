@@ -243,6 +243,21 @@ def extract_from_data(data, key: str) -> np.ndarray:
             else:
                 performances.append(np.nan)
         return np.array(performances)
+    elif key == "performance_not_asked_incorrectly":
+        # Performance only for episodes where agent did NOT ask BUT level IS OOD (false negative)
+        performances = []
+        for element in data["meta"]:
+            test_summary = element["summary"]["test"]
+            raw_returns = np.array(test_summary["raw_returns"])
+            level_ood_pred = np.array(test_summary["level_ood_pred"])
+            level_ood_gt = np.array(test_summary["level_ood_gt"])
+            # Filter to false negatives: did not ask but level is OOD
+            fn_mask = (level_ood_pred == 0) & (level_ood_gt == 1)
+            if fn_mask.sum() > 0:
+                performances.append(raw_returns[fn_mask].mean())
+            else:
+                performances.append(np.nan)
+        return np.array(performances)
     elif key == "afhp":
         return data["afhps"]
     elif key == "episode_length_mean":
