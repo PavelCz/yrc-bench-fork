@@ -267,7 +267,7 @@ def plot_icml_results(
         return
 
     # Set up plot style
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(8, 6))
     colors = sns.color_palette("husl", len(valid_methods))
 
     # Store weak/oracle performance for reference lines
