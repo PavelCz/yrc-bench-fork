@@ -49,6 +49,7 @@ class ThresholdPolicy(Policy):
 
         # Ensemble for ensemble_variance metric
         self.ensemble_members = None
+        self._single_weak_agent = None  # Original weak agent (for ensemble_use_single_weak)
         if self.args.metric == "ensemble_variance":
             ensemble_paths = getattr(self.args, "ensemble_members", None)
             if not ensemble_paths:
@@ -61,6 +62,9 @@ class ThresholdPolicy(Policy):
             module = importlib.import_module(f"YRC.envs.{benchmark}")
             load_fn = getattr(module, "load_policy")
 
+            # Store original weak agent for optional use in action selection
+            self._single_weak_agent = self.agent
+
             # Start with weak agent as first ensemble member
             members = [self.agent]
             for path in ensemble_paths:
@@ -72,9 +76,12 @@ class ThresholdPolicy(Policy):
             EnsemblePolicy = getattr(module, "EnsemblePolicy")
             self.agent = EnsemblePolicy(members)
             self.ensemble_members = members
+
+            use_single = getattr(self.args, "ensemble_use_single_weak", False)
             logging.info(
                 f"Loaded ensemble with {len(members)} members "
-                f"(weak agent + {len(ensemble_paths)} additional)"
+                f"(weak agent + {len(ensemble_paths)} additional), "
+                f"use_single_weak={use_single}"
             )
 
     def act(self, obs, greedy=False, return_scores_and_recons=False):
@@ -128,6 +135,15 @@ class ThresholdPolicy(Policy):
 
         agent = self.agent
         agent.eval()
+
+        # Determine which agent to use for actions
+        use_single_weak = getattr(self.args, "ensemble_use_single_weak", False)
+        if use_single_weak and self._single_weak_agent is not None:
+            action_agent = self._single_weak_agent
+            action_agent.eval()
+        else:
+            action_agent = agent
+
         obs = env.reset()
         has_done = np.array([False] * env.num_envs)
         scores = []
@@ -135,7 +151,7 @@ class ThresholdPolicy(Policy):
         while not has_done.all():
             if self.args.metric == "ensemble_variance":
                 score = self._compute_ensemble_score(obs["env_obs"])
-                logit = agent.forward(obs["env_obs"])  # mean logits from ensemble
+                logit = action_agent.forward(obs["env_obs"])
             else:
                 logit = agent.forward(obs["env_obs"])
                 score = self._compute_score(logit)

@@ -6,6 +6,7 @@ coord_policy:
         cls: ThresholdPolicy
         metric: 'logit'
         ensemble_members: null
+        ensemble_use_single_weak: false  # use original weak agent for actions (not ensemble)
     timestep_random:
         cls: TimestepRandomPolicy
         baseline: False

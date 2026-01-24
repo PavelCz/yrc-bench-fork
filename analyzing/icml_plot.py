@@ -40,6 +40,7 @@ METHOD_NAMES = {
     "svdd_image": "Image SVDD",
     "svdd_latent": "Latent SVDD",
     "ensemble": "Ensemble Variance",
+    "ensemble_single": "Ensemble Variance (Single Weak)",
     "latent-svdd": "Latent SVDD",
     "random": "Timestep Random",
     "oc-random": "Level-Based Random",

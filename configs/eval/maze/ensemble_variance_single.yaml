@@ -57,5 +57,5 @@ coord_policy:
     collect_data_agent: 'weak'
     metric: 'ensemble_variance'
     ensemble_members: null  # specify via CLI with -cp_ensemble_members
-    ensemble_use_single_weak: false  # use -cp_ensemble_use_single_weak to enable
+    ensemble_use_single_weak: true  # use single weak agent for actions
 algorithm: null

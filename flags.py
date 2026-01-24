@@ -199,6 +199,12 @@ def make():
         default=None,
         help="paths to ensemble member model checkpoints (for ensemble_variance metric)",
     )
+    parser.add_argument(
+        "-cp_ensemble_use_single_weak",
+        "--coord_policy.ensemble_use_single_weak",
+        action="store_true",
+        help="use original single weak agent for actions instead of ensemble (ensemble_variance metric)",
+    )
 
     parser.add_argument(
         "-model_config_path",

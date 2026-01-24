@@ -58,6 +58,7 @@ METHOD_CONFIGS = {
     "svdd-image": "image_svdd.yaml",
     "svdd-latent": "latent_svdd.yaml",
     "ensemble": "ensemble_variance.yaml",
+    "ensemble-single": "ensemble_variance_single.yaml",
     "wait": "wait.yaml",
 }
 
@@ -70,6 +71,7 @@ METHOD_NAMES = {
     "svdd-image": "svdd_image",
     "svdd-latent": "svdd_latent",
     "ensemble": "ensemble",
+    "ensemble-single": "ensemble_single",
     "wait": "wait",
 }
 
@@ -77,7 +79,7 @@ METHOD_NAMES = {
 SVDD_METHODS = {"svdd-image", "svdd-latent"}
 
 # Methods that require ensemble members
-ENSEMBLE_METHODS = {"ensemble"}
+ENSEMBLE_METHODS = {"ensemble", "ensemble-single"}
 
 # Default number of ensemble members (excluding weak agent which is added automatically)
 DEFAULT_NUM_ENSEMBLE_MEMBERS = 4
