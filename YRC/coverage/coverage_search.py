@@ -5,7 +5,7 @@ This module provides YRC-specific convenience functions that wrap the generic
 ACS library for the specific use case of threshold evaluation in YRC.
 """
 
-from typing import Tuple, Any, Dict
+from typing import Tuple, Any, Dict, Optional
 
 # Import the joint-coverage sampler from the external ACS library
 from acs import BinarySearchSampler
@@ -17,6 +17,49 @@ from YRC.policies.heuristic import ExponentialHeuristicPolicy, WaitPolicy
 from YRC.core import Evaluator
 import numpy as np
 
+try:
+    import wandb
+except ImportError:
+    wandb = None
+
+
+class EvalStepTracker:
+    """Tracks evaluation steps and logs metrics to wandb."""
+
+    def __init__(self, wandb_run: Optional[Any] = None):
+        self.step = 0
+        self.wandb_run = wandb_run
+
+    def log_eval(
+        self,
+        threshold: float,
+        afhp: float,
+        ood_pred_percentage: float,
+        performance: float,
+    ):
+        """Log evaluation metrics to console and wandb."""
+        self.step += 1
+
+        # Print to console
+        print(
+            f"[Eval {self.step:3d}] threshold={threshold:10.4f}, "
+            f"afhp={afhp:6.2f}%, ood_pred={ood_pred_percentage:6.2f}%, "
+            f"performance={performance:.4f}"
+        )
+
+        # Log to wandb
+        if self.wandb_run is not None and wandb is not None:
+            wandb.log(
+                {
+                    "eval/step": self.step,
+                    "eval/threshold": threshold if not np.isinf(threshold) else (1e10 if threshold > 0 else -1e10),
+                    "eval/afhp": afhp,
+                    "eval/ood_pred_percentage": ood_pred_percentage,
+                    "eval/performance": performance,
+                },
+                step=self.step,
+            )
+
 
 def create_ood_percentage_threshold_sampler(
     policy,
@@ -27,6 +70,7 @@ def create_ood_percentage_threshold_sampler(
     coverage_fraction: float = 0.10,
     max_total_evals: int = 200,
     logger=None,
+    wandb_run=None,
 ):
     """
     Create the joint-coverage sampler for threshold evaluation.
@@ -44,10 +88,12 @@ def create_ood_percentage_threshold_sampler(
         coverage_fraction: Maximum allowed normalized neighbor gap on both axes
         max_total_evals: Global evaluation budget (includes re-runs)
         logger: Optional logger for tracking evaluations
+        wandb_run: Optional wandb run for logging metrics
 
     Returns:
         JointCoverageSampler ready to run
     """
+    tracker = EvalStepTracker(wandb_run=wandb_run)
 
     def percentile_to_threshold(p: float) -> float:
         # p in [0,1]
@@ -66,8 +112,20 @@ def create_ood_percentage_threshold_sampler(
             policy, envs, [split], logger=logger, threshold=threshold, close_envs=True
         )
         level_ood_preds = summary[split]["level_ood_pred"]
-        target_metric = float(np.mean(level_ood_preds))
+        ood_pred_percentage = float(np.mean(level_ood_preds)) * 100.0
+        afhp = summary[split]["action_1_frac"] * 100.0
         performance = float(summary[split]["env_return_mean"])  # Y-axis
+
+        # Log to console and wandb
+        tracker.log_eval(
+            threshold=threshold,
+            afhp=afhp,
+            ood_pred_percentage=ood_pred_percentage,
+            performance=performance,
+        )
+
+        # Return ood_pred_percentage in [0, 1] for the sampler
+        target_metric = ood_pred_percentage / 100.0
         return target_metric, performance, {"summary": summary, "threshold": threshold}
 
     def eval_at_percentile(p: float) -> Tuple[float, float, Dict[str, Any]]:
@@ -108,6 +166,7 @@ def create_afhp_threshold_sampler(
     coverage_fraction: float = 0.10,
     max_total_evals: int = 200,
     logger=None,
+    wandb_run=None,
 ):
     """
     Create the joint-coverage sampler for threshold evaluation.
@@ -125,10 +184,12 @@ def create_afhp_threshold_sampler(
         coverage_fraction: Maximum allowed normalized neighbor gap on both axes
         max_total_evals: Global evaluation budget (includes re-runs)
         logger: Optional logger for tracking evaluations
+        wandb_run: Optional wandb run for logging metrics
 
     Returns:
         JointCoverageSampler ready to run
     """
+    tracker = EvalStepTracker(wandb_run=wandb_run)
 
     def percentile_to_threshold(p: float) -> float:
         # p in [0,1]
@@ -146,8 +207,19 @@ def create_afhp_threshold_sampler(
         summary = evaluator.eval(
             policy, envs, [split], logger=logger, threshold=threshold, close_envs=True
         )
+        level_ood_preds = summary[split]["level_ood_pred"]
+        ood_pred_percentage = float(np.mean(level_ood_preds)) * 100.0
         afhp = summary[split]["action_1_frac"] * 100.0
         performance = float(summary[split]["env_return_mean"])  # Y-axis
+
+        # Log to console and wandb
+        tracker.log_eval(
+            threshold=threshold,
+            afhp=afhp,
+            ood_pred_percentage=ood_pred_percentage,
+            performance=performance,
+        )
+
         return afhp, performance, {"summary": summary, "threshold": threshold}
 
     def eval_at_percentile(p: float) -> Tuple[float, float, Dict[str, Any]]:

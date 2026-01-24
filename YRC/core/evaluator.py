@@ -161,6 +161,9 @@ class Evaluator:
             log = self._eval_loop(policy, envs[split], num_episodes)
 
             summary[split] = self.summarize(log)
+            # Add threshold to summary if available
+            if threshold is not None:
+                summary[split]["threshold"] = threshold
             self.write_summary(split, summary[split])
 
             # Calculate AFHP for logging
@@ -610,6 +613,11 @@ class Evaluator:
         log_str += f"mean {summary['env_return_mean']:.2f} "
         log_str += f"± {(1.96 * summary['env_return_std']) / (len(summary['raw_returns']) ** 0.5):.2f}\n"
         log_str += f"   Action {self.LOGGED_ACTION} fraction: {summary[f'action_{self.LOGGED_ACTION}_frac']:7.2f}\n"
+        if summary.get("threshold") is not None:
+            # Format threshold nicely - if infinite, print inf/-inf, else 4 decimal places
+            t = summary["threshold"]
+            t_str = f"{t:7.4f}" if np.isfinite(t) else f"{t}"
+            log_str += f"   Threshold:          {t_str}\n"
         log_str += f"   OOD Pred Percentage: {summary['ood_pred_percentage']:7.2f}\n"
         log_str += f"   OOD Accuracy: {summary['ood_accuracy']:7.2f}\n"
         if summary.get('randomize_goal_percentage') is not None:

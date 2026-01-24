@@ -146,6 +146,7 @@ def main():
             coverage_fraction=coverage_fraction,
             max_total_evals=max_total_evals,
             logger=wandb_logger,
+            wandb_run=exp,
         )
     elif threshold_sampler == "ood_percentage":
         sampler = create_ood_percentage_threshold_sampler(
@@ -156,6 +157,7 @@ def main():
             coverage_fraction=coverage_fraction,
             max_total_evals=max_total_evals,
             logger=wandb_logger,
+            wandb_run=exp,
         )
     else:
         raise ValueError(f"Invalid threshold sampler: {threshold_sampler}")
