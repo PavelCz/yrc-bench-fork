@@ -290,6 +290,10 @@ def make():
         "Uses ood_eval seeds in sequential mode for evaluation.",
     )
 
+    parser.add_argument(
+        "-npz_file", "--npz_file", type=str, help="Path to NPZ file with evaluation results"
+    )
+
     parser.add_argument("-seed", "--general.seed", type=int, help="random seed")
 
     parser.add_argument(

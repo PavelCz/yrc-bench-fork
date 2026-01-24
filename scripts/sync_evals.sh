@@ -9,7 +9,7 @@ EXPS=("exp0" "exp1" "exp2")
 
 for env in "${ENVS[@]}"; do
   for exp in "${EXPS[@]}"; do
-    src_dir="${SRC_BASE}/imcl04_${env}_${exp}"
+    src_dir="${SRC_BASE}/icml-test_${env}_${exp}"
     dst_dir="${DST_BASE}/"
 
     echo "Syncing ${src_dir} -> ${dst_dir}"
