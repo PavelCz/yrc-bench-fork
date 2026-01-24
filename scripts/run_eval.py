@@ -30,6 +30,7 @@ EVAL_DEFAULTS = {
     "cp_rolling_average": "none",
     "video_logging_mode": "wandb",
     "video_filter_mode": "any",
+    "coverage_fraction": 0.05,
 }
 
 # Server-specific paths
@@ -268,6 +269,7 @@ def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str, qos: st
         f"-weak {eval_args['weak']}",
         f"-strong {eval_args['strong']}",
         f"-level_seeds_file {eval_args['level_seeds_file']}",
+        f"-coverage_fraction {eval_args['coverage_fraction']}",
     ]
 
     # Add SVDD-specific arguments if present
@@ -397,6 +399,12 @@ def main():
         "--video-filter-mode",
         default=EVAL_DEFAULTS["video_filter_mode"],
         help="Video filter mode",
+    )
+    parser.add_argument(
+        "--coverage-fraction",
+        type=float,
+        default=EVAL_DEFAULTS["coverage_fraction"],
+        help=f"Coverage fraction for threshold sampling (default: {EVAL_DEFAULTS['coverage_fraction']})",
     )
     # Override checkpoints if needed
     parser.add_argument("--sim", help="Override sim weak checkpoint path")
@@ -530,6 +538,7 @@ def main():
             "cp_rolling_average": args.cp_rolling_average,
             "video_logging_mode": args.video_logging_mode,
             "video_filter_mode": args.video_filter_mode,
+            "coverage_fraction": args.coverage_fraction,
             "level_seeds_file": str(level_seeds_file),
             "svdd_model_path": svdd_model_path,
             "cp_feature": cp_feature,
