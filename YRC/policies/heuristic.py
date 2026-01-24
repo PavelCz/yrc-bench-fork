@@ -21,8 +21,13 @@ class ExponentialHeuristicPolicy(Policy):
         self.device = get_global_variable("device")
         self.timestep = 0
         
-    def reset_episode(self):
-        """Reset the timestep counter at the start of a new episode."""
+    def reset_episode(self, env_idx: int = None):
+        """Reset the timestep counter at the start of a new episode.
+
+        Args:
+            env_idx: Ignored for this policy (uses single counter for simplicity
+                    since the policy is stochastic anyway).
+        """
         self.timestep = 0
 
     def act(self, obs, greedy=False, return_scores_and_recons=False):
@@ -41,7 +46,7 @@ class ExponentialHeuristicPolicy(Policy):
         # Therefore: P(not detect OOD) = non_ood_starting_prob^t
         current_non_ood_prob = self.non_ood_starting_prob ** self.timestep
         current_prob = 1 - current_non_ood_prob
-        
+
         # Increment timestep for next call
         self.timestep += 1
 
@@ -79,16 +84,26 @@ class WaitPolicy(Policy):
     Simple heuristic: wait for n timesteps, then always ask for help.
 
     The threshold parameter controls n (number of timesteps to wait).
+    Maintains per-environment timestep counters for vectorized environments.
     """
 
     def __init__(self, config, env):
         self.device = get_global_variable("device")
-        self.timestep = 0
+        self.num_envs = env.num_envs
+        self.timesteps = np.zeros(self.num_envs, dtype=np.int32)
         self.threshold = 0  # Number of timesteps to wait before asking
 
-    def reset_episode(self):
-        """Reset the timestep counter at the start of a new episode."""
-        self.timestep = 0
+    def reset_episode(self, env_idx: int = None):
+        """Reset the timestep counter at the start of a new episode.
+
+        Args:
+            env_idx: If provided, reset only that environment's counter.
+                    If None, reset all counters (for compatibility).
+        """
+        if env_idx is not None:
+            self.timesteps[env_idx] = 0
+        else:
+            self.timesteps[:] = 0
 
     def act(self, obs, greedy=False, return_scores_and_recons=False):
         benchmark = get_global_variable("benchmark")
@@ -96,22 +111,19 @@ class WaitPolicy(Policy):
 
         if isinstance(env_obs, dict):
             if benchmark == "cliport":
-                action_shape = (1,)
+                num_envs = 1
             elif benchmark == "minigrid":
-                action_shape = (env_obs["direction"].shape[0],)
+                num_envs = env_obs["direction"].shape[0]
         else:
-            action_shape = (env_obs.shape[0],)
+            num_envs = env_obs.shape[0]
 
-        # Ask for help if we've waited enough timesteps
-        should_ask = self.timestep >= self.threshold
+        # Ask for help if we've waited enough timesteps (per environment)
+        should_ask = self.timesteps[:num_envs] >= self.threshold
 
-        # Increment timestep for next call
-        self.timestep += 1
+        # Increment timesteps for next call
+        self.timesteps[:num_envs] += 1
 
-        if should_ask:
-            action = torch.ones(action_shape, dtype=torch.int, device=self.device)
-        else:
-            action = torch.zeros(action_shape, dtype=torch.int, device=self.device)
+        action = torch.tensor(should_ask.astype(np.int32), device=self.device)
 
         if return_scores_and_recons:
             return action.cpu().numpy(), None, None
@@ -136,14 +148,16 @@ class WaitPolicy(Policy):
         """
         Take a percentile and return the threshold for that percentile.
 
-        For this policy, we map percentile to timesteps.
-        Higher percentile = ask for help more = lower threshold (wait less).
-        At 0% AFHP, threshold is very high (never ask).
-        At 100% AFHP, threshold is 0 (always ask from start).
+        Note: percentile_to_threshold already inverts the target AFHP before
+        calling this. So if we want 10% AFHP, this receives percentile=90.
 
-        We use a max episode length of 1000 as reference.
+        To achieve X% AFHP: threshold = episode_length * (100-X) / 100
+        Since we receive (100-X) as percentile, we just use percentile directly.
+
+        We use a typical Procgen episode length of ~300 as reference.
         """
-        max_timesteps = 1000
-        # Invert: 0% -> max_timesteps, 100% -> 0
-        threshold = int(max_timesteps * (100 - percentile) / 100)
+        typical_episode_length = 300
+        # percentile is already inverted (90 means want 10% AFHP)
+        # threshold = episode_length * percentile / 100
+        threshold = int(typical_episode_length * percentile / 100)
         return threshold
