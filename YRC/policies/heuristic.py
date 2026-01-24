@@ -93,6 +93,13 @@ class WaitPolicy(Policy):
         self.timesteps = np.zeros(self.num_envs, dtype=np.int32)
         self.threshold = 0  # Number of timesteps to wait before asking
 
+        # Get max episode length from config for threshold sampling
+        max_steps = getattr(config.environment.common, "max_steps", None)
+        if max_steps is None:
+            # Default Procgen timeout is 1000, but many envs use 500
+            max_steps = 1000
+        self.max_episode_length = max_steps
+
     def reset_episode(self, env_idx: int = None):
         """Reset the timestep counter at the start of a new episode.
 
@@ -154,10 +161,9 @@ class WaitPolicy(Policy):
         To achieve X% AFHP: threshold = episode_length * (100-X) / 100
         Since we receive (100-X) as percentile, we just use percentile directly.
 
-        We use a typical Procgen episode length of ~300 as reference.
+        Uses max_episode_length from environment config.
         """
-        typical_episode_length = 300
         # percentile is already inverted (90 means want 10% AFHP)
         # threshold = episode_length * percentile / 100
-        threshold = int(typical_episode_length * percentile / 100)
+        threshold = int(self.max_episode_length * percentile / 100)
         return threshold
