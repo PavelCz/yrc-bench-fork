@@ -121,7 +121,7 @@ def parse_method_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
 
 def extract_icml_results(
     eval_dir: Path,
-    prefix_filter: Optional[str] = None,
+    prefix_filter: Optional[List[str]] = None,
     env_filter: Optional[str] = None,
 ) -> Dict[str, Dict[int, Path]]:
     """
@@ -129,7 +129,7 @@ def extract_icml_results(
 
     Args:
         eval_dir: Directory containing evaluation results
-        prefix_filter: Only include runs with this prefix
+        prefix_filter: Only include runs with these prefixes (list)
         env_filter: Only include runs for this environment
 
     Returns:
@@ -148,7 +148,7 @@ def extract_icml_results(
         prefix, env, exp_id = parsed
 
         # Apply filters
-        if prefix_filter is not None and prefix != prefix_filter:
+        if prefix_filter is not None and prefix not in prefix_filter:
             continue
         if env_filter is not None and env != env_filter:
             continue
@@ -232,7 +232,7 @@ def interpolate_to_common_x(
 
 def plot_icml_results(
     eval_dir: Path,
-    prefix_filter: Optional[str],
+    prefix_filter: Optional[List[str]],
     env_filter: Optional[str],
     x_data_key: str,
     y_data_key: str,
@@ -249,7 +249,7 @@ def plot_icml_results(
 
     Args:
         eval_dir: Directory containing evaluation results
-        prefix_filter: Only include runs with this prefix
+        prefix_filter: Only include runs with these prefixes (list)
         env_filter: Only include runs for this environment
         x_data_key: Key for x-axis data
         y_data_key: Key for y-axis data
@@ -436,7 +436,7 @@ def plot_icml_results(
 
     # Labels and title
     env_str = env_filter if env_filter else "all"
-    prefix_str = prefix_filter if prefix_filter else "all"
+    prefix_str = ",".join(prefix_filter) if prefix_filter else "all"
     error_type = "SE" if use_stderr else "SD"
 
     # Get display names for axis labels
@@ -466,7 +466,7 @@ def plot_icml_results(
 
 
 def list_available_methods(
-    eval_dir: Path, prefix_filter: Optional[str], env_filter: Optional[str]
+    eval_dir: Path, prefix_filter: Optional[List[str]], env_filter: Optional[str]
 ):
     """List available methods and their experiment coverage."""
     results = extract_icml_results(eval_dir, prefix_filter, env_filter)
@@ -496,8 +496,9 @@ def main():
     parser.add_argument(
         "--prefix",
         type=str,
+        nargs="+",
         default=None,
-        help="Prefix filter for experiment directories (e.g., 'imcl04')",
+        help="Prefix filter(s) for experiment directories (e.g., 'icml04' or 'icml04 icml05')",
     )
     parser.add_argument(
         "--env",
