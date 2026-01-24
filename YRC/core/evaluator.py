@@ -228,6 +228,8 @@ class Evaluator:
             "invisible_coin_collected": [],  # Whether coin was collected this episode
             # First timestep when OOD was predicted (None if never predicted)
             "first_ood_timestep": [],
+            # Level seeds for each completed episode
+            "level_seeds": [],
             # Track total number of finished episodes
             "num_finished_episodes": 0,
         }
@@ -419,6 +421,8 @@ class Evaluator:
                         )
                         # Log first OOD timestep (None if never predicted)
                         log["first_ood_timestep"].append(first_ood_timestep[i])
+                        # Log level seed (use prev_level_seed since info updates after step)
+                        log["level_seeds"].append(int(info[i].get("prev_level_seed", -1)))
 
                     # Always increment episode counter (for upper bound check)
                     num_episodes += 1
@@ -594,6 +598,8 @@ class Evaluator:
             # Episode outcome information
             "invisible_coin_collected": log["invisible_coin_collected"],
             "first_ood_timestep": log["first_ood_timestep"],
+            # Level seeds for each completed episode
+            "level_seeds": log["level_seeds"],
         }
 
     def write_summary(self, split, summary):
