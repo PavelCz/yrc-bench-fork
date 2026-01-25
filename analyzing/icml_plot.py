@@ -244,6 +244,7 @@ def plot_icml_results(
     disable_random_line: bool = False,
     save_path: Optional[str] = None,
     title: Optional[str] = None,
+    no_aggregate: bool = False,
 ):
     """
     Plot ICML results with aggregation across experiments.
@@ -261,6 +262,7 @@ def plot_icml_results(
         disable_random_line: Disable random baseline diagonal line
         save_path: Path to save the figure
         title: Custom title for the plot (overrides auto-generated title)
+        no_aggregate: Plot experiments separately instead of aggregating
     """
     results = extract_icml_results(eval_dir, prefix_filter, env_filter)
 
@@ -338,22 +340,65 @@ def plot_icml_results(
         if len(x_arrays) == 0:
             print(f"Warning: No valid data for {method}, skipping...")
             continue
+        
+        # Print AFHP values for wait policy
+        if method == "wait" and x_data_key in ["afhp", "ood_pred_percentage"]:
+            print(f"\n=== Wait Policy AFHP Values ===")
+            for exp_idx, x_values in enumerate(x_arrays):
+                print(f"Experiment {exp_ids[exp_idx]}: {sorted(set(x_values))}")
+            all_afhp_values = set()
+            for x in x_arrays:
+                all_afhp_values.update(x)
+            print(f"All unique AFHP values across experiments: {sorted(all_afhp_values)}")
+            print(f"Total unique values: {len(all_afhp_values)}")
 
         # Get display name
         label = METHOD_NAMES.get(method, method)
 
-        if len(x_arrays) == 1:
-            # Single experiment, just plot the line
-            x, y = x_arrays[0], y_arrays[0]
-            sort_idx = np.argsort(x)
-            plt.plot(
-                x[sort_idx],
-                y[sort_idx],
-                label=f"{label} (n=1)",
-                color=colors[method_idx],
-                marker="o",
-                markersize=4,
-            )
+        if len(x_arrays) == 1 or no_aggregate:
+            # Single experiment or no aggregation mode
+            if no_aggregate and len(x_arrays) > 1:
+                # Plot each experiment separately with slightly different shades
+                base_color = colors[method_idx]
+                for i, (x, y, exp_id) in enumerate(zip(x_arrays, y_arrays, exp_ids)):
+                    sort_idx = np.argsort(x)
+                    # Vary alpha or lightness for different experiments
+                    alpha = 0.7 + (i / len(x_arrays)) * 0.3
+                    exp_label = f"{label} exp{exp_id}"
+                    
+                    # Add markers for wait policy
+                    if method == "wait":
+                        plt.plot(
+                            x[sort_idx],
+                            y[sort_idx],
+                            label=exp_label,
+                            color=base_color,
+                            alpha=alpha,
+                            marker="o",
+                            markersize=3,
+                            linewidth=1.5,
+                        )
+                    else:
+                        plt.plot(
+                            x[sort_idx],
+                            y[sort_idx],
+                            label=exp_label,
+                            color=base_color,
+                            alpha=alpha,
+                            linewidth=1.5,
+                        )
+            else:
+                # Single experiment
+                x, y = x_arrays[0], y_arrays[0]
+                sort_idx = np.argsort(x)
+                plt.plot(
+                    x[sort_idx],
+                    y[sort_idx],
+                    label=f"{label} (n=1)",
+                    color=colors[method_idx],
+                    marker="o" if method == "wait" else None,
+                    markersize=4,
+                )
         else:
             # Multiple experiments, aggregate
             common_x, interpolated_y = interpolate_to_common_x(x_arrays, y_arrays)
@@ -567,6 +612,11 @@ def main():
         action="store_true",
         help="List available methods and exit",
     )
+    parser.add_argument(
+        "--no_aggregate",
+        action="store_true",
+        help="Plot experiments separately instead of aggregating",
+    )
 
     args = parser.parse_args()
 
@@ -594,6 +644,7 @@ def main():
         disable_random_line=args.disable_random_line,
         save_path=args.save,
         title=args.title,
+        no_aggregate=args.no_aggregate,
     )
 
 
