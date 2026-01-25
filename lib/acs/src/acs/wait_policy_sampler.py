@@ -47,13 +47,13 @@ class WaitPolicyAwareSampler(BinarySearchSampler):
             return 0
             
         # Check if we're getting multiple samples with the same output value
-        if self.is_wait_policy and len(self.all_samples) >= 6:
+        if self.is_wait_policy and len(self.all_samples) >= 4:
             # Look at recent samples to detect if we're stuck
-            recent_samples = self.all_samples[-5:]
+            recent_samples = self.all_samples[-3:]
             recent_outputs = [s.afhp for s in recent_samples]
             
-            # If last 5 samples have very similar output values (within 1% of range)
-            output_range_tolerance = 0.01  # 1% of [0,1] range
+            # If last 3 samples have very similar output values (within 2% of range)
+            output_range_tolerance = 0.02  # 2% of [0,1] range
             if max(recent_outputs) - min(recent_outputs) < output_range_tolerance:
                 # Check corresponding thresholds to see if we're exploring a narrow range
                 recent_thresholds = []
@@ -63,11 +63,11 @@ class WaitPolicyAwareSampler(BinarySearchSampler):
                         if threshold < 10000:  # Exclude infinity placeholders
                             recent_thresholds.append(threshold)
                 
-                if len(recent_thresholds) >= 4:
+                if len(recent_thresholds) >= 3:
                     # Check if we're in a narrow threshold range relative to max_episode_length
                     threshold_range = max(recent_thresholds) - min(recent_thresholds)
-                    # If exploring less than 2% of the episode length range
-                    if threshold_range < 0.02 * self.max_episode_length:
+                    # If exploring less than 5% of the episode length range
+                    if threshold_range < 0.05 * self.max_episode_length:
                         # We're stuck exploring a narrow threshold range with no output change
                         self.detected_unfillable_region = True
                         remaining = self.bins_remaining(left_bin_idx, right_bin_idx)

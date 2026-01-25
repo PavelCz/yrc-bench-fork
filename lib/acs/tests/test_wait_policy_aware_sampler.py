@@ -167,7 +167,7 @@ def test_wait_policy_30_percent_timeout():
         print(f"\nWARNING: Unexpected early stop reason: {result.early_stop_reason}")
     
     # Check that we explored a reasonable range
-    if len(thresholds_evaluated) < 6:
+    if len(thresholds_evaluated) < 4:
         print(f"\nWARNING: Only {len(thresholds_evaluated)} evaluations performed")
     
     # Check that we explored both low and high thresholds
