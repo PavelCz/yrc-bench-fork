@@ -75,8 +75,10 @@ def create_wait_policy_evaluator(
         # Track the threshold
         thresholds_evaluated.append(threshold)
         
-        # Count episodes where we ask for help (episode_length < threshold)
-        asked_for_help = np.sum(episode_lengths < threshold)
+        # For WaitPolicy: we wait 'threshold' timesteps, then ask for help
+        # So episodes ending before threshold don't ask for help
+        # Episodes lasting >= threshold do ask for help
+        asked_for_help = np.sum(episode_lengths >= threshold)
         ood_pred_percentage = (asked_for_help / len(episode_lengths)) * 100.0
         
         # Simulate performance (higher threshold = lower performance)
@@ -147,7 +149,7 @@ def test_wait_policy_30_percent_timeout():
     # Debug: Check what ood_pred values we get at different thresholds
     print("\nDebug - Sample threshold evaluations:")
     for test_threshold in [0, 100, 200, 300, 400, 490, 495, 499, 500, 501]:
-        asked = np.sum(episode_lengths < test_threshold)
+        asked = np.sum(episode_lengths >= test_threshold)
         ood_pred = (asked / len(episode_lengths)) * 100.0
         print(f"  Threshold {test_threshold}: {ood_pred:.1f}% ask for help")
     
