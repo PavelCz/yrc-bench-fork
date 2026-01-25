@@ -19,11 +19,10 @@ def rollout(policy, env, num_episodes):
     """
     Rollout the policy on the environment and collect episode returns.
     Using greedy=True by default for strong agent evaluation.
+    
+    Note: num_episodes does NOT need to be divisible by num_envs.
+    We simply collect episodes until we have enough.
     """
-    assert num_episodes % env.num_envs == 0, (
-        f"num_episodes ({num_episodes}) must be divisible by num_envs ({env.num_envs})"
-    )
-
     returns = []
     num_completed = 0
     target_episodes = num_episodes
