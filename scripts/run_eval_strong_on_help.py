@@ -210,7 +210,8 @@ def build_sbatch_command(
     strong_path: str, 
     config_path: str,
     conda_env: str, 
-    qos: str = "default"
+    qos: str = "default",
+    overwrite: bool = False,
 ) -> str:
     """Build the sbatch command string."""
     # Override QOS in SLURM config
@@ -220,6 +221,8 @@ def build_sbatch_command(
 
     # Build the python command
     python_cmd = f"python eval_strong_on_help.py -c {config_path} -n {job_name} --npz_file {npz_file} -strong {strong_path}"
+    if overwrite:
+        python_cmd += " --overwrite"
 
     sbatch_script = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
@@ -241,10 +244,11 @@ def submit_job(
     config_path: str,
     conda_env: str,
     qos: str = "default",
+    overwrite: bool = False,
     dry_run: bool = False,
 ) -> None:
     """Submit a single job via sbatch."""
-    sbatch_script = build_sbatch_command(job_name, npz_file, strong_path, config_path, conda_env, qos)
+    sbatch_script = build_sbatch_command(job_name, npz_file, strong_path, config_path, conda_env, qos, overwrite)
 
     if dry_run:
         print(f"=== Job: {job_name} ===")
@@ -326,6 +330,11 @@ def main():
         default=None,
         help="Override config file path (YAML config, e.g., configs/eval/coinrun/max_prob.yaml)",
     )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite experiment folder if it exists",
+    )
     args = parser.parse_args()
 
     # Get server-specific paths
@@ -406,6 +415,7 @@ def main():
             print(f"  Strong:   {strong_path}")
             print(f"  Config:   {effective_config}")
             print(f"  Output:   {output_path}")
+            print(f"  Overwrite: {args.overwrite}")
             print()
         else:
             submit_job(
@@ -415,6 +425,7 @@ def main():
                 effective_config,
                 args.conda_env,
                 args.qos,
+                overwrite=args.overwrite,
                 dry_run=False,
             )
         
