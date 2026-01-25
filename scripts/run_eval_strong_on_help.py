@@ -40,6 +40,19 @@ SERVER_PATHS = {
 # Environment choices
 ENVS = ["maze", "coinrun"]
 
+# Method to config file mapping (same as run_eval.py)
+METHOD_CONFIGS = {
+    "max_prob": "max_prob.yaml",
+    "max_logit": "max_logit.yaml",
+    "lb_random": "level_based_random.yaml",
+    "ts_random": "timestep_random.yaml",
+    "svdd_image": "image_svdd.yaml",
+    "svdd_latent": "latent_svdd.yaml",
+    "ensemble": "ensemble_variance.yaml",
+    "ensemble_single": "ensemble_variance_single.yaml",
+    "wait": "wait.yaml",
+}
+
 EXPECTED_TIMESTEPS = 200015872
 
 
@@ -142,7 +155,7 @@ def find_eval_npz_files(
         method_filter: Optional method name filter (e.g., "max_prob")
     
     Returns:
-        List of tuples: (npz_path, method_name, exp_id, config_path)
+        List of tuples: (npz_path, method_name, exp_id)
     """
     evals_path = Path(evals_base)
     results = []
@@ -185,12 +198,8 @@ def find_eval_npz_files(
                 print(f"Warning: No NPZ files found in {ts_dir}")
                 continue
             
-            # Also look for config.json to get the original config
-            config_file = ts_dir / "config.json"
-            config_path = str(config_file) if config_file.exists() else None
-            
             for npz_file in npz_files:
-                results.append((npz_file, method_name, exp_id, config_path))
+                results.append((npz_file, method_name, exp_id))
     
     return results
 
@@ -315,7 +324,7 @@ def main():
     parser.add_argument(
         "--config",
         default=None,
-        help="Override config file path (use instead of config.json from eval dir)",
+        help="Override config file path (YAML config, e.g., configs/eval/coinrun/max_prob.yaml)",
     )
     args = parser.parse_args()
 
@@ -349,7 +358,7 @@ def main():
     submitted = 0
     skipped = 0
     
-    for npz_path, method_name, exp_id, config_path in npz_files:
+    for npz_path, method_name, exp_id in npz_files:
         # Get strong checkpoint
         if args.strong:
             strong_path = args.strong
@@ -366,10 +375,18 @@ def main():
             skipped += 1
             continue
         
-        # Determine config path
-        effective_config = args.config or config_path
-        if not effective_config or not Path(effective_config).exists():
-            print(f"Warning: Config not found for {npz_path}, skipping")
+        # Determine config path - use YAML config based on method name
+        if args.config:
+            effective_config = args.config
+        elif method_name in METHOD_CONFIGS:
+            effective_config = f"configs/eval/{args.env}/{METHOD_CONFIGS[method_name]}"
+        else:
+            print(f"Warning: Unknown method '{method_name}' for {npz_path}, skipping")
+            skipped += 1
+            continue
+        
+        if not Path(effective_config).exists():
+            print(f"Warning: Config not found: {effective_config}, skipping")
             skipped += 1
             continue
         
