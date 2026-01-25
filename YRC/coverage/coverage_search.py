@@ -8,7 +8,7 @@ ACS library for the specific use case of threshold evaluation in YRC.
 from typing import Tuple, Any, Dict, Optional
 
 # Import the joint-coverage sampler from the external ACS library
-from acs import BinarySearchSampler
+from acs import BinarySearchSampler, SamplingResult
 from YRC.policies.ood import OODPolicy
 from YRC.policies.lightning_ae import LightningAEPolicy
 from YRC.policies.base import TimestepRandomPolicy, LevelBasedRandomPolicy
@@ -61,6 +61,53 @@ class EvalStepTracker:
             )
 
 
+class WaitPolicyAwareSampler(BinarySearchSampler):
+    """Custom sampler that detects WaitPolicy limitations and stops early when appropriate."""
+    
+    def __init__(self, policy, thresholds_evaluated, max_episode_length, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.policy = policy
+        self.thresholds_evaluated = thresholds_evaluated
+        self.max_episode_length = max_episode_length
+    
+    def binary_search_fill(self, left_input, right_input, left_bin_idx, right_bin_idx):
+        # Check if we should stop early for WaitPolicy
+        if isinstance(self.policy, WaitPolicy) and len(self.thresholds_evaluated) >= 4:
+            # Check if we've explored a reasonable range but still have gaps
+            sorted_thresholds = sorted([t for t in self.thresholds_evaluated if t < 10000])
+            if len(sorted_thresholds) >= 4:
+                min_threshold = min(sorted_thresholds)
+                max_threshold = max(sorted_thresholds)
+                # If we've tested low (<=2) and high (>=max_episode_length-1) thresholds
+                # and still have empty bins, we can't fill them
+                if min_threshold <= 2 and max_threshold >= self.max_episode_length - 1:
+                    remaining_bins = self.bins_remaining(left_bin_idx, right_bin_idx)
+                    if remaining_bins:
+                        print(f"WaitPolicy: Explored thresholds {min_threshold}-{max_threshold} but cannot fill remaining bins, stopping early")
+                        return 0
+        return super().binary_search_fill(left_input, right_input, left_bin_idx, right_bin_idx)
+    
+    def _create_sampling_result(self):
+        result = super()._create_sampling_result()
+        # Add early stop reason if we couldn't fill all bins with WaitPolicy
+        if isinstance(self.policy, WaitPolicy) and len(self.thresholds_evaluated) >= 4:
+            sorted_thresholds = sorted([t for t in self.thresholds_evaluated if t < 10000])
+            if len(sorted_thresholds) >= 4:
+                min_threshold = min(sorted_thresholds)
+                max_threshold = max(sorted_thresholds)
+                if min_threshold <= 2 and max_threshold >= self.max_episode_length - 1 and result.info.get("bins_filled", 0) < result.info.get("total_bins", 0):
+                    result = SamplingResult(
+                        points=result.points,
+                        coverage_x_max_gap=result.coverage_x_max_gap,
+                        coverage_y_max_gap=result.coverage_y_max_gap,
+                        total_evals=result.total_evals,
+                        early_stop_reason="WaitPolicy: Cannot fill all bins due to discrete episode length distribution",
+                        monotonicity_violations_remaining=result.monotonicity_violations_remaining,
+                        info=result.info,
+                    )
+        return result
+
+
 def create_ood_percentage_threshold_sampler(
     policy,
     evaluator: Evaluator,
@@ -94,6 +141,14 @@ def create_ood_percentage_threshold_sampler(
         JointCoverageSampler ready to run
     """
     tracker = EvalStepTracker(wandb_run=wandb_run)
+    
+    # Track threshold values seen for WaitPolicy
+    thresholds_evaluated = []
+    
+    # Get max episode length for WaitPolicy
+    max_episode_length = None
+    if isinstance(policy, WaitPolicy):
+        max_episode_length = getattr(policy, 'max_episode_length', 500)
 
     def percentile_to_threshold(p: float) -> float:
         # p in [0,1]
@@ -105,6 +160,17 @@ def create_ood_percentage_threshold_sampler(
 
     def _eval_with_threshold(threshold: float) -> Tuple[float, float, Dict[str, Any]]:
         update_policy_params(policy, threshold)
+        
+        # Track thresholds for WaitPolicy
+        if isinstance(policy, WaitPolicy) and max_episode_length is not None:
+            # Convert inf thresholds to actual values for tracking
+            actual_threshold = threshold
+            if threshold == float("inf"):
+                actual_threshold = 10000
+            elif threshold == float("-inf"):
+                actual_threshold = 0
+            thresholds_evaluated.append(actual_threshold)
+        
         # Create fresh environments for each evaluation to ensure reproducibility
         # Each evaluation sees the same seeds in the same order
         envs = envs_factory()
@@ -146,15 +212,28 @@ def create_ood_percentage_threshold_sampler(
     # Convert coverate fraction to num_bins
     num_bins = int(1.0 / coverage_fraction)
 
-    return BinarySearchSampler(
-        eval_at_percentile=eval_at_percentile,
-        eval_at_lower_extreme=eval_at_lower_extreme,
-        eval_at_upper_extreme=eval_at_upper_extreme,
-        num_bins=num_bins,
-        # AFHP uses [0, 100] interval, here we use [0, 1]
-        output_range=(0.0, 1.0),
-        # max_total_evals=max_total_evals,
-    )
+    # Use WaitPolicyAwareSampler if we have a WaitPolicy, otherwise use regular BinarySearchSampler
+    if isinstance(policy, WaitPolicy):
+        return WaitPolicyAwareSampler(
+            policy=policy,
+            thresholds_evaluated=thresholds_evaluated,
+            max_episode_length=max_episode_length,
+            eval_at_percentile=eval_at_percentile,
+            eval_at_lower_extreme=eval_at_lower_extreme,
+            eval_at_upper_extreme=eval_at_upper_extreme,
+            num_bins=num_bins,
+            # AFHP uses [0, 100] interval, here we use [0, 1]
+            output_range=(0.0, 1.0),
+        )
+    else:
+        return BinarySearchSampler(
+            eval_at_percentile=eval_at_percentile,
+            eval_at_lower_extreme=eval_at_lower_extreme,
+            eval_at_upper_extreme=eval_at_upper_extreme,
+            num_bins=num_bins,
+            # AFHP uses [0, 100] interval, here we use [0, 1]
+            output_range=(0.0, 1.0),
+        )
 
 
 def create_afhp_threshold_sampler(
@@ -190,6 +269,14 @@ def create_afhp_threshold_sampler(
         JointCoverageSampler ready to run
     """
     tracker = EvalStepTracker(wandb_run=wandb_run)
+    
+    # Track threshold values seen for WaitPolicy
+    thresholds_evaluated = []
+    
+    # Get max episode length for WaitPolicy
+    max_episode_length = None
+    if isinstance(policy, WaitPolicy):
+        max_episode_length = getattr(policy, 'max_episode_length', 500)
 
     def percentile_to_threshold(p: float) -> float:
         # p in [0,1]
@@ -201,6 +288,17 @@ def create_afhp_threshold_sampler(
 
     def _eval_with_threshold(threshold: float) -> Tuple[float, float, Dict[str, Any]]:
         update_policy_params(policy, threshold)
+        
+        # Track thresholds for WaitPolicy
+        if isinstance(policy, WaitPolicy) and max_episode_length is not None:
+            # Convert inf thresholds to actual values for tracking
+            actual_threshold = threshold
+            if threshold == float("inf"):
+                actual_threshold = 10000
+            elif threshold == float("-inf"):
+                actual_threshold = 0
+            thresholds_evaluated.append(actual_threshold)
+        
         # Create fresh environments for each evaluation to ensure reproducibility
         # Each evaluation sees the same seeds in the same order
         envs = envs_factory()
@@ -240,13 +338,24 @@ def create_afhp_threshold_sampler(
     # Convert coverate fraction to num_bins
     num_bins = int(1.0 / coverage_fraction)
 
-    return BinarySearchSampler(
-        eval_at_percentile=eval_at_percentile,
-        eval_at_lower_extreme=eval_at_lower_extreme,
-        eval_at_upper_extreme=eval_at_upper_extreme,
-        num_bins=num_bins,
-        # max_total_evals=max_total_evals,
-    )
+    # Use WaitPolicyAwareSampler if we have a WaitPolicy, otherwise use regular BinarySearchSampler
+    if isinstance(policy, WaitPolicy):
+        return WaitPolicyAwareSampler(
+            policy=policy,
+            thresholds_evaluated=thresholds_evaluated,
+            max_episode_length=max_episode_length,
+            eval_at_percentile=eval_at_percentile,
+            eval_at_lower_extreme=eval_at_lower_extreme,
+            eval_at_upper_extreme=eval_at_upper_extreme,
+            num_bins=num_bins,
+        )
+    else:
+        return BinarySearchSampler(
+            eval_at_percentile=eval_at_percentile,
+            eval_at_lower_extreme=eval_at_lower_extreme,
+            eval_at_upper_extreme=eval_at_upper_extreme,
+            num_bins=num_bins,
+        )
 
 
 def update_policy_params(policy, threshold):
