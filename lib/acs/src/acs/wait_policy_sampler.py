@@ -48,35 +48,45 @@ class WaitPolicyAwareSampler(BinarySearchSampler):
             
         # Check if we're getting multiple samples with the same output value
         if self.is_wait_policy and len(self.all_samples) >= 4:
-            # Look at recent samples to detect if we're stuck
-            recent_samples = self.all_samples[-3:]
-            recent_outputs = [s.afhp for s in recent_samples]
+            # Filter samples to only those within the current search region
+            # Use percentile (desired_percentile) to determine if sample is in current range
+            region_samples = [
+                s for s in self.all_samples 
+                if left_input <= s.desired_percentile <= right_input
+            ]
             
-            # If last 3 samples have very similar output values (within 2% of range)
-            output_range_tolerance = 0.02  # 2% of [0,1] range
-            if max(recent_outputs) - min(recent_outputs) < output_range_tolerance:
-                # Check corresponding thresholds to see if we're exploring a narrow range
-                recent_thresholds = []
-                for s in recent_samples:
-                    if s.meta and 'threshold' in s.meta:
-                        threshold = s.meta['threshold']
-                        if threshold < 10000:  # Exclude infinity placeholders
-                            recent_thresholds.append(threshold)
+            # Need at least 3 samples in this region to detect plateau
+            if len(region_samples) >= 3:
+                # Look at recent samples in this region
+                recent_samples = region_samples[-3:]
+                recent_outputs = [s.afhp for s in recent_samples]
                 
-                if len(recent_thresholds) >= 3:
-                    # Check if we're in a narrow threshold range relative to max_episode_length
-                    threshold_range = max(recent_thresholds) - min(recent_thresholds)
-                    # If exploring less than 5% of the episode length range
-                    if threshold_range < 0.05 * self.max_episode_length:
-                        # We're stuck exploring a narrow threshold range with no output change
-                        self.detected_unfillable_region = True
-                        remaining = self.bins_remaining(left_bin_idx, right_bin_idx)
-                        if remaining and self.verbose:
-                            avg_output = sum(recent_outputs) / len(recent_outputs)
-                            print(f"WaitPolicy: Detected plateau at output ~{avg_output:.2f} "
-                                  f"(thresholds {min(recent_thresholds):.1f}-{max(recent_thresholds):.1f}), "
-                                  f"skipping narrow search")
-                        return 0
+                # If last 3 samples have very similar output values (within 2% of range)
+                output_range_tolerance = 0.02  # 2% of [0,1] range
+                if max(recent_outputs) - min(recent_outputs) < output_range_tolerance:
+                    # Check corresponding thresholds to see if we're exploring a narrow range
+                    recent_thresholds = []
+                    for s in recent_samples:
+                        if s.meta and 'threshold' in s.meta:
+                            threshold = s.meta['threshold']
+                            if threshold < 10000:  # Exclude infinity placeholders
+                                recent_thresholds.append(threshold)
+                    
+                    if len(recent_thresholds) >= 3:
+                        # Check if we're in a narrow threshold range relative to max_episode_length
+                        threshold_range = max(recent_thresholds) - min(recent_thresholds)
+                        # If exploring less than 5% of the episode length range
+                        if threshold_range < 0.05 * self.max_episode_length:
+                            # We're stuck exploring a narrow threshold range with no output change
+                            self.detected_unfillable_region = True
+                            remaining = self.bins_remaining(left_bin_idx, right_bin_idx)
+                            if remaining and self.verbose:
+                                avg_output = sum(recent_outputs) / len(recent_outputs)
+                                print(f"WaitPolicy: Detected plateau at output ~{avg_output:.2f} "
+                                      f"(thresholds {min(recent_thresholds):.1f}-{max(recent_thresholds):.1f}) "
+                                      f"in region [{left_input:.3f}, {right_input:.3f}], "
+                                      f"skipping narrow search")
+                            return 0
         
         return super().binary_search_fill(left_input, right_input, left_bin_idx, right_bin_idx)
     

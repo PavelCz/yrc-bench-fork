@@ -166,9 +166,10 @@ def test_wait_policy_30_percent_timeout():
     elif "discrete episode length distribution" not in result.early_stop_reason:
         print(f"\nWARNING: Unexpected early stop reason: {result.early_stop_reason}")
     
-    # Check that we explored a reasonable range
-    if len(thresholds_evaluated) < 4:
-        print(f"\nWARNING: Only {len(thresholds_evaluated)} evaluations performed")
+    # Check that we explored a reasonable range  
+    # With region-based plateau detection, we should see more evaluations
+    if len(thresholds_evaluated) < 8:
+        print(f"\nWARNING: Only {len(thresholds_evaluated)} evaluations performed (expected more with region-based detection)")
     
     # Check that we explored both low and high thresholds
     sorted_thresholds = sorted([t for t in thresholds_evaluated if t < 10000])
