@@ -219,7 +219,7 @@ def build_sbatch_command(
     slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
 
     # Build the python command
-    python_cmd = f"python eval_strong_on_help.py -c {config_path} --npz_file {npz_file} -strong {strong_path}"
+    python_cmd = f"python eval_strong_on_help.py -c {config_path} -n {job_name} --npz_file {npz_file} -strong {strong_path}"
 
     sbatch_script = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
