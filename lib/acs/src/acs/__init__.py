@@ -10,6 +10,7 @@ from .joint_sampler import (
 )
 
 from .sampler import BinarySearchSampler
+from .wait_policy_sampler import WaitPolicyAwareSampler
 
 __version__ = "0.1.0"
 __all__ = [
@@ -17,4 +18,5 @@ __all__ = [
     "CurvePoint",
     "BinarySearchSampler",
     "SamplingResult",
+    "WaitPolicyAwareSampler",
 ]
