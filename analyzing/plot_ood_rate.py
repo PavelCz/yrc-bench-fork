@@ -8,15 +8,132 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import re
+from collections import defaultdict
+from typing import Union, Dict, List, Optional, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
-from typing import Union
 
-from analyzing.utils import extract_results
+from analyzing.utils import extract_x_and_y_values
 
 import matplotlib
 
 matplotlib.use("TkAgg")
+
+
+def parse_experiment_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
+    """
+    Parse experiment directory name to extract prefix, env, and experiment ID.
+
+    Expected format: {prefix}_{env}_exp{id}
+    Examples: imcl04_coinrun_exp0, imcl04_maze_exp1
+
+    Returns:
+        Tuple of (prefix, env, exp_id) or None if pattern doesn't match
+    """
+    # Pattern: prefix_env_expN where env can contain underscores (like maze_afh)
+    pattern = r"^(.+)_(coinrun|maze|maze_afh|heist)_exp(\d+)$"
+    match = re.match(pattern, dir_name)
+    if match:
+        prefix = match.group(1)
+        env = match.group(2)
+        exp_id = int(match.group(3))
+        return prefix, env, exp_id
+    return None
+
+
+def parse_method_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
+    """
+    Parse method directory name to extract env, method, and experiment ID.
+
+    Expected format: {env}_{method}_exp{id}
+    Examples: coinrun_max_prob_exp0, maze_ensemble_exp1
+
+    Returns:
+        Tuple of (env, method, exp_id) or None if pattern doesn't match
+    """
+    # Pattern: env_method_expN
+    pattern = r"^(coinrun|maze|maze_afh|heist)_(.+)_exp(\d+)$"
+    match = re.match(pattern, dir_name)
+    if match:
+        env = match.group(1)
+        method = match.group(2)
+        exp_id = int(match.group(3))
+        return env, method, exp_id
+    return None
+
+
+def extract_icml_results(
+    eval_dir: Path,
+    prefix_filter: Optional[List[str]] = None,
+    env_filter: Optional[str] = None,
+) -> Dict[str, Dict[int, Path]]:
+    """
+    Extract evaluation results from ICML directory structure.
+
+    Args:
+        eval_dir: Directory containing evaluation results
+        prefix_filter: Only include runs with these prefixes (list)
+        env_filter: Only include runs for this environment
+
+    Returns:
+        Dictionary mapping method names to dict of {exp_id: result_file_path}
+    """
+    results: Dict[str, Dict[int, Path]] = defaultdict(dict)
+
+    for child in eval_dir.iterdir():
+        if not child.is_dir():
+            continue
+
+        parsed = parse_experiment_dir(child.name)
+        if parsed is None:
+            continue
+
+        prefix, env, exp_id = parsed
+
+        # Apply filters
+        if prefix_filter is not None and prefix not in prefix_filter:
+            continue
+        if env_filter is not None and env != env_filter:
+            continue
+
+        # Find method directories within this experiment
+        for method_dir in child.iterdir():
+            if not method_dir.is_dir():
+                continue
+
+            # Parse method directory name (format: {env}_{method}_exp{id})
+            parsed_method = parse_method_dir(method_dir.name)
+            if parsed_method is None:
+                # Fallback to using the directory name as-is
+                method_name = method_dir.name
+            else:
+                method_env, method_name, method_exp_id = parsed_method
+                # Verify consistency with parent directory
+                if method_exp_id != exp_id:
+                    continue  # Skip mismatched experiment IDs
+
+            # Find the most recent run (by timestamp)
+            latest_run = None
+            latest_time = None
+
+            for run_dir in method_dir.iterdir():
+                if not run_dir.is_dir():
+                    continue
+
+                # Find .npz file in run directory
+                for run_file in run_dir.iterdir():
+                    if run_file.is_file() and run_file.suffix == ".npz":
+                        # Use directory modification time as proxy for recency
+                        mtime = run_dir.stat().st_mtime
+                        if latest_time is None or mtime > latest_time:
+                            latest_time = mtime
+                            latest_run = run_file
+
+            if latest_run is not None:
+                results[method_name][exp_id] = latest_run
+
+    return dict(results)
 
 
 def calculate_ood_rate(
@@ -282,6 +399,175 @@ def select_and_load_checkpoint_data(
     return ood_rates, checkpoint_idx, ood_percentages[checkpoint_idx]
 
 
+def plot_compare_runs(
+    results: dict,
+    success_only: bool,
+    smooth_window: int = 0,
+    num_bins: int = 0,
+    method_filter: Optional[List[str]] = None,
+):
+    """Plot OOD rates for selected checkpoints from multiple runs.
+
+    Args:
+        results: Dictionary mapping method names to {exp_id: data_path}
+        success_only: If True, only include episodes with reward > 0
+        smooth_window: Window size for running average smoothing
+        num_bins: Number of bins for binned smoothing
+        method_filter: Only include these methods
+    """
+    print("\n=== Multi-Run Comparison Mode ===")
+    print("You will select a checkpoint for each method/experiment to compare.\n")
+
+    # Apply method filter
+    methods_to_plot = sorted(results.keys())
+    if method_filter:
+        methods_to_plot = [m for m in methods_to_plot if m in method_filter]
+        print(f"Filtering to methods: {', '.join(methods_to_plot)}")
+
+    # Collect data for each method/experiment
+    all_ood_rates = []
+    all_labels = []
+
+    for method in methods_to_plot:
+        exp_data = results[method]
+        
+        # For comparison mode, let user select one experiment per method
+        exp_ids = sorted(exp_data.keys())
+        
+        if len(exp_ids) == 0:
+            continue
+            
+        print(f"\n--- Method: {method} ---")
+        
+        if len(exp_ids) == 1:
+            selected_exp = exp_ids[0]
+            print(f"Using experiment {selected_exp} (only one available)")
+        else:
+            print(f"Available experiments: {exp_ids}")
+            print("Select experiment to use for comparison:")
+            for idx, exp_id in enumerate(exp_ids):
+                print(f"  [{idx}] exp{exp_id}")
+            
+            while True:
+                try:
+                    selection = input(f"Select experiment (0-{len(exp_ids) - 1}): ")
+                    exp_idx = int(selection)
+                    if 0 <= exp_idx < len(exp_ids):
+                        selected_exp = exp_ids[exp_idx]
+                        break
+                    else:
+                        print(f"Please enter a number between 0 and {len(exp_ids) - 1}")
+                except ValueError:
+                    print("Please enter a valid number")
+        
+        data_path = exp_data[selected_exp]
+
+        # Load data, select checkpoint, and extract OOD rate
+        result = select_and_load_checkpoint_data(
+            run_name=f"{method}_exp{selected_exp}",
+            data_path=data_path,
+            success_only=success_only,
+        )
+
+        if result is None:
+            continue
+
+        ood_rates, checkpoint_idx, ood_percentage = result
+
+        # Store data and label
+        all_ood_rates.append(ood_rates)
+        label = f"{method} exp{selected_exp} (OOD: {ood_percentage:.1f}%)"
+        all_labels.append(label)
+
+        rates = [d["ood_rate"] for d in ood_rates]
+        mean_rate = np.mean(rates) if rates else 0.0
+        print(f"  Selected checkpoint {checkpoint_idx}")
+        print(f"  Mean OOD rate: {mean_rate:.2%}")
+
+    if len(all_ood_rates) == 0:
+        print("\nNo valid data collected. Exiting.")
+        return
+
+    # Plot OOD rates
+    plot_barplot_compare(all_ood_rates, all_labels, success_only, smooth_window, num_bins)
+
+
+def plot_single_run(
+    results: dict,
+    success_only: bool,
+    smooth_window: int = 0,
+    num_bins: int = 0,
+):
+    """Plot OOD rate for a single selected run and checkpoint.
+
+    Args:
+        results: Dictionary mapping method names to {exp_id: data_path}
+        success_only: If True, only include episodes with reward > 0
+        smooth_window: Window size for running average smoothing
+        num_bins: Number of bins for binned smoothing
+    """
+    # Display methods and let user select
+    print("\nAvailable methods:")
+    method_names = sorted(results.keys())
+    for idx, method in enumerate(method_names):
+        exp_ids = sorted(results[method].keys())
+        print(f"  [{idx}] {method}: experiments {exp_ids}")
+    
+    while True:
+        try:
+            selection = input(f"\nSelect a method (0-{len(method_names) - 1}): ")
+            method_idx = int(selection)
+            if 0 <= method_idx < len(method_names):
+                selected_method = method_names[method_idx]
+                break
+            else:
+                print(f"Please enter a number between 0 and {len(method_names) - 1}")
+        except ValueError:
+            print("Please enter a valid number")
+    
+    # Select experiment for this method
+    exp_data = results[selected_method]
+    exp_ids = sorted(exp_data.keys())
+    
+    if len(exp_ids) == 1:
+        selected_exp = exp_ids[0]
+        print(f"Using experiment {selected_exp} (only one available)")
+    else:
+        print(f"\nAvailable experiments for {selected_method}:")
+        for idx, exp_id in enumerate(exp_ids):
+            print(f"  [{idx}] exp{exp_id}")
+        
+        while True:
+            try:
+                selection = input(f"\nSelect an experiment (0-{len(exp_ids) - 1}): ")
+                exp_idx = int(selection)
+                if 0 <= exp_idx < len(exp_ids):
+                    selected_exp = exp_ids[exp_idx]
+                    break
+                else:
+                    print(f"Please enter a number between 0 and {len(exp_ids) - 1}")
+            except ValueError:
+                print("Please enter a valid number")
+    
+    data_path = exp_data[selected_exp]
+    
+    # Load data, select checkpoint, and extract OOD rate
+    result = select_and_load_checkpoint_data(
+        f"{selected_method}_exp{selected_exp}", data_path, success_only
+    )
+
+    if result is None:
+        return
+
+    ood_rates, checkpoint_idx, ood_percentage = result
+
+    # Plot single run
+    all_ood_rates = [ood_rates]
+    all_labels = [f"{selected_method}_exp{selected_exp} (OOD: {ood_percentage:.1f}%)"]
+    
+    plot_barplot_compare(all_ood_rates, all_labels, success_only, smooth_window, num_bins)
+
+
 def plot_ood_rate_main():
     """Main function for interactive OOD rate visualization."""
     parser = argparse.ArgumentParser(
@@ -294,10 +580,18 @@ def plot_ood_rate_main():
         help="Directory containing the evaluation files.",
     )
     parser.add_argument(
-        "--prefix_filter",
-        default=None,
+        "--prefix",
         type=str,
-        help="Prefix filter for the evaluation files.",
+        nargs="+",
+        default=None,
+        help="Prefix filter(s) for experiment directories (e.g., 'icml04' or 'icml04 icml05')",
+    )
+    parser.add_argument(
+        "--env",
+        type=str,
+        default=None,
+        choices=["coinrun", "maze", "maze_afh", "heist"],
+        help="Environment filter",
     )
     parser.add_argument(
         "--success_only",
@@ -316,63 +610,54 @@ def plot_ood_rate_main():
         default=0,
         help="Number of bins for binned smoothing (default: 0, no binning). Overrides --smooth.",
     )
+    parser.add_argument(
+        "--compare_runs",
+        action="store_true",
+        help="Compare multiple runs by plotting OOD rates for selected checkpoints from each run",
+    )
+    parser.add_argument(
+        "--method_filter",
+        "-m",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Only include these methods in comparison mode",
+    )
 
     args = parser.parse_args()
 
     eval_dir = Path(args.eval_dir)
 
-    # Extract all runs
+    # Extract all runs using ICML directory structure
     print("Extracting available runs...")
-    results = extract_results(eval_dir, [args.prefix_filter])
+    results = extract_icml_results(eval_dir, args.prefix, args.env)
 
     if not results:
         print("No runs found!")
         return
 
-    run_names = list(results.keys())
+    print(f"\nFound {len(results)} methods:")
+    for method in sorted(results.keys()):
+        exp_ids = sorted(results[method].keys())
+        print(f"  {method}: experiments {exp_ids}")
 
-    # Multi-run comparison mode
-    print("\n=== Multi-Run Comparison Mode ===")
-    print("You will select a checkpoint for each run to compare.\n")
-
-    # Collect data for each run
-    all_ood_rates = []
-    all_labels = []
-
-    for run_name in run_names:
-        data_path = results[run_name]
-        print(f"\n--- Run: {run_name} ---")
-
-        # Load data, select checkpoint, and extract OOD rate
-        result = select_and_load_checkpoint_data(
-            run_name=run_name,
-            data_path=data_path,
+    if args.compare_runs:
+        # Multi-run comparison mode
+        plot_compare_runs(
+            results=results,
             success_only=args.success_only,
+            smooth_window=args.smooth,
+            num_bins=args.bins,
+            method_filter=args.method_filter,
         )
-
-        if result is None:
-            continue
-
-        ood_rates, checkpoint_idx, ood_percentage = result
-
-        # Store data and label
-        all_ood_rates.append(ood_rates)
-        label = f"{run_name} (OOD: {ood_percentage:.1f}%)"
-        all_labels.append(label)
-
-        rates = [d["ood_rate"] for d in ood_rates]
-        mean_rate = np.mean(rates) if rates else 0.0
-        print(f"  Selected checkpoint {checkpoint_idx}")
-        print(f"  Mean OOD rate: {mean_rate:.2%}")
-
-    if len(all_ood_rates) == 0:
-        print("\nNo valid data collected. Exiting.")
-        return
-
-    # Plot OOD rates
-    plot_barplot_compare(
-        all_ood_rates, all_labels, args.success_only, args.smooth, args.bins
-    )
+    else:
+        # Single run mode
+        plot_single_run(
+            results=results,
+            success_only=args.success_only,
+            smooth_window=args.smooth,
+            num_bins=args.bins,
+        )
 
 
 if __name__ == "__main__":
