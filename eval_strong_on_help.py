@@ -40,9 +40,29 @@ def rollout(policy, env, num_episodes):
             policy.reset_episode()
 
     step_count = 0
+    last_debug_step = -1000
+    stuck_counter = 0
+    last_num_completed = 0
+    
     while num_completed < target_episodes:
         if step_count % 100 == 0:
             print(f"  Step {step_count}: Completed {num_completed}/{target_episodes} episodes", end='\r')
+        
+        # Debug: if no progress for many steps, print detailed info
+        if num_completed == last_num_completed:
+            stuck_counter += 1
+            if stuck_counter > 5000 and step_count > last_debug_step + 1000:
+                print(f"\n  DEBUG: No progress for {stuck_counter} steps at {num_completed}/{target_episodes}")
+                print(f"  DEBUG: done array = {done}")
+                print(f"  DEBUG: cumulative_rewards = {[f'{r:.1f}' for r in cumulative_rewards]}")
+                if 'level_seed' in info:
+                    print(f"  DEBUG: level_seeds = {info.get('level_seed', 'N/A')}")
+                if 'seeds_exhausted' in info:
+                    print(f"  DEBUG: seeds_exhausted = {info.get('seeds_exhausted', 'N/A')}")
+                last_debug_step = step_count
+        else:
+            stuck_counter = 0
+            last_num_completed = num_completed
         
         action = policy.act(obs, greedy=True)
         next_obs, reward, done, info = env.step(action)
