@@ -173,6 +173,10 @@ def calculate_ood_rate(
 
     if not episode_data:
         return []
+        
+    # Debug: Count how many episodes went OOD
+    num_ood = sum(1 for first_ts, _ in episode_data if first_ts != float("inf"))
+    print(f"    Episodes that went OOD: {num_ood}/{len(episode_data)} ({num_ood/len(episode_data)*100:.1f}%)")
 
     # Find the range of timesteps to consider (1 to max episode length)
     max_length = max(length for _, length in episode_data)
@@ -336,6 +340,7 @@ def select_and_load_checkpoint_data(
     run_name: str,
     data_path: Path,
     success_only: bool,
+    target_afhp: Optional[float] = None,
 ) -> Union[tuple[list[dict[str, float]], int, float], None]:
     """
     Load data, display checkpoints, get user selection, and calculate OOD rate.
@@ -344,6 +349,7 @@ def select_and_load_checkpoint_data(
         run_name: Name of the run being processed
         data_path: Path to the evaluation data file
         success_only: If True, only include episodes with reward > 0
+        target_afhp: If provided, automatically select checkpoint closest to this AFHP
     Returns:
         Tuple of (ood_rates, checkpoint_idx, ood_percentage) or None if error/no data
     """
@@ -352,38 +358,66 @@ def select_and_load_checkpoint_data(
     # Load the evaluation data
     eval_data = np.load(data_path, allow_pickle=True)
 
-    # Display ood_pred_percentage for each checkpoint
-    print("\nCheckpoints with OOD prediction percentages:")
+    # Collect checkpoint data
     ood_percentages = []
+    afhps = []
 
     for idx, element in enumerate(eval_data["meta"]):
         level_ood_pred = element["summary"]["test"]["level_ood_pred"]
         percentage = sum(level_ood_pred) / len(level_ood_pred) * 100
         ood_percentages.append(percentage)
+        
+        # Get AFHP value - prefer to use ood_percentages which are more accurate
+        # The afhps array sometimes contains incorrect values
+        afhps.append(percentage)  # Use OOD percentage as AFHP
 
-        # Also show AFHP and performance if available
-        afhp = eval_data["afhps"][idx] if idx < len(eval_data["afhps"]) else "N/A"
+    # Select checkpoint based on target AFHP or user input
+    if target_afhp is not None:
+        # Find checkpoint closest to target AFHP
+        valid_indices = [i for i, afhp in enumerate(afhps) if afhp is not None]
+        if not valid_indices:
+            print(f"No valid AFHP values found in {run_name}")
+            return None
+            
+        # Find closest AFHP
+        closest_idx = min(valid_indices, key=lambda i: abs(afhps[i] - target_afhp))
+        checkpoint_idx = closest_idx
+        
+        actual_afhp = afhps[checkpoint_idx]
         perf = (
-            eval_data["performances"][idx]
-            if idx < len(eval_data["performances"])
+            eval_data["performances"][checkpoint_idx]
+            if checkpoint_idx < len(eval_data["performances"])
             else "N/A"
         )
-
-        print(f"  [{idx}] OOD%: {percentage:.2f}%, AFHP: {afhp}, Performance: {perf}")
-
-    # Let user select a checkpoint
-    while True:
-        try:
-            selection = input(
-                f"\nSelect a checkpoint for '{run_name}' (0-{len(ood_percentages) - 1}): "
+        
+        print(f"  Selected checkpoint {checkpoint_idx}: AFHP={actual_afhp:.2f}% (target={target_afhp:.2f}%), Performance={perf}")
+    else:
+        # Manual selection - display all checkpoints
+        print("\nCheckpoints with OOD prediction percentages:")
+        
+        for idx, (ood_pct, afhp) in enumerate(zip(ood_percentages, afhps)):
+            perf = (
+                eval_data["performances"][idx]
+                if idx < len(eval_data["performances"])
+                else "N/A"
             )
-            checkpoint_idx = int(selection)
-            if 0 <= checkpoint_idx < len(ood_percentages):
-                break
-            else:
-                print(f"Please enter a number between 0 and {len(ood_percentages) - 1}")
-        except ValueError:
-            print("Please enter a valid number")
+            
+            afhp_str = f"{afhp:.2f}" if afhp is not None else "N/A"
+            print(f"  [{idx}] OOD%: {ood_pct:.2f}%, AFHP: {afhp_str}, Performance: {perf}")
+
+        # Let user select a checkpoint
+        while True:
+            try:
+                selection = input(
+                    f"\nSelect a checkpoint for '{run_name}' (0-{len(ood_percentages) - 1}): "
+                )
+                checkpoint_idx = int(selection)
+                if 0 <= checkpoint_idx < len(ood_percentages):
+                    break
+                else:
+                    print(f"Please enter a number between 0 and {len(ood_percentages) - 1}")
+            except ValueError:
+                print("Please enter a valid number")
 
     # Extract data for the selected checkpoint
     selected_element = eval_data["meta"][checkpoint_idx]
@@ -405,6 +439,7 @@ def plot_compare_runs(
     smooth_window: int = 0,
     num_bins: int = 0,
     method_filter: Optional[List[str]] = None,
+    target_afhp: Optional[float] = None,
 ):
     """Plot OOD rates for selected checkpoints from multiple runs.
 
@@ -414,59 +449,86 @@ def plot_compare_runs(
         smooth_window: Window size for running average smoothing
         num_bins: Number of bins for binned smoothing
         method_filter: Only include these methods
+        target_afhp: If provided, automatically select checkpoints closest to this AFHP
     """
     print("\n=== Multi-Run Comparison Mode ===")
-    print("You will select a checkpoint for each method/experiment to compare.\n")
-
+    
     # Apply method filter
     methods_to_plot = sorted(results.keys())
     if method_filter:
         methods_to_plot = [m for m in methods_to_plot if m in method_filter]
         print(f"Filtering to methods: {', '.join(methods_to_plot)}")
 
-    # Collect data for each method/experiment
+    # First, select which experiment to use across all methods
+    all_exp_ids = set()
+    for method in methods_to_plot:
+        all_exp_ids.update(results[method].keys())
+    
+    exp_ids_list = sorted(all_exp_ids)
+    
+    if len(exp_ids_list) == 0:
+        print("No experiments found!")
+        return
+    elif len(exp_ids_list) == 1:
+        selected_exp = exp_ids_list[0]
+        print(f"\nUsing experiment {selected_exp} (only one available)")
+    else:
+        print(f"\nAvailable experiments: {exp_ids_list}")
+        print("Select one experiment to use for ALL methods:")
+        for idx, exp_id in enumerate(exp_ids_list):
+            print(f"  [{idx}] exp{exp_id}")
+        
+        while True:
+            try:
+                selection = input(f"Select experiment (0-{len(exp_ids_list) - 1}): ")
+                exp_idx = int(selection)
+                if 0 <= exp_idx < len(exp_ids_list):
+                    selected_exp = exp_ids_list[exp_idx]
+                    break
+                else:
+                    print(f"Please enter a number between 0 and {len(exp_ids_list) - 1}")
+            except ValueError:
+                print("Please enter a valid number")
+    
+    print(f"\nUsing experiment {selected_exp} for all methods")
+    
+    # Get target AFHP from user if not provided
+    if target_afhp is None:
+        while True:
+            try:
+                afhp_input = input("\nEnter target AFHP percentage (e.g., 10.5 for 10.5%): ")
+                target_afhp = float(afhp_input)
+                if 0 <= target_afhp <= 100:
+                    break
+                else:
+                    print("AFHP must be between 0 and 100")
+            except ValueError:
+                print("Please enter a valid number")
+    
+    print(f"\nSelecting checkpoints closest to AFHP={target_afhp:.2f}% for each method...")
+
+    # Collect data for each method
     all_ood_rates = []
     all_labels = []
-
+    
     for method in methods_to_plot:
         exp_data = results[method]
         
-        # For comparison mode, let user select one experiment per method
-        exp_ids = sorted(exp_data.keys())
-        
-        if len(exp_ids) == 0:
+        # Check if this method has the selected experiment
+        if selected_exp not in exp_data:
+            print(f"\n--- Method: {method} ---")
+            print(f"  WARNING: No data for experiment {selected_exp}, skipping...")
             continue
             
         print(f"\n--- Method: {method} ---")
-        
-        if len(exp_ids) == 1:
-            selected_exp = exp_ids[0]
-            print(f"Using experiment {selected_exp} (only one available)")
-        else:
-            print(f"Available experiments: {exp_ids}")
-            print("Select experiment to use for comparison:")
-            for idx, exp_id in enumerate(exp_ids):
-                print(f"  [{idx}] exp{exp_id}")
-            
-            while True:
-                try:
-                    selection = input(f"Select experiment (0-{len(exp_ids) - 1}): ")
-                    exp_idx = int(selection)
-                    if 0 <= exp_idx < len(exp_ids):
-                        selected_exp = exp_ids[exp_idx]
-                        break
-                    else:
-                        print(f"Please enter a number between 0 and {len(exp_ids) - 1}")
-                except ValueError:
-                    print("Please enter a valid number")
-        
         data_path = exp_data[selected_exp]
 
-        # Load data, select checkpoint, and extract OOD rate
+        # Load data and automatically select checkpoint based on target AFHP
         result = select_and_load_checkpoint_data(
             run_name=f"{method}_exp{selected_exp}",
             data_path=data_path,
             success_only=success_only,
+            target_afhp=target_afhp,
         )
 
         if result is None:
@@ -476,12 +538,11 @@ def plot_compare_runs(
 
         # Store data and label
         all_ood_rates.append(ood_rates)
-        label = f"{method} exp{selected_exp} (OOD: {ood_percentage:.1f}%)"
+        label = f"{method} (OOD: {ood_percentage:.1f}%)"
         all_labels.append(label)
 
         rates = [d["ood_rate"] for d in ood_rates]
         mean_rate = np.mean(rates) if rates else 0.0
-        print(f"  Selected checkpoint {checkpoint_idx}")
         print(f"  Mean OOD rate: {mean_rate:.2%}")
 
     if len(all_ood_rates) == 0:
@@ -497,6 +558,7 @@ def plot_single_run(
     success_only: bool,
     smooth_window: int = 0,
     num_bins: int = 0,
+    target_afhp: Optional[float] = None,
 ):
     """Plot OOD rate for a single selected run and checkpoint.
 
@@ -505,6 +567,7 @@ def plot_single_run(
         success_only: If True, only include episodes with reward > 0
         smooth_window: Window size for running average smoothing
         num_bins: Number of bins for binned smoothing
+        target_afhp: If provided, automatically select checkpoint closest to this AFHP
     """
     # Display methods and let user select
     print("\nAvailable methods:")
@@ -553,7 +616,7 @@ def plot_single_run(
     
     # Load data, select checkpoint, and extract OOD rate
     result = select_and_load_checkpoint_data(
-        f"{selected_method}_exp{selected_exp}", data_path, success_only
+        f"{selected_method}_exp{selected_exp}", data_path, success_only, target_afhp
     )
 
     if result is None:
@@ -623,6 +686,12 @@ def plot_ood_rate_main():
         default=None,
         help="Only include these methods in comparison mode",
     )
+    parser.add_argument(
+        "--target_afhp",
+        type=float,
+        default=None,
+        help="Target AFHP percentage to automatically select closest checkpoints (e.g., 10.5 for 10.5%)",
+    )
 
     args = parser.parse_args()
 
@@ -649,6 +718,7 @@ def plot_ood_rate_main():
             smooth_window=args.smooth,
             num_bins=args.bins,
             method_filter=args.method_filter,
+            target_afhp=args.target_afhp,
         )
     else:
         # Single run mode
@@ -657,6 +727,7 @@ def plot_ood_rate_main():
             success_only=args.success_only,
             smooth_window=args.smooth,
             num_bins=args.bins,
+            target_afhp=args.target_afhp,
         )
 
 
