@@ -168,39 +168,90 @@ def main():
     # Close dummy environment
     dummy_env.close()
     
-    # Process each point and re-evaluate strong agent on help-requested seeds
-    strong_performances = []
-    total_seeds_evaluated = 0
+    # First, get all unique seeds from all evaluation points
+    all_seeds = set()
+    split = "test"  # Default split
     
-    print(f"\nStarting re-evaluation on {len(meta)} points...")
-    print("="*60)
-    
-    for i, pt_meta in enumerate(meta):
-        point_start_time = time.time()
-        
-        # Access summary for the split (usually 'test' since we ran AFHP on test)
+    for pt_meta in meta:
         summary_dict = pt_meta.get("summary", {})
-        split = "test"
-        if split not in summary_dict:
+        if split in summary_dict:
+            level_seeds = summary_dict[split].get("level_seeds", [])
+            all_seeds.update(level_seeds)
+        else:
+            # Try to find any split
             keys = list(summary_dict.keys())
             if keys:
                 split = keys[0]
-            else:
-                print(f"\n[{i+1}/{len(meta)}] Point {i}: No summary found, skipping...")
-                strong_performances.append(np.nan)
-                continue
+                level_seeds = summary_dict[split].get("level_seeds", [])
+                all_seeds.update(level_seeds)
+    
+    all_seeds = sorted(list(all_seeds))
+    print(f"\nFound {len(all_seeds)} unique seeds across all evaluation points")
+    print(f"Split: {split}")
+    
+    # Evaluate strong policy on ALL seeds
+    print(f"\nEvaluating strong policy on all {len(all_seeds)} seeds...")
+    print("="*60)
+    
+    start_time = time.time()
+    
+    # Create environment with all seeds
+    all_seeds_env = create_env_fn(
+        split,
+        config.environment,
+        level_seeds=all_seeds,
+        level_seeds_mode="sequential"
+    )
+    
+    print(f"Running {len(all_seeds)} episodes...")
+    
+    try:
+        # Evaluate strong policy on all seeds
+        all_returns = rollout(strong_policy, all_seeds_env, len(all_seeds))
+    finally:
+        all_seeds_env.close()
+    
+    eval_time = time.time() - start_time
+    print(f"\nCompleted evaluation in {eval_time:.1f}s")
+    print(f"Mean return across all seeds: {np.mean(all_returns):.2f} ± {np.std(all_returns):.2f}")
+    
+    # Create a mapping from seed to return
+    seed_to_return = dict(zip(all_seeds, all_returns))
+    
+    # Log overall statistics to wandb
+    if use_wandb and wandb_run:
+        wandb.log({
+            "total_unique_seeds": len(all_seeds),
+            "strong_agent_mean_return": np.mean(all_returns),
+            "strong_agent_std_return": np.std(all_returns),
+            "evaluation_time": eval_time,
+        })
+    
+    # Now process each evaluation point and calculate mean return for help-requested seeds
+    strong_performances = []
+    
+    print(f"\nCalculating strong performance for each evaluation point...")
+    print("="*60)
+    
+    for i, pt_meta in enumerate(meta):
+        # Access summary for the split
+        summary_dict = pt_meta.get("summary", {})
+        if split not in summary_dict:
+            print(f"\n[{i+1}/{len(meta)}] Point {i}: No summary found for split '{split}', skipping...")
+            strong_performances.append(np.nan)
+            continue
                 
         summary = summary_dict[split]
         level_seeds = summary.get("level_seeds", [])
         level_ood_pred = summary.get("level_ood_pred", [])
         
-        # Identify help-requested seeds
-        help_seeds = [
-            seed for seed, pred in zip(level_seeds, level_ood_pred) 
-            if pred
-        ]
+        # Identify help-requested seeds and get their returns
+        help_returns = []
+        for seed, pred in zip(level_seeds, level_ood_pred):
+            if pred and seed in seed_to_return:
+                help_returns.append(seed_to_return[seed])
         
-        if not help_seeds:
+        if not help_returns:
             print(f"\n[{i+1}/{len(meta)}] Point {i} (AFHP={afhps[i]:.2f}%): No help requested. Strong performance undefined.")
             strong_performances.append(np.nan)
             
@@ -213,43 +264,16 @@ def main():
                 })
             continue
             
+        # Calculate mean return for help-requested seeds
+        mean_return = np.mean(help_returns)
+        std_return = np.std(help_returns)
+        strong_performances.append(mean_return)
+        
         print(f"\n[{i+1}/{len(meta)}] Point {i} (AFHP={afhps[i]:.2f}%):")
         print(f"  - Original performance: {original_performances[i]:.2f}")
-        print(f"  - Help requested on {len(help_seeds)}/{len(level_seeds)} seeds ({len(help_seeds)/len(level_seeds)*100:.1f}%)")
-        print(f"  - Evaluating strong agent...")
-        
-        # Progress bar for rollout
-        print(f"  - Running {len(help_seeds)} episodes...", end='', flush=True)
-        rollout_start = time.time()
-        
-        # Create environment with only the help seeds
-        help_env = create_env_fn(
-            split,  # Use the same split as the original evaluation
-            config.environment,
-            level_seeds=help_seeds,
-            level_seeds_mode="sequential"
-        )
-        
-        try:
-            # Use the original rollout function to evaluate
-            returns = rollout(strong_policy, help_env, len(help_seeds))
-            
-            rollout_time = time.time() - rollout_start
-            
-            # Calculate statistics
-            mean_return = np.mean(returns)
-            std_return = np.std(returns)
-        finally:
-            # Always close the environment
-            help_env.close()
-        strong_performances.append(mean_return)
-        total_seeds_evaluated += len(help_seeds)
-        
-        print(f" Done! ({rollout_time:.1f}s)")
+        print(f"  - Help requested on {len(help_returns)}/{len(level_seeds)} seeds ({len(help_returns)/len(level_seeds)*100:.1f}%)")
         print(f"  - Strong agent return: {mean_return:.2f} ± {std_return:.2f}")
         print(f"  - Improvement over original: {mean_return - original_performances[i]:.2f}")
-        
-        point_time = time.time() - point_start_time
         
         # Log to wandb
         if use_wandb and wandb_run:
@@ -257,25 +281,21 @@ def main():
                 "point_idx": i,
                 "point_afhp": afhps[i],
                 "help_requested": True,
-                "num_help_seeds": len(help_seeds),
+                "num_help_seeds": len(help_returns),
                 "total_seeds": len(level_seeds),
-                "help_percentage": len(help_seeds) / len(level_seeds) * 100,
+                "help_percentage": len(help_returns) / len(level_seeds) * 100,
                 "original_performance": original_performances[i],
                 "strong_performance": mean_return,
                 "strong_performance_std": std_return,
                 "improvement": mean_return - original_performances[i],
-                "rollout_time": rollout_time,
-                "point_processing_time": point_time,
-                "cumulative_seeds_evaluated": total_seeds_evaluated,
             })
     
     total_time = time.time() - start_time
     print("\n" + "="*60)
     print(f"Re-evaluation completed!")
     print(f"  - Total time: {total_time:.2f}s")
+    print(f"  - Unique seeds evaluated: {len(all_seeds)}")
     print(f"  - Points processed: {len(meta)}")
-    print(f"  - Total seeds evaluated: {total_seeds_evaluated}")
-    print(f"  - Average time per point: {total_time/len(meta):.2f}s")
     print(f"  - Points with help requested: {sum(1 for p in strong_performances if not np.isnan(p))}")
     
     # Calculate summary statistics
@@ -306,9 +326,8 @@ def main():
         wandb.log({
             "total_time": total_time,
             "total_points": len(meta),
-            "total_seeds_evaluated": total_seeds_evaluated,
+            "unique_seeds_evaluated": len(all_seeds),
             "points_with_help": sum(1 for p in strong_performances if not np.isnan(p)),
-            "avg_time_per_point": total_time / len(meta),
         })
         
         if valid_strong_perfs:
