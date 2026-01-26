@@ -33,16 +33,17 @@ matplotlib.use("TkAgg")
 
 # Method display names mapping
 METHOD_NAMES = {
-    "max_prob": "Max Prob",
-    "max_logit": "Max Logit",
+    "max_prob": "MaxProb",
+    "max_logit": "MaxLogit",
     "lb_random": "Level-Based Random",
-    "ts_random": "Timestep Random",
-    "svdd_image": "Image SVDD",
-    "svdd_latent": "Latent SVDD",
-    "ensemble": "Ensemble Variance",
-    "ensemble_single": "Ensemble Variance (Single Weak)",
+    "ts_random": "Heuristic Strategy",
+    "svdd_image": "ImageSVDD",
+    "svdd_latent": "LatentSVDD",
+    "ensemble": "Ensemble (multi)",
+    # Ensemble Variance (Single Weak)
+    "ensemble_single": "Ensemble",
     "latent-svdd": "Latent SVDD",
-    "random": "Timestep Random",
+    # "random": "Timestep Random",
     "oc-random": "Level-Based Random",
     "wait": "Wait",
 }
@@ -51,7 +52,7 @@ METHOD_NAMES = {
 DATA_KEY_NAMES = {
     "afhp": "Ask-For-Help Percentage (AFHP, per timestep)",
     "ood_pred_percentage": "Ask-For-Help Percentage (AFHP)",
-    "performance": "Average Reward",
+    "performance": "Average Return",
     "performance_asked": "Average Reward (Asked for Help)",
     "performance_not_asked": "Average Reward (Did Not Ask)",
     "performance_asked_correctly": "Average Reward (True Positive)",
@@ -526,14 +527,14 @@ def plot_icml_results(
             color="red",
             linestyle="--",
             alpha=0.7,
-            label="Primary Agent",
+            label="Novice Agent Performance",
         )
         plt.axhline(
             y=mean_last,
             color="blue",
             linestyle="--",
             alpha=0.7,
-            label="Expert",
+            label="Expert Performance",
         )
 
     # Add random baseline diagonal line (from weak to oracle)
