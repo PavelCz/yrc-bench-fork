@@ -47,17 +47,18 @@ def parse_method_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
     Parse method directory name to extract env, method, and experiment ID.
 
     Expected format: {env}_{method}_exp{id}
-    Examples: coinrun_max_prob_exp0, maze_ensemble_exp1
+    Examples: coinrun_max_prob_exp0, maze_ensemble_exp1, maze_ensemble_single_exp1
 
     Returns:
         Tuple of (env, method, exp_id) or None if pattern doesn't match
     """
     # Pattern: env_method_expN
+    # Note: method can contain underscores (e.g., ensemble_single)
     pattern = r"^(coinrun|maze|maze_afh|heist)_(.+)_exp(\d+)$"
     match = re.match(pattern, dir_name)
     if match:
         env = match.group(1)
-        method = match.group(2)
+        method = match.group(2)  # This captures everything between env_ and _expN
         exp_id = int(match.group(3))
         return env, method, exp_id
     return None
@@ -112,6 +113,10 @@ def extract_icml_results(
                 # Verify consistency with parent directory
                 if method_exp_id != exp_id:
                     continue  # Skip mismatched experiment IDs
+            
+            # Debug: print full directory name for ensemble methods
+            if "ensemble" in method_name.lower():
+                print(f"DEBUG: Found ensemble variant - full dir name: '{method_dir.name}', extracted method: '{method_name}'")
 
             # Find the most recent run (by timestamp)
             latest_run = None
@@ -941,6 +946,10 @@ def plot_ood_rate_main():
     for method in sorted(results.keys()):
         exp_ids = sorted(results[method].keys())
         print(f"  {method}: experiments {exp_ids}")
+        # Show a sample path for debugging ensemble variants
+        if "ensemble" in method.lower() and exp_ids:
+            sample_path = results[method][exp_ids[0]]
+            print(f"    -> Sample path: {sample_path.parent.name}/{sample_path.name}")
 
     if args.compare_runs:
         # Multi-run comparison mode
