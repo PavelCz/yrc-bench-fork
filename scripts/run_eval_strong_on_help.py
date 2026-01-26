@@ -11,6 +11,7 @@ import re
 import subprocess
 from pathlib import Path
 from typing import List, Optional, Tuple
+import time
 
 
 # Default conda environment
@@ -268,9 +269,13 @@ def submit_job(
     )
 
     if result.returncode == 0:
-        print(f"Submitted {job_name}: {result.stdout.strip()}")
+        # Extract job ID from sbatch output (format: "Submitted batch job 12345")
+        job_id_match = re.search(r"Submitted batch job (\d+)", result.stdout)
+        job_id = job_id_match.group(1) if job_id_match else "unknown"
+        print(f"  → Submitted {job_name} (Job ID: {job_id})")
     else:
-        print(f"Failed to submit {job_name}: {result.stderr}")
+        print(f"  → Failed to submit {job_name}: {result.stderr}")
+        raise RuntimeError(f"sbatch failed: {result.stderr}")
 
 
 def main():
@@ -335,7 +340,34 @@ def main():
         action="store_true",
         help="Overwrite experiment folder if it exists",
     )
+    parser.add_argument(
+        "--use-wandb",
+        action="store_true",
+        help="Enable wandb logging for job submission progress",
+    )
     args = parser.parse_args()
+    
+    # Initialize wandb if requested
+    if args.use_wandb:
+        try:
+            import wandb
+            run_name = f"strong_reval_{args.env}_{args.prefix}"
+            wandb.init(
+                project="yrc-bench-strong-reval",
+                name=run_name,
+                config={
+                    "env": args.env,
+                    "prefix": args.prefix,
+                    "exp_ids": args.exp_ids,
+                    "method": args.method,
+                    "server": args.server,
+                    "qos": args.qos,
+                }
+            )
+            print(f"Initialized wandb run: {run_name}")
+        except ImportError:
+            print("Warning: wandb not available, disabling wandb logging")
+            args.use_wandb = False
 
     # Get server-specific paths
     paths = SERVER_PATHS[args.server]
@@ -351,23 +383,49 @@ def main():
         print()
 
     # Find all NPZ files matching criteria
+    print(f"\nSearching for NPZ files in {evals_base}...")
+    print(f"  Environment: {args.env}")
+    print(f"  Prefix: {args.prefix}")
+    print(f"  Exp IDs: {args.exp_ids}")
+    print(f"  Method filter: {args.method or 'all'}")
+    
+    start_search = time.time()
     npz_files = find_eval_npz_files(
         evals_base, args.prefix, args.env, args.exp_ids, args.method
     )
+    search_time = time.time() - start_search
 
     if not npz_files:
-        print("No NPZ files found matching criteria")
+        print("\nNo NPZ files found matching criteria")
+        if args.use_wandb and "wandb" in globals():
+            wandb.log({"npz_files_found": 0, "search_time": search_time})
         return 1
 
-    print(f"Found {len(npz_files)} NPZ files to process")
+    print(f"\nFound {len(npz_files)} NPZ files to process (search took {search_time:.1f}s)")
+    if args.use_wandb and "wandb" in globals():
+        wandb.log({"npz_files_found": len(npz_files), "search_time": search_time})
+    
     if args.dry_run:
         print()
 
     # Process each NPZ file
     submitted = 0
     skipped = 0
+    failed = 0
     
-    for npz_path, method_name, exp_id in npz_files:
+    print("\nProcessing NPZ files...")
+    start_processing = time.time()
+    
+    for idx, (npz_path, method_name, exp_id) in enumerate(npz_files, 1):
+        print(f"\n[{idx}/{len(npz_files)}] Processing {method_name} exp{exp_id}...")
+        
+        if args.use_wandb and "wandb" in globals():
+            wandb.log({
+                "processing_file": idx,
+                "total_files": len(npz_files),
+                "current_method": method_name,
+                "current_exp_id": exp_id,
+            })
         # Get strong checkpoint
         if args.strong:
             strong_path = args.strong
@@ -375,13 +433,17 @@ def main():
             strong_path = get_strong_checkpoint(args.env, exp_id, checkpoint_base_path)
         
         if not strong_path:
-            print(f"Warning: Strong checkpoint not found for exp{exp_id}, skipping")
+            print(f"  ⚠️  Warning: Strong checkpoint not found for exp{exp_id}, skipping")
             skipped += 1
+            if args.use_wandb and "wandb" in globals():
+                wandb.log({"skip_reason": "strong_checkpoint_not_found", "skipped_total": skipped})
             continue
         
         if not Path(strong_path).exists():
-            print(f"Warning: Strong checkpoint does not exist: {strong_path}, skipping")
+            print(f"  ⚠️  Warning: Strong checkpoint does not exist: {strong_path}, skipping")
             skipped += 1
+            if args.use_wandb and "wandb" in globals():
+                wandb.log({"skip_reason": "strong_checkpoint_missing", "skipped_total": skipped})
             continue
         
         # Determine config path - use YAML config based on method name
@@ -390,20 +452,26 @@ def main():
         elif method_name in METHOD_CONFIGS:
             effective_config = f"configs/eval/{args.env}/{METHOD_CONFIGS[method_name]}"
         else:
-            print(f"Warning: Unknown method '{method_name}' for {npz_path}, skipping")
+            print(f"  ⚠️  Warning: Unknown method '{method_name}' for {npz_path}, skipping")
             skipped += 1
+            if args.use_wandb and "wandb" in globals():
+                wandb.log({"skip_reason": "unknown_method", "skipped_total": skipped})
             continue
         
         if not Path(effective_config).exists():
-            print(f"Warning: Config not found: {effective_config}, skipping")
+            print(f"  ⚠️  Warning: Config not found: {effective_config}, skipping")
             skipped += 1
+            if args.use_wandb and "wandb" in globals():
+                wandb.log({"skip_reason": "config_not_found", "skipped_total": skipped})
             continue
         
         # Check if output already exists
         output_path = npz_path.with_name(f"{npz_path.stem}_strong_reval.npz")
-        if output_path.exists():
-            print(f"Skipping {npz_path.name} - output already exists: {output_path}")
+        if output_path.exists() and not args.overwrite:
+            print(f"  ⏭️  Skipping {npz_path.name} - output already exists: {output_path}")
             skipped += 1
+            if args.use_wandb and "wandb" in globals():
+                wandb.log({"skip_reason": "output_exists", "skipped_total": skipped})
             continue
         
         # Build job name
@@ -418,21 +486,64 @@ def main():
             print(f"  Overwrite: {args.overwrite}")
             print()
         else:
-            submit_job(
-                job_name,
-                str(npz_path),
-                strong_path,
-                effective_config,
-                args.conda_env,
-                args.qos,
-                overwrite=args.overwrite,
-                dry_run=False,
-            )
-        
-        submitted += 1
+            try:
+                submit_job(
+                    job_name,
+                    str(npz_path),
+                    strong_path,
+                    effective_config,
+                    args.conda_env,
+                    args.qos,
+                    overwrite=args.overwrite,
+                    dry_run=False,
+                )
+                submitted += 1
+                print(f"  ✓ Successfully submitted job: {job_name}")
+                
+                if args.use_wandb and "wandb" in globals():
+                    wandb.log({
+                        "submitted_total": submitted,
+                        "job_name": job_name,
+                        "submission_success": True,
+                    })
+            except Exception as e:
+                failed += 1
+                print(f"  ❌ Failed to submit job: {e}")
+                
+                if args.use_wandb and "wandb" in globals():
+                    wandb.log({
+                        "failed_total": failed,
+                        "job_name": job_name,
+                        "submission_success": False,
+                        "error": str(e),
+                    })
 
-    print(f"\nSummary: {submitted} jobs {'would be ' if args.dry_run else ''}submitted, {skipped} skipped")
-    return 0
+    processing_time = time.time() - start_processing
+    
+    # Print summary
+    print(f"\n{'='*60}")
+    print(f"SUMMARY:")
+    print(f"  Total NPZ files found: {len(npz_files)}")
+    print(f"  Jobs {'would be ' if args.dry_run else ''}submitted: {submitted}")
+    print(f"  Skipped: {skipped}")
+    if failed > 0:
+        print(f"  Failed: {failed}")
+    print(f"  Processing time: {processing_time:.1f}s")
+    print(f"{'='*60}")
+    
+    # Log final summary to wandb
+    if args.use_wandb and "wandb" in globals():
+        wandb.log({
+            "total_npz_files": len(npz_files),
+            "jobs_submitted": submitted,
+            "jobs_skipped": skipped,
+            "jobs_failed": failed,
+            "processing_time": processing_time,
+            "success_rate": submitted / len(npz_files) if len(npz_files) > 0 else 0,
+        })
+        wandb.finish()
+    
+    return 0 if failed == 0 else 1
 
 
 if __name__ == "__main__":
