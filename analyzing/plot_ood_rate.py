@@ -280,6 +280,7 @@ def plot_barplot_compare_aggregated(
     success_only: bool,
     smooth_window: int = 0,
     num_bins: int = 0,
+    save_path: Optional[str] = None,
 ):
     """Plot OOD rates with aggregation across experiments.
     
@@ -289,6 +290,7 @@ def plot_barplot_compare_aggregated(
         success_only: If True, only successful episodes were included
         smooth_window: Window size for running average smoothing (0 = no smoothing)
         num_bins: Number of bins for binned smoothing (0 = no binning)
+        save_path: If provided, save figure to this path instead of displaying
     """
     filter_msg = " (success only)" if success_only else ""
     print(f"\nPlotting {len(all_method_ood_rates)} methods with aggregation{filter_msg}...")
@@ -395,7 +397,13 @@ def plot_barplot_compare_aggregated(
     plt.legend(loc="best")
     plt.grid(alpha=0.3)
     plt.tight_layout()
-    plt.show()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"\nSaved figure to {save_path}")
+        plt.close()
+    else:
+        plt.show()
 
 
 def plot_barplot_compare(
@@ -404,6 +412,7 @@ def plot_barplot_compare(
     success_only: bool,
     smooth_window: int = 0,
     num_bins: int = 0,
+    save_path: Optional[str] = None,
 ):
     """Plot OOD rates as barplots for multiple runs.
 
@@ -413,6 +422,7 @@ def plot_barplot_compare(
         success_only: If True, only successful episodes were included
         smooth_window: Window size for running average smoothing (0 = no smoothing)
         num_bins: Number of bins for binned smoothing (0 = no binning)
+        save_path: If provided, save figure to this path instead of displaying
     """
     filter_msg = " (success only)" if success_only else ""
     print(
@@ -520,7 +530,13 @@ def plot_barplot_compare(
     plt.legend(loc="best")
     plt.grid(alpha=0.3)
     plt.tight_layout()
-    plt.show()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"\nSaved figure to {save_path}")
+        plt.close()
+    else:
+        plt.show()
 
 
 def select_and_load_checkpoint_data(
@@ -626,8 +642,10 @@ def plot_compare_runs(
     smooth_window: int = 0,
     num_bins: int = 0,
     method_filter: Optional[List[str]] = None,
+    method_exclude: Optional[List[str]] = None,
     target_afhp: Optional[float] = None,
     average_experiments: bool = False,
+    save_path: Optional[str] = None,
 ):
     """Plot OOD rates for selected checkpoints from multiple runs.
 
@@ -637,16 +655,21 @@ def plot_compare_runs(
         smooth_window: Window size for running average smoothing
         num_bins: Number of bins for binned smoothing
         method_filter: Only include these methods
+        method_exclude: Exclude these methods
         target_afhp: If provided, automatically select checkpoints closest to this AFHP
         average_experiments: If True, average over all experiments instead of selecting one
+        save_path: If provided, save figure to this path instead of displaying
     """
     print("\n=== Multi-Run Comparison Mode ===")
     
-    # Apply method filter
+    # Apply method filter and exclusions
     methods_to_plot = sorted(results.keys())
     if method_filter:
         methods_to_plot = [m for m in methods_to_plot if m in method_filter]
         print(f"Filtering to methods: {', '.join(methods_to_plot)}")
+    if method_exclude:
+        methods_to_plot = [m for m in methods_to_plot if m not in method_exclude]
+        print(f"Excluding methods: {', '.join(method_exclude)}")
 
     # Handle experiment selection
     if average_experiments:
@@ -779,9 +802,9 @@ def plot_compare_runs(
 
     # Plot OOD rates
     if average_experiments:
-        plot_barplot_compare_aggregated(all_ood_rates, all_labels, success_only, smooth_window, num_bins)
+        plot_barplot_compare_aggregated(all_ood_rates, all_labels, success_only, smooth_window, num_bins, save_path)
     else:
-        plot_barplot_compare(all_ood_rates, all_labels, success_only, smooth_window, num_bins)
+        plot_barplot_compare(all_ood_rates, all_labels, success_only, smooth_window, num_bins, save_path)
 
 
 def plot_single_run(
@@ -790,6 +813,7 @@ def plot_single_run(
     smooth_window: int = 0,
     num_bins: int = 0,
     target_afhp: Optional[float] = None,
+    save_path: Optional[str] = None,
 ):
     """Plot OOD rate for a single selected run and checkpoint.
 
@@ -799,6 +823,7 @@ def plot_single_run(
         smooth_window: Window size for running average smoothing
         num_bins: Number of bins for binned smoothing
         target_afhp: If provided, automatically select checkpoint closest to this AFHP
+        save_path: If provided, save figure to this path instead of displaying
     """
     # Display methods and let user select
     print("\nAvailable methods:")
@@ -859,7 +884,7 @@ def plot_single_run(
     all_ood_rates = [ood_rates]
     all_labels = [f"{selected_method}_exp{selected_exp} (OOD: {ood_percentage:.1f}%)"]
     
-    plot_barplot_compare(all_ood_rates, all_labels, success_only, smooth_window, num_bins)
+    plot_barplot_compare(all_ood_rates, all_labels, success_only, smooth_window, num_bins, save_path)
 
 
 def plot_ood_rate_main():
@@ -918,6 +943,14 @@ def plot_ood_rate_main():
         help="Only include these methods in comparison mode",
     )
     parser.add_argument(
+        "--method_exclude",
+        "-e",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Exclude these methods in comparison mode",
+    )
+    parser.add_argument(
         "--target_afhp",
         type=float,
         default=None,
@@ -928,6 +961,13 @@ def plot_ood_rate_main():
         "-a",
         action="store_true",
         help="Average over all experiments instead of selecting one",
+    )
+    parser.add_argument(
+        "--save",
+        "-s",
+        type=str,
+        default=None,
+        help="Path to save the figure (if not specified, displays interactively)",
     )
 
     args = parser.parse_args()
@@ -959,8 +999,10 @@ def plot_ood_rate_main():
             smooth_window=args.smooth,
             num_bins=args.bins,
             method_filter=args.method_filter,
+            method_exclude=args.method_exclude,
             target_afhp=args.target_afhp,
             average_experiments=args.average_experiments,
+            save_path=args.save,
         )
     else:
         # Single run mode
@@ -970,6 +1012,7 @@ def plot_ood_rate_main():
             smooth_window=args.smooth,
             num_bins=args.bins,
             target_afhp=args.target_afhp,
+            save_path=args.save,
         )
 
 
