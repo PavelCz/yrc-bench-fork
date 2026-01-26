@@ -14,6 +14,7 @@ from YRC.core.configs.global_configs import get_global_variable
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger
 import wandb
+import importlib
 
 
 def main():
@@ -107,18 +108,25 @@ def main():
     # Create evaluator
     evaluator = Evaluator(config, config.environment)
     
-    # Create strong agent policy
-    # We need a dummy environment to load the policy
-    dummy_envs = env_factory.make(config, None, None)
-    strong_policy = policy_factory.make_from_checkpoint(
-        strong_agent_path, 
-        dummy_envs["train"], 
-        config
-    )
+    # Import the specific environment module to get load_policy function
+    benchmark = config.general.benchmark
+    module = importlib.import_module(f"YRC.envs.{benchmark}")
+    create_env_fn = getattr(module, "create_env")
+    load_policy_fn = getattr(module, "load_policy")
     
-    # Close dummy environments
-    for split_name in dummy_envs:
-        dummy_envs[split_name].close()
+    # Create a minimal environment just for loading the policy
+    # We don't need agents loaded, just the environment structure
+    print(f"\nBenchmark: {benchmark}")
+    print(f"Loading strong agent from {strong_agent_path}...")
+    
+    # Create a dummy environment for policy initialization
+    dummy_env = create_env_fn("train", config.environment)
+    
+    # Load the strong policy directly
+    strong_policy = load_policy_fn(strong_agent_path, dummy_env)
+    
+    # Close dummy environment
+    dummy_env.close()
     
     # Process each point and re-evaluate strong agent on help-requested seeds
     strong_performances = []
