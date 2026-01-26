@@ -210,10 +210,124 @@ def load_performance_data(
     strong_data = np.load(strong_reval_npz, allow_pickle=True)
     strong_performances = strong_data["strong_performances"]
     
+    # CRITICAL VALIDATION: Ensure arrays are properly aligned
+    print(f"\n  === Array Length Validation ===")
+    print(f"  Original data:")
+    print(f"    - Number of checkpoints (meta): {len(meta)}")
+    print(f"    - Number of performances: {len(performances)}")
+    print(f"    - Number of calculated AFHPs: {len(calculated_afhps)}")
+    print(f"  Strong re-eval data:")
+    print(f"    - Number of strong performances: {len(strong_performances)}")
+    
+    # Check if arrays have the same length
+    if len(performances) != len(strong_performances):
+        print(f"  ERROR: Performance array length mismatch!")
+        print(f"    Original: {len(performances)}, Strong: {len(strong_performances)}")
+        raise ValueError("Cannot compare performances - arrays have different lengths!")
+    
+    if len(calculated_afhps) != len(strong_performances):
+        print(f"  ERROR: AFHP/performance array length mismatch!")
+        print(f"    AFHPs: {len(calculated_afhps)}, Strong performances: {len(strong_performances)}")
+        raise ValueError("Cannot align AFHPs with performances!")
+    
+    # Calculate AFHPs from strong re-evaluation data for validation
+    strong_meta = strong_data.get("meta", [])
+    strong_calculated_afhps = []
+    
+    if len(strong_meta) > 0:
+        for idx, pt_meta in enumerate(strong_meta):
+            summary = pt_meta["summary"]["test"]
+            level_ood_pred = summary.get("level_ood_pred", [])
+            
+            # Calculate AFHP from strong data
+            if len(level_ood_pred) > 0:
+                afhp = sum(level_ood_pred) / len(level_ood_pred) * 100
+            else:
+                afhp = 0.0
+            strong_calculated_afhps.append(afhp)
+        
+        # Validate that AFHPs match between original and strong data
+        if len(calculated_afhps) == len(strong_calculated_afhps):
+            afhp_diff = np.array(calculated_afhps) - np.array(strong_calculated_afhps)
+            max_diff = np.abs(afhp_diff).max()
+            
+            if max_diff > 0.01:  # Allow small floating point differences
+                print(f"  WARNING: AFHP mismatch between original and strong data!")
+                print(f"  Maximum difference: {max_diff:.4f}%")
+                print(f"  Original AFHPs: {calculated_afhps[:5]}... (showing first 5)")
+                print(f"  Strong AFHPs:   {strong_calculated_afhps[:5]}... (showing first 5)")
+            else:
+                print(f"  ✓ AFHPs match between original and strong data (max diff: {max_diff:.6f}%)")
+        else:
+            print(f"  WARNING: Different number of checkpoints in original ({len(calculated_afhps)}) vs strong ({len(strong_calculated_afhps)}) data!")
+    else:
+        print(f"  INFO: No meta data in strong re-eval file to validate AFHPs")
+    
+    # Also check AFHPs from stored arrays if they exist
+    orig_stored_afhps = orig_data.get("afhps", None)
+    strong_stored_afhps = strong_data.get("afhps", None)
+    
+    if orig_stored_afhps is not None and len(orig_stored_afhps) > 0:
+        print(f"  Original stored AFHP range: {orig_stored_afhps.min():.2f}% - {orig_stored_afhps.max():.2f}%")
+        # Compare stored vs calculated
+        if len(orig_stored_afhps) == len(calculated_afhps):
+            stored_vs_calc_diff = np.abs(orig_stored_afhps - np.array(calculated_afhps)).max()
+            if stored_vs_calc_diff > 0.01:
+                print(f"  WARNING: Stored AFHPs differ from calculated AFHPs in original data (max diff: {stored_vs_calc_diff:.2f}%)")
+                # Show some examples
+                n_examples = min(5, len(orig_stored_afhps))
+                print(f"  Examples (first {n_examples}):")
+                print(f"    Stored:     {orig_stored_afhps[:n_examples]}")
+                print(f"    Calculated: {calculated_afhps[:n_examples]}")
+                # Check if it's a factor of 100 issue
+                factor_check = np.array(calculated_afhps[:n_examples]) / (orig_stored_afhps[:n_examples] + 1e-10)
+                if np.all(np.abs(factor_check - 100) < 1):
+                    print(f"  → Stored values appear to be fractions (0-1) instead of percentages (0-100)")
+    
     # Use calculated AFHPs instead of the ones from the file
     afhps = np.array(calculated_afhps)
     
-    print(f"  AFHP range: {afhps.min():.2f}% - {afhps.max():.2f}%")
+    print(f"  AFHP range (calculated): {afhps.min():.2f}% - {afhps.max():.2f}%")
+    
+    # Additional validation: Check if performance values are reasonable
+    print(f"\n  === Performance Value Validation ===")
+    print(f"  Original performances: min={performances.min():.2f}, max={performances.max():.2f}")
+    
+    # Handle NaN values in performance_asked
+    n_nan_asked = np.sum(np.isnan(performance_asked))
+    if n_nan_asked > 0:
+        print(f"  Performance asked: min={np.nanmin(performance_asked):.2f}, max={np.nanmax(performance_asked):.2f} ({n_nan_asked} NaN values)")
+    else:
+        print(f"  Performance asked: min={np.min(performance_asked):.2f}, max={np.max(performance_asked):.2f}")
+    
+    # Handle NaN values in strong_performances
+    n_nan_strong = np.sum(np.isnan(strong_performances))
+    if n_nan_strong > 0:
+        print(f"  Strong performances: min={np.nanmin(strong_performances):.2f}, max={np.nanmax(strong_performances):.2f} ({n_nan_strong} NaN values)")
+    else:
+        print(f"  Strong performances: min={np.min(strong_performances):.2f}, max={np.max(strong_performances):.2f}")
+    
+    # Check if NaN positions match
+    if n_nan_asked > 0 or n_nan_strong > 0:
+        nan_mask_asked = np.isnan(performance_asked)
+        nan_mask_strong = np.isnan(strong_performances)
+        if np.array_equal(nan_mask_asked, nan_mask_strong):
+            print(f"  ✓ NaN positions match between performance_asked and strong_performances")
+        else:
+            print(f"  WARNING: NaN positions don't match between arrays!")
+            print(f"    NaN in performance_asked: {np.where(nan_mask_asked)[0]}")
+            print(f"    NaN in strong_performances: {np.where(nan_mask_strong)[0]}")
+    
+    # Verify that strong performances are per-checkpoint averages for help-requested episodes
+    if len(strong_meta) > 0:
+        # Spot check a few checkpoints to ensure alignment
+        n_checks = min(3, len(calculated_afhps))
+        print(f"\n  === Checkpoint Alignment Spot Check (first {n_checks}) ===")
+        for i in range(n_checks):
+            orig_afhp = calculated_afhps[i]
+            strong_perf = strong_performances[i]
+            perf_asked = performance_asked[i]
+            print(f"  Checkpoint {i}: AFHP={orig_afhp:.2f}%, Perf(asked)={perf_asked:.2f}, Strong={strong_perf:.2f}")
     
     return afhps, performances, np.array(performance_asked), strong_performances
 
