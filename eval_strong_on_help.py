@@ -18,7 +18,8 @@ import wandb
 
 def main():
     args = flags.make()
-    args.eval_mode = True
+    # Don't set eval_mode = True since we're not creating a new experiment
+    # We're just re-evaluating existing results
     
     # Validation
     if not args.npz_file:
