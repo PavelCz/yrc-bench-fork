@@ -1,79 +1,43 @@
+from pathlib import Path
+import json
+import os
+import time
+from typing import List, Optional, Dict, Any, Tuple
 
 import flags
 import YRC.core.configs.utils as config_utils
+import YRC.core.environment as env_factory
+import YRC.core.policy as policy_factory
+from YRC.core import Evaluator
 from YRC.core.configs.global_configs import get_global_variable
-from pathlib import Path
-import importlib
+
 import numpy as np
-import json
-import logging
-import time
-from typing import List, Optional
-import os
-
-# Re-use the rollout function from eval_policy if possible, or copy it. 
-# copy is safer to avoid importing issues if eval_policy is strict.
-# Actually, eval_policy is a script, not a module, so I cannot import from it easily.
-# I will copy the rollout logic.
-
-def rollout(policy, env, num_episodes):
-    """
-    Rollout the policy on the environment and collect episode returns.
-    Using greedy=True by default for strong agent evaluation.
-    
-    Note: num_episodes does NOT need to be divisible by num_envs.
-    We simply collect episodes until we have enough.
-    """
-    returns = []
-    num_completed = 0
-    target_episodes = num_episodes
-    cumulative_rewards = [0.0] * env.num_envs
-    
-    obs = env.reset()
-
-    # Reset episode counter for heuristic policies
-    if hasattr(policy, "reset_episode"):
-        for i in range(env.num_envs):
-            policy.reset_episode()
-
-    while num_completed < target_episodes:
-        action = policy.act(obs, greedy=True)
-        next_obs, reward, done, info = env.step(action)
-
-        for i in range(env.num_envs):
-            cumulative_rewards[i] += reward[i]
-
-            if done[i]:
-                if num_completed < target_episodes:
-                    returns.append(cumulative_rewards[i])
-                    num_completed += 1
-                
-                cumulative_rewards[i] = 0.0
-                if hasattr(policy, "reset_episode"):
-                    policy.reset_episode()
-        
-        obs = next_obs
-        
-    return returns
+from pytorch_lightning.loggers import WandbLogger
+import wandb
 
 
 def main():
     args = flags.make()
+    args.eval_mode = True
     
     # Validation
     if not args.npz_file:
         raise ValueError("Must provide --npz_file argument")
         
     # Check for strong agent argument
-    # flags.py defines -strong mapping to --agents.strong
-    # We check args.agents.strong
     strong_agent_path = getattr(args.agents, "strong", None)
     if not strong_agent_path:
-        # Fallback to model_file if provided (though user said use -strong)
+        # Fallback to model_file if provided
         strong_agent_path = getattr(args, "model_file", None)
     
     if not strong_agent_path:
         raise ValueError("Must provide strong agent path via -strong <path>")
+    
+    # Load config
+    config = config_utils.load(args.config, flags=args)
+    
+    # Record time for profiling purposes
+    start_time = time.time()
     
     # Initialize wandb if available and not disabled
     use_wandb = os.environ.get("DISABLE_WANDB", "0") != "1"
@@ -81,22 +45,28 @@ def main():
     
     if use_wandb:
         try:
-            import wandb
-            
             # Get job name from args or NPZ filename
             job_name = getattr(args, "name", None) or Path(args.npz_file).stem
             
-            # Initialize wandb run
-            wandb_run = wandb.init(
-                project="yrc-bench-strong-reval",
-                name=f"strong_reval_{job_name}",
-                config={
+            # Prepare wandb init parameters
+            wandb_kwargs = {
+                "name": f"strong_reval_{job_name}",
+                "project": config.wandb.project or "yrc-bench-strong-reval",
+                "group": config.wandb.group,
+                "mode": config.wandb.mode,
+                "job_type": "eval_strong",
+                "config": {
                     "npz_file": args.npz_file,
                     "strong_agent": strong_agent_path,
                     "config_file": args.config,
+                    "exp_name": config.exp_name,
                 },
-                reinit=True,
-            )
+            }
+            
+            if config.wandb.entity is not None:
+                wandb_kwargs["entity"] = config.wandb.entity
+            
+            wandb_run = wandb.init(**wandb_kwargs)
             print(f"\nInitialized wandb run: {wandb_run.name}")
         except ImportError:
             print("wandb not available, continuing without logging")
@@ -104,16 +74,13 @@ def main():
         except Exception as e:
             print(f"Failed to initialize wandb: {e}")
             use_wandb = False
-
-    # Load config
-    config = config_utils.load(args.config, flags=args)
     
     # Load NPZ results
     npz_path = Path(args.npz_file)
     if not npz_path.exists():
         raise FileNotFoundError(f"NPZ file not found: {npz_path}")
         
-    print(f"Loading results from {npz_path}...")
+    print(f"\nLoading results from {npz_path}...")
     data = np.load(npz_path, allow_pickle=True)
     
     # Extract data
@@ -136,44 +103,41 @@ def main():
             "original_perf_max": max(original_performances),
         })
     
-    # Setup environment factory
-    benchmark = config.general.benchmark
-    print(f"\nBenchmark: {benchmark}")
-    module = importlib.import_module(f"YRC.envs.{benchmark}")
-    create_env_fn = getattr(module, "create_env")
-    load_policy_fn = getattr(module, "load_policy")
+    # Create evaluator
+    evaluator = Evaluator(config, config.environment)
     
-    # Load Strong Policy
-    # Create a dummy train env for loading policy
-    print(f"Loading strong agent from {strong_agent_path}...")
-    train_env = create_env_fn("train", config.environment)
-    policy = load_policy_fn(strong_agent_path, train_env)
-    train_env.close()
+    # Create strong agent policy
+    # We need a dummy environment to load the policy
+    dummy_envs = env_factory.make(config, None, None)
+    strong_policy = policy_factory.make_from_checkpoint(
+        strong_agent_path, 
+        dummy_envs["train"], 
+        config
+    )
     
+    # Close dummy environments
+    for split_name in dummy_envs:
+        dummy_envs[split_name].close()
+    
+    # Process each point and re-evaluate strong agent on help-requested seeds
     strong_performances = []
     total_seeds_evaluated = 0
     
     print(f"\nStarting re-evaluation on {len(meta)} points...")
     print("="*60)
-    start_time = time.time()
     
     for i, pt_meta in enumerate(meta):
         point_start_time = time.time()
-        # Depending on how meta is structured (dictionary or object)
-        # In eval_afhp.py, we save pt.meta which is a dict
         
         # Access summary for the split (usually 'test' since we ran AFHP on test)
-        # We need to find which split was used. AFHP usually runs on 'test'.
-        # Let's check keys.
         summary_dict = pt_meta.get("summary", {})
-        # Assume 'test' split. If not found, try keys.
         split = "test"
         if split not in summary_dict:
             keys = list(summary_dict.keys())
             if keys:
                 split = keys[0]
             else:
-                print(f"Warning: No summary found for point {i}, skipping...")
+                print(f"\n[{i+1}/{len(meta)}] Point {i}: No summary found, skipping...")
                 strong_performances.append(np.nan)
                 continue
                 
@@ -189,7 +153,7 @@ def main():
         
         if not help_seeds:
             print(f"\n[{i+1}/{len(meta)}] Point {i} (AFHP={afhps[i]:.2f}%): No help requested. Strong performance undefined.")
-            strong_performances.append(np.nan) # Or 0? Undefined is better.
+            strong_performances.append(np.nan)
             
             if use_wandb and wandb_run:
                 wandb.log({
@@ -200,68 +164,60 @@ def main():
                 })
             continue
             
-        # Create environment with specific seeds
-        # We need to ensure we run exactly len(help_seeds) episodes
-        # And since we provide explicit seeds, we use sequential mode
-        
-        # Override config common.num_envs to match help_seeds length or a reasonable batch size
-        # If help_seeds is large, we should batch. If small, we can run all at once or batch.
-        # But create_env usually uses config.environment.common.num_envs
-        # We should stick to the configured num_envs but run repeatedly until done.
-        
         print(f"\n[{i+1}/{len(meta)}] Point {i} (AFHP={afhps[i]:.2f}%):")
         print(f"  - Original performance: {original_performances[i]:.2f}")
         print(f"  - Help requested on {len(help_seeds)}/{len(level_seeds)} seeds ({len(help_seeds)/len(level_seeds)*100:.1f}%)")
         print(f"  - Evaluating strong agent...")
         
-        # Create test env with ONLY the help seeds
-        # We pass level_seeds explicitly
-        test_env = create_env_fn(
-            "test", 
-            config.environment, 
-            level_seeds=help_seeds, 
-            level_seeds_mode="sequential"
+        # Progress bar for rollout
+        print(f"  - Running {len(help_seeds)} episodes...", end='', flush=True)
+        rollout_start = time.time()
+        
+        # Create environments with only the help seeds
+        def make_help_envs():
+            return env_factory.make(config, help_seeds, "sequential")
+        
+        # Evaluate strong agent on help seeds
+        eval_result = evaluator.evaluate(
+            policy=strong_policy,
+            envs=make_help_envs(),
+            split=split,
+            num_episodes=len(help_seeds),
+            base_log_path=None,  # Don't save videos for this
         )
         
-        try:
-            # Progress bar for rollout
-            print(f"  - Running {len(help_seeds)} episodes...", end='', flush=True)
-            rollout_start = time.time()
-            
-            returns = rollout(policy, test_env, len(help_seeds))
-            rollout_time = time.time() - rollout_start
-            
-            mean_return = np.mean(returns)
-            std_return = np.std(returns)
-            strong_performances.append(mean_return)
-            total_seeds_evaluated += len(help_seeds)
-            
-            print(f" Done! ({rollout_time:.1f}s)")
-            print(f"  - Strong agent return: {mean_return:.2f} ± {std_return:.2f}")
-            print(f"  - Improvement over original: {mean_return - original_performances[i]:.2f}")
-            
-            point_time = time.time() - point_start_time
-            
-            # Log to wandb
-            if use_wandb and wandb_run:
-                wandb.log({
-                    "point_idx": i,
-                    "point_afhp": afhps[i],
-                    "help_requested": True,
-                    "num_help_seeds": len(help_seeds),
-                    "total_seeds": len(level_seeds),
-                    "help_percentage": len(help_seeds) / len(level_seeds) * 100,
-                    "original_performance": original_performances[i],
-                    "strong_performance": mean_return,
-                    "strong_performance_std": std_return,
-                    "improvement": mean_return - original_performances[i],
-                    "rollout_time": rollout_time,
-                    "point_processing_time": point_time,
-                    "cumulative_seeds_evaluated": total_seeds_evaluated,
-                })
-        finally:
-            test_env.close()
-            
+        rollout_time = time.time() - rollout_start
+        
+        # Extract performance metrics
+        mean_return = eval_result["performance"]["mean"]
+        std_return = eval_result["performance"]["std"]
+        strong_performances.append(mean_return)
+        total_seeds_evaluated += len(help_seeds)
+        
+        print(f" Done! ({rollout_time:.1f}s)")
+        print(f"  - Strong agent return: {mean_return:.2f} ± {std_return:.2f}")
+        print(f"  - Improvement over original: {mean_return - original_performances[i]:.2f}")
+        
+        point_time = time.time() - point_start_time
+        
+        # Log to wandb
+        if use_wandb and wandb_run:
+            wandb.log({
+                "point_idx": i,
+                "point_afhp": afhps[i],
+                "help_requested": True,
+                "num_help_seeds": len(help_seeds),
+                "total_seeds": len(level_seeds),
+                "help_percentage": len(help_seeds) / len(level_seeds) * 100,
+                "original_performance": original_performances[i],
+                "strong_performance": mean_return,
+                "strong_performance_std": std_return,
+                "improvement": mean_return - original_performances[i],
+                "rollout_time": rollout_time,
+                "point_processing_time": point_time,
+                "cumulative_seeds_evaluated": total_seeds_evaluated,
+            })
+    
     total_time = time.time() - start_time
     print("\n" + "="*60)
     print(f"Re-evaluation completed!")
@@ -321,6 +277,10 @@ def main():
         wandb.log_artifact(artifact)
         
         wandb.finish()
+    
+    print(f"Time taken: {total_time:.1f} seconds")
+    print(f"Total seeds evaluated: {total_seeds_evaluated}")
+
 
 if __name__ == "__main__":
     main()
