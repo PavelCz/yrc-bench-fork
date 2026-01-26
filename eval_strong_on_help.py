@@ -17,18 +17,29 @@ import wandb
 import importlib
 
 
-def rollout(policy, env, num_episodes):
+def rollout(policy, env, num_episodes, expected_seeds=None, padding_seeds=None):
     """
     Rollout the policy on the environment and collect episode returns.
     Using greedy=True by default for strong agent evaluation.
     
     Note: num_episodes does NOT need to be divisible by num_envs.
     We simply collect episodes until we have enough.
+    
+    Args:
+        policy: Policy to evaluate
+        env: Environment to run
+        num_episodes: Number of episodes to collect
+        expected_seeds: Set of seeds we expect to see (for validation)
+        padding_seeds: Set of padding seeds that should NOT complete (for validation)
     """
     returns = []
     num_completed = 0
     target_episodes = num_episodes
     cumulative_rewards = [0.0] * env.num_envs
+    
+    # Track which seeds we've seen complete
+    completed_seeds = []
+    seed_to_return = {}
     
     # IMPORTANT: Calling reset() consumes the first batch of seeds in sequential mode
     # The initial reset triggers episodes that we should count
@@ -76,9 +87,27 @@ def rollout(policy, env, num_episodes):
             cumulative_rewards[i] += reward[i]
 
             if done[i]:
+                # Extract the level seed from info
+                if isinstance(info, list):
+                    level_seed = info[i].get('level_seed', None)
+                elif isinstance(info, dict) and 'level_seed' in info:
+                    # Some environments might return a single dict with arrays
+                    level_seed = info['level_seed'][i] if hasattr(info['level_seed'], '__getitem__') else info['level_seed']
+                else:
+                    level_seed = None
+                
                 if num_completed < target_episodes:
                     returns.append(cumulative_rewards[i])
                     num_completed += 1
+                    
+                    # Track completed seed
+                    if level_seed is not None:
+                        completed_seeds.append(level_seed)
+                        seed_to_return[level_seed] = cumulative_rewards[i]
+                        
+                        # Validation: check if this is a padding seed
+                        if padding_seeds and level_seed in padding_seeds:
+                            print(f"\n  WARNING: Padding seed {level_seed} completed! This shouldn't happen.")
                 
                 cumulative_rewards[i] = 0.0
                 if hasattr(policy, "reset_episode"):
@@ -88,7 +117,36 @@ def rollout(policy, env, num_episodes):
         step_count += 1
     
     print()  # New line after progress
-    return returns
+    
+    # Validation: Check that all expected seeds completed exactly once
+    if expected_seeds:
+        completed_set = set(completed_seeds)
+        expected_set = set(expected_seeds)
+        
+        # Check for missing seeds
+        missing_seeds = expected_set - completed_set
+        if missing_seeds:
+            print(f"\n  ERROR: {len(missing_seeds)} expected seeds did not complete: {sorted(list(missing_seeds))[:10]}...")
+        
+        # Check for duplicate completions
+        from collections import Counter
+        seed_counts = Counter(completed_seeds)
+        duplicates = {seed: count for seed, count in seed_counts.items() if count > 1}
+        if duplicates:
+            print(f"\n  ERROR: Some seeds completed multiple times: {duplicates}")
+        
+        # Check for unexpected seeds (not in expected set)
+        unexpected_seeds = completed_set - expected_set
+        if unexpected_seeds:
+            print(f"\n  WARNING: {len(unexpected_seeds)} unexpected seeds completed: {sorted(list(unexpected_seeds))[:10]}...")
+        
+        print(f"\n  Validation summary:")
+        print(f"    - Expected seeds: {len(expected_seeds)}")
+        print(f"    - Completed seeds: {len(completed_set)}")
+        print(f"    - Total episodes: {len(completed_seeds)}")
+        print(f"    - All expected seeds completed exactly once: {missing_seeds == set() and duplicates == {} and unexpected_seeds == set()}")
+    
+    return returns, seed_to_return
 
 
 def main():
@@ -264,8 +322,15 @@ def main():
     # IMPORTANT: In sequential mode, we need to provide extra seeds to account for
     # the initial reset consuming some seeds. Add num_envs extra seeds.
     original_num_envs = config.environment.procgen.common.num_envs
-    padded_seeds = all_seeds + list(range(max(all_seeds) + 1, max(all_seeds) + 1 + original_num_envs))
-    print(f"Creating environment with {len(padded_seeds)} seeds ({len(all_seeds)} original + {original_num_envs} padding)")
+    
+    # Create padding seeds that are distinct from the original seeds
+    max_seed = max(all_seeds) if all_seeds else 0
+    padding_seeds = list(range(max_seed + 1000000, max_seed + 1000000 + original_num_envs))
+    padded_seeds = all_seeds + padding_seeds
+    
+    print(f"Creating environment with {len(padded_seeds)} seeds ({len(all_seeds)} original + {len(padding_seeds)} padding)")
+    print(f"  Original seeds range: {min(all_seeds)} - {max(all_seeds)}")
+    print(f"  Padding seeds: {padding_seeds}")
     
     all_seeds_env = create_env_fn(
         split,
@@ -280,7 +345,13 @@ def main():
         # Evaluate strong policy on all seeds with progress updates
         print(f"Starting rollout for {len(all_seeds)} episodes...")
         print(f"Environment has {all_seeds_env.num_envs} parallel environments")
-        all_returns = rollout(strong_policy, all_seeds_env, len(all_seeds))
+        all_returns, seed_to_return_map = rollout(
+            strong_policy, 
+            all_seeds_env, 
+            len(all_seeds),
+            expected_seeds=all_seeds,
+            padding_seeds=set(padding_seeds)
+        )
         print(f"Rollout complete! Got {len(all_returns)} returns")
     finally:
         all_seeds_env.close()
@@ -289,13 +360,13 @@ def main():
     print(f"\nCompleted evaluation in {eval_time:.1f}s")
     print(f"Mean return across all seeds: {np.mean(all_returns):.2f} ± {np.std(all_returns):.2f}")
     
-    # Create a mapping from seed to return
-    # Only use the returns for the original seeds, not the padding
-    if len(all_returns) > len(all_seeds):
-        print(f"  WARNING: Got {len(all_returns)} returns but only {len(all_seeds)} seeds")
-        print(f"  Trimming to first {len(all_seeds)} returns")
-        all_returns = all_returns[:len(all_seeds)]
-    seed_to_return = dict(zip(all_seeds, all_returns))
+    # Use the validated seed-to-return mapping from rollout
+    seed_to_return = seed_to_return_map
+    
+    # Double-check we have returns for all seeds
+    missing_returns = set(all_seeds) - set(seed_to_return.keys())
+    if missing_returns:
+        print(f"  ERROR: Missing returns for {len(missing_returns)} seeds: {sorted(list(missing_returns))[:10]}...")
     
     # Log overall statistics to wandb
     if use_wandb and wandb_run:
