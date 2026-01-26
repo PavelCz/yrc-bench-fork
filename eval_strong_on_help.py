@@ -30,9 +30,14 @@ def rollout(policy, env, num_episodes):
     target_episodes = num_episodes
     cumulative_rewards = [0.0] * env.num_envs
     
-    print(f"  Resetting environment...")
+    # IMPORTANT: Calling reset() consumes the first batch of seeds in sequential mode
+    # The initial reset triggers episodes that we should count
+    print(f"  Calling reset() - this will start the first {env.num_envs} episodes")
     obs = env.reset()
     print(f"  Environment reset complete. Obs shape: {obs.shape}")
+    
+    # The environments are now running their first episodes using seeds 0-7
+    # We need to count these episodes when they complete
 
     # Reset episode counter for heuristic policies
     if hasattr(policy, "reset_episode"):
@@ -256,11 +261,16 @@ def main():
     print("="*60)
     
     # Create environment with all seeds
-    print(f"Creating environment with {len(all_seeds)} seeds...")
+    # IMPORTANT: In sequential mode, we need to provide extra seeds to account for
+    # the initial reset consuming some seeds. Add num_envs extra seeds.
+    original_num_envs = config.environment.procgen.common.num_envs
+    padded_seeds = all_seeds + list(range(max(all_seeds) + 1, max(all_seeds) + 1 + original_num_envs))
+    print(f"Creating environment with {len(padded_seeds)} seeds ({len(all_seeds)} original + {original_num_envs} padding)")
+    
     all_seeds_env = create_env_fn(
         split,
         config.environment,
-        level_seeds=all_seeds,
+        level_seeds=padded_seeds,
         level_seeds_mode="sequential"
     )
     
@@ -280,6 +290,11 @@ def main():
     print(f"Mean return across all seeds: {np.mean(all_returns):.2f} ± {np.std(all_returns):.2f}")
     
     # Create a mapping from seed to return
+    # Only use the returns for the original seeds, not the padding
+    if len(all_returns) > len(all_seeds):
+        print(f"  WARNING: Got {len(all_returns)} returns but only {len(all_seeds)} seeds")
+        print(f"  Trimming to first {len(all_seeds)} returns")
+        all_returns = all_returns[:len(all_seeds)]
     seed_to_return = dict(zip(all_seeds, all_returns))
     
     # Log overall statistics to wandb
