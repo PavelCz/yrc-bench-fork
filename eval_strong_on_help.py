@@ -30,14 +30,20 @@ def rollout(policy, env, num_episodes):
     target_episodes = num_episodes
     cumulative_rewards = [0.0] * env.num_envs
     
+    print(f"  Resetting environment...")
     obs = env.reset()
+    print(f"  Environment reset complete. Obs shape: {obs.shape}")
 
     # Reset episode counter for heuristic policies
     if hasattr(policy, "reset_episode"):
         for i in range(env.num_envs):
             policy.reset_episode()
 
+    step_count = 0
     while num_completed < target_episodes:
+        if step_count % 100 == 0:
+            print(f"  Step {step_count}: Completed {num_completed}/{target_episodes} episodes", end='\r')
+        
         action = policy.act(obs, greedy=True)
         next_obs, reward, done, info = env.step(action)
 
@@ -54,7 +60,9 @@ def rollout(policy, env, num_episodes):
                     policy.reset_episode()
         
         obs = next_obs
-        
+        step_count += 1
+    
+    print()  # New line after progress
     return returns
 
 
@@ -169,10 +177,12 @@ def main():
     dummy_env.close()
     
     # First, get all unique seeds from all evaluation points
+    print("\nCollecting unique seeds from all evaluation points...")
     all_seeds = set()
     split = "test"  # Default split
     
-    for pt_meta in meta:
+    for i, pt_meta in enumerate(meta):
+        print(f"  Processing point {i+1}/{len(meta)}...", end='\r')
         summary_dict = pt_meta.get("summary", {})
         if split in summary_dict:
             level_seeds = summary_dict[split].get("level_seeds", [])
@@ -185,17 +195,48 @@ def main():
                 level_seeds = summary_dict[split].get("level_seeds", [])
                 all_seeds.update(level_seeds)
     
+    print()  # New line after progress
     all_seeds = sorted(list(all_seeds))
-    print(f"\nFound {len(all_seeds)} unique seeds across all evaluation points")
+    print(f"Found {len(all_seeds)} unique seeds across all evaluation points")
     print(f"Split: {split}")
+    
+    # Handle edge case where no seeds were found
+    if len(all_seeds) == 0:
+        print("\nWarning: No seeds found in any evaluation point!")
+        print("This might indicate an issue with the NPZ file format.")
+        # Let's examine the first meta entry to debug
+        if len(meta) > 0:
+            print("\nFirst meta entry structure:")
+            print(f"  Keys: {list(meta[0].keys())}")
+            if 'summary' in meta[0]:
+                print(f"  Summary keys: {list(meta[0]['summary'].keys())}")
+                if split in meta[0]['summary']:
+                    print(f"  {split} keys: {list(meta[0]['summary'][split].keys())}")
+    
+    # Handle case where no seeds were found
+    if len(all_seeds) == 0:
+        print("\nNo seeds to evaluate. Creating dummy results...")
+        strong_performances = [np.nan] * len(meta)
+        total_time = time.time() - start_time
+        
+        # Save results even if empty
+        output_path = npz_path.with_name(f"{npz_path.stem}_strong_reval.npz")
+        np.savez(
+            output_path,
+            afhps=afhps,
+            original_performances=original_performances,
+            strong_performances=np.array(strong_performances),
+            meta=meta
+        )
+        print(f"\nResults saved to {output_path}")
+        return
     
     # Evaluate strong policy on ALL seeds
     print(f"\nEvaluating strong policy on all {len(all_seeds)} seeds...")
     print("="*60)
     
-    start_time = time.time()
-    
     # Create environment with all seeds
+    print(f"Creating environment with {len(all_seeds)} seeds...")
     all_seeds_env = create_env_fn(
         split,
         config.environment,
@@ -206,8 +247,11 @@ def main():
     print(f"Running {len(all_seeds)} episodes...")
     
     try:
-        # Evaluate strong policy on all seeds
+        # Evaluate strong policy on all seeds with progress updates
+        print(f"Starting rollout for {len(all_seeds)} episodes...")
+        print(f"Environment has {all_seeds_env.num_envs} parallel environments")
         all_returns = rollout(strong_policy, all_seeds_env, len(all_seeds))
+        print(f"Rollout complete! Got {len(all_returns)} returns")
     finally:
         all_seeds_env.close()
     
@@ -349,7 +393,7 @@ def main():
         wandb.finish()
     
     print(f"Time taken: {total_time:.1f} seconds")
-    print(f"Total seeds evaluated: {total_seeds_evaluated}")
+    print(f"Total unique seeds evaluated: {len(all_seeds)}")
 
 
 if __name__ == "__main__":
