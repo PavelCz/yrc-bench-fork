@@ -8,13 +8,54 @@ import flags
 import YRC.core.configs.utils as config_utils
 import YRC.core.environment as env_factory
 import YRC.core.policy as policy_factory
-from YRC.core import Evaluator
+# We don't actually need the Evaluator for this task
 from YRC.core.configs.global_configs import get_global_variable
 
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger
 import wandb
 import importlib
+
+
+def rollout(policy, env, num_episodes):
+    """
+    Rollout the policy on the environment and collect episode returns.
+    Using greedy=True by default for strong agent evaluation.
+    
+    Note: num_episodes does NOT need to be divisible by num_envs.
+    We simply collect episodes until we have enough.
+    """
+    returns = []
+    num_completed = 0
+    target_episodes = num_episodes
+    cumulative_rewards = [0.0] * env.num_envs
+    
+    obs = env.reset()
+
+    # Reset episode counter for heuristic policies
+    if hasattr(policy, "reset_episode"):
+        for i in range(env.num_envs):
+            policy.reset_episode()
+
+    while num_completed < target_episodes:
+        action = policy.act(obs, greedy=True)
+        next_obs, reward, done, info = env.step(action)
+
+        for i in range(env.num_envs):
+            cumulative_rewards[i] += reward[i]
+
+            if done[i]:
+                if num_completed < target_episodes:
+                    returns.append(cumulative_rewards[i])
+                    num_completed += 1
+                
+                cumulative_rewards[i] = 0.0
+                if hasattr(policy, "reset_episode"):
+                    policy.reset_episode()
+        
+        obs = next_obs
+        
+    return returns
 
 
 def main():
@@ -105,8 +146,7 @@ def main():
             "original_perf_max": max(original_performances),
         })
     
-    # Create evaluator
-    evaluator = Evaluator(config, config.environment)
+    # We don't need an evaluator for this simple re-evaluation task
     
     # Import the specific environment module to get load_policy function
     benchmark = config.general.benchmark
@@ -182,24 +222,26 @@ def main():
         print(f"  - Running {len(help_seeds)} episodes...", end='', flush=True)
         rollout_start = time.time()
         
-        # Create environments with only the help seeds
-        def make_help_envs():
-            return env_factory.make(config, help_seeds, "sequential")
-        
-        # Evaluate strong agent on help seeds
-        eval_result = evaluator.evaluate(
-            policy=strong_policy,
-            envs=make_help_envs(),
-            split=split,
-            num_episodes=len(help_seeds),
-            base_log_path=None,  # Don't save videos for this
+        # Create environment with only the help seeds
+        help_env = create_env_fn(
+            split,  # Use the same split as the original evaluation
+            config.environment,
+            level_seeds=help_seeds,
+            level_seeds_mode="sequential"
         )
         
-        rollout_time = time.time() - rollout_start
-        
-        # Extract performance metrics
-        mean_return = eval_result["performance"]["mean"]
-        std_return = eval_result["performance"]["std"]
+        try:
+            # Use the original rollout function to evaluate
+            returns = rollout(strong_policy, help_env, len(help_seeds))
+            
+            rollout_time = time.time() - rollout_start
+            
+            # Calculate statistics
+            mean_return = np.mean(returns)
+            std_return = np.std(returns)
+        finally:
+            # Always close the environment
+            help_env.close()
         strong_performances.append(mean_return)
         total_seeds_evaluated += len(help_seeds)
         
