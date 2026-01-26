@@ -321,7 +321,16 @@ def main():
     # Create environment with all seeds
     # IMPORTANT: In sequential mode, we need to provide extra seeds to account for
     # the initial reset consuming some seeds. Add num_envs extra seeds.
-    original_num_envs = config.environment.procgen.common.num_envs
+    
+    # Get num_envs from the appropriate place in config
+    if hasattr(config.environment, 'procgen') and config.environment.procgen is not None:
+        original_num_envs = config.environment.procgen.common.num_envs
+    elif hasattr(config.environment, 'num_envs'):
+        original_num_envs = config.environment.num_envs
+    else:
+        # Default to 8 which is common for procgen
+        original_num_envs = 8
+        print(f"Warning: Could not find num_envs in config, defaulting to {original_num_envs}")
     
     # Create padding seeds that are distinct from the original seeds
     max_seed = max(all_seeds) if all_seeds else 0
