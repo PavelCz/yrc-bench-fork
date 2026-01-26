@@ -418,6 +418,7 @@ def plot_strong_reval_diff(
     title: Optional[str] = None,
     no_aggregate: bool = False,
     plot_absolute: bool = False,
+    plot_strong_only: bool = False,
 ):
     """
     Plot the performance difference between coordination policy and strong-from-start.
@@ -432,6 +433,7 @@ def plot_strong_reval_diff(
         title: Custom title for the plot
         no_aggregate: Plot experiments separately instead of aggregating
         plot_absolute: If True, plot absolute performances instead of differences
+        plot_strong_only: If True, only plot strong agent performance (not differences)
     """
     results = extract_strong_reval_results(eval_dir, prefix_filter, env_filter)
 
@@ -477,14 +479,22 @@ def plot_strong_reval_diff(
                     original_npz, strong_reval_npz
                 )
                 
-                # Calculate the difference: performance_asked - strong_performances
-                # This shows how much worse the coordination policy is
-                if plot_absolute:
-                    # Plot absolute values
-                    y_coord = performance_asked
-                    y_strong = strong_performances
+                # Calculate what to plot based on options
+                if plot_strong_only:
+                    # Only plot strong agent performance
+                    valid_mask = ~np.isnan(strong_performances)
+                    if np.sum(valid_mask) > 0:
+                        x_arrays.append(afhps[valid_mask])
+                        y_arrays.append(strong_performances[valid_mask])
+                elif plot_absolute:
+                    # Plot both absolute values (coordination and strong)
+                    # For now, just plot coordination performance
+                    valid_mask = ~np.isnan(performance_asked)
+                    if np.sum(valid_mask) > 0:
+                        x_arrays.append(afhps[valid_mask])
+                        y_arrays.append(performance_asked[valid_mask])
                 else:
-                    # Plot difference
+                    # Plot difference: performance_asked - strong_performances
                     diff = performance_asked - strong_performances
                     
                     # Only keep valid (non-NaN) points
@@ -569,8 +579,9 @@ def plot_strong_reval_diff(
                 alpha=0.2,
             )
 
-    # Add reference line at y=0
-    plt.axhline(y=0, color="black", linestyle="--", alpha=0.5, label="No difference")
+    # Add reference line at y=0 (only for difference plots)
+    if not plot_strong_only and not plot_absolute:
+        plt.axhline(y=0, color="black", linestyle="--", alpha=0.5, label="No difference")
 
     # Labels and title
     env_str = env_filter if env_filter else "all"
@@ -578,9 +589,12 @@ def plot_strong_reval_diff(
 
     plt.xlabel("Ask-For-Help Percentage (AFHP)")
     
-    if plot_absolute:
-        plt.ylabel("Average Return")
-        default_title = f"Coordination vs Strong-from-Start Performance ({env_str}, prefix={prefix_str})"
+    if plot_strong_only:
+        plt.ylabel("Average Return (Strong Agent from Start)")
+        default_title = f"Strong Agent Performance on Help-Requested Episodes ({env_str}, prefix={prefix_str})"
+    elif plot_absolute:
+        plt.ylabel("Average Return (Coordination Policy)")
+        default_title = f"Coordination Policy Performance ({env_str}, prefix={prefix_str})"
     else:
         plt.ylabel("Performance Difference (Coordination - Strong from Start)")
         default_title = f"Performance Loss from Mid-Episode Switching ({env_str}, prefix={prefix_str})"
@@ -662,6 +676,11 @@ def main():
         action="store_true",
         help="Plot absolute performances instead of differences",
     )
+    parser.add_argument(
+        "--strong-only",
+        action="store_true",
+        help="Plot only strong agent performance (from start) vs AFHP",
+    )
 
     args = parser.parse_args()
 
@@ -682,6 +701,7 @@ def main():
         title=args.title,
         no_aggregate=args.no_aggregate,
         plot_absolute=args.absolute,
+        plot_strong_only=args.strong_only,
     )
 
 
