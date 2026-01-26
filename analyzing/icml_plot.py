@@ -231,6 +231,76 @@ def interpolate_to_common_x(
     return common_x, interpolated_y
 
 
+def calculate_minmax_bands(
+    x_arrays: List[np.ndarray],
+    y_arrays: List[np.ndarray],
+    quantiles: Tuple[float, float] = (0.25, 0.75),
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Calculate min-max quantile bands from multiple curves.
+    
+    For each x value, interpolate all curves to that x, then calculate
+    the median and specified quantiles across experiments.
+    
+    Args:
+        x_arrays: List of x-value arrays for each experiment
+        y_arrays: List of y-value arrays for each experiment
+        quantiles: Tuple of (lower_quantile, upper_quantile), default (0.25, 0.75)
+        
+    Returns:
+        Tuple of (common_x, y_median, y_lower_quantile, y_upper_quantile)
+    """
+    # Collect all unique x values
+    all_x_values = set()
+    for x_arr in x_arrays:
+        all_x_values.update(x_arr.tolist())
+    common_x = np.array(sorted(all_x_values))
+    
+    # Create interpolation functions for each experiment
+    interp_funcs = []
+    for x, y in zip(x_arrays, y_arrays):
+        sort_idx = np.argsort(x)
+        x_sorted = x[sort_idx]
+        y_sorted = y[sort_idx]
+        f = interpolate.interp1d(
+            x_sorted, y_sorted, kind="linear", 
+            bounds_error=False, fill_value=np.nan
+        )
+        interp_funcs.append(f)
+    
+    # Calculate statistics at each x value
+    y_medians = []
+    y_lower_quantiles = []
+    y_upper_quantiles = []
+    
+    for x_val in common_x:
+        # Collect y values from all experiments at this x
+        y_values = []
+        
+        for f in interp_funcs:
+            y_val = f(x_val)
+            if not np.isnan(y_val):
+                y_values.append(y_val)
+        
+        if len(y_values) > 0:
+            # Calculate median and quantiles
+            y_values = np.array(y_values)
+            median = np.median(y_values)
+            lower_q = np.quantile(y_values, quantiles[0])
+            upper_q = np.quantile(y_values, quantiles[1])
+            
+            y_medians.append(median)
+            y_lower_quantiles.append(lower_q)
+            y_upper_quantiles.append(upper_q)
+        else:
+            # No values available at this x
+            y_medians.append(np.nan)
+            y_lower_quantiles.append(np.nan)
+            y_upper_quantiles.append(np.nan)
+    
+    return common_x, np.array(y_medians), np.array(y_lower_quantiles), np.array(y_upper_quantiles)
+
+
 def plot_icml_results(
     eval_dir: Path,
     prefix_filter: Optional[List[str]],
@@ -308,6 +378,7 @@ def plot_icml_results(
         # Load all experiment data
         x_arrays = []
         y_arrays = []
+        meta_arrays = []  # Store meta data for confidence interval calculation
 
         for exp_id in exp_ids:
             data_path = exp_data[exp_id]
@@ -318,6 +389,12 @@ def plot_icml_results(
                 if len(x) > 0:
                     x_arrays.append(x)
                     y_arrays.append(y)
+                    
+                    # Store meta data if available
+                    if 'meta' in eval_data:
+                        meta_arrays.append(eval_data['meta'])
+                    else:
+                        meta_arrays.append([])
 
                     # Track first/last for reference lines
                     all_first_performances.append(y[0])
@@ -400,34 +477,35 @@ def plot_icml_results(
                     markersize=4,
                 )
         else:
-            # Multiple experiments, aggregate
-            common_x, interpolated_y = interpolate_to_common_x(x_arrays, y_arrays)
-            y_matrix = np.array(interpolated_y)
-
-            y_mean = np.mean(y_matrix, axis=0)
-            y_std = np.std(y_matrix, axis=0)
-
-            if use_stderr:
-                y_err = y_std / np.sqrt(len(interpolated_y))
-            else:
-                y_err = y_std
-
+            # Multiple experiments, aggregate using min-max quantile bands
+            # Use 25th-75th percentile bands (interquartile range)
+            common_x, y_median, y_lower_q, y_upper_q = calculate_minmax_bands(
+                x_arrays, y_arrays, quantiles=(0.25, 0.75)
+            )
+            
+            # Filter out NaN values
+            valid_mask = ~np.isnan(y_median)
+            common_x = common_x[valid_mask]
+            y_median = y_median[valid_mask]
+            y_lower_q = y_lower_q[valid_mask]
+            y_upper_q = y_upper_q[valid_mask]
+            
             n_exps = len(x_arrays)
-
-            # Plot mean line
+            
+            # Plot median line
             plt.plot(
                 common_x,
-                y_mean,
+                y_median,
                 label=f"{label} (n={n_exps})",
                 color=colors[method_idx],
                 linewidth=2,
             )
-
-            # Plot shaded error region
+            
+            # Plot quantile band (25th-75th percentile)
             plt.fill_between(
                 common_x,
-                y_mean - y_err,
-                y_mean + y_err,
+                y_lower_q,
+                y_upper_q,
                 color=colors[method_idx],
                 alpha=0.2,
             )
@@ -483,7 +561,8 @@ def plot_icml_results(
     # Labels and title
     env_str = env_filter if env_filter else "all"
     prefix_str = ",".join(prefix_filter) if prefix_filter else "all"
-    error_type = "SE" if use_stderr else "SD"
+    # Update error type to reflect quantile bands
+    error_type = "IQR"  # Interquartile range
 
     # Get display names for axis labels
     x_label = DATA_KEY_NAMES.get(x_data_key, x_data_key)
