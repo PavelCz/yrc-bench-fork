@@ -323,12 +323,48 @@ def main():
     # the initial reset consuming some seeds. Add num_envs extra seeds.
     
     # Get num_envs from the appropriate place in config
+    original_num_envs = None
+    
+    # Debug: print config structure
+    print(f"Debug: Benchmark is {benchmark}")
+    print(f"Debug: config.environment attributes: {dir(config.environment) if hasattr(config, 'environment') else 'No environment attr'}")
+    
+    # Try different paths to find num_envs
     if hasattr(config.environment, 'procgen') and config.environment.procgen is not None:
-        original_num_envs = config.environment.procgen.common.num_envs
-    elif hasattr(config.environment, 'num_envs'):
-        original_num_envs = config.environment.num_envs
-    else:
-        # Default to 8 which is common for procgen
+        if hasattr(config.environment.procgen, 'common') and config.environment.procgen.common is not None:
+            original_num_envs = getattr(config.environment.procgen.common, 'num_envs', None)
+    
+    # Try direct path
+    if original_num_envs is None and hasattr(config.environment, 'num_envs'):
+        original_num_envs = getattr(config.environment, 'num_envs', None)
+    
+    # For other benchmarks, check their specific config
+    if original_num_envs is None and benchmark in ['minigrid', 'cliport']:
+        # These might have different config structure
+        try:
+            if hasattr(config.environment, benchmark):
+                env_config = getattr(config.environment, benchmark)
+                if hasattr(env_config, 'num_envs'):
+                    original_num_envs = env_config.num_envs
+                elif hasattr(env_config, 'common') and hasattr(env_config.common, 'num_envs'):
+                    original_num_envs = env_config.common.num_envs
+        except:
+            pass
+    
+    # Try to find it in the config dict if it exists
+    if original_num_envs is None and hasattr(config, '_cfg_dict'):
+        try:
+            # Try to navigate the config dictionary
+            env_cfg = config._cfg_dict.get('environment', {})
+            if 'procgen' in env_cfg:
+                original_num_envs = env_cfg.get('procgen', {}).get('common', {}).get('num_envs')
+            if original_num_envs is None:
+                original_num_envs = env_cfg.get('num_envs')
+        except:
+            pass
+    
+    # Default to 8 which is common for procgen
+    if original_num_envs is None:
         original_num_envs = 8
         print(f"Warning: Could not find num_envs in config, defaulting to {original_num_envs}")
     
