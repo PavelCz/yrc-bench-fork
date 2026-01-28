@@ -510,7 +510,7 @@ def plot_barplot_compare(
         
         timesteps = [d["timestep"] for d in ood_rates]
         rates = [d["ood_rate"] for d in ood_rates]
-        stds = None  # Standard deviation (only computed for binning)
+        stds = None  # Standard error (only computed for binning or smoothing)
 
         # Apply binned smoothing if requested
         if num_bins > 0 and len(rates) > 0:
@@ -524,21 +524,25 @@ def plot_barplot_compare(
             bin_indices = np.digitize(timesteps_arr, bin_edges) - 1
             bin_indices = np.clip(bin_indices, 0, num_bins - 1)
 
-            # Calculate mean rate and std for each bin
+            # Calculate mean rate and standard error for each bin
             binned_timesteps = []
             binned_rates = []
-            binned_stds = []
+            binned_ses = []  # Standard errors
             for bin_idx in range(num_bins):
                 mask = bin_indices == bin_idx
                 if np.any(mask):
                     bin_center = (bin_edges[bin_idx] + bin_edges[bin_idx + 1]) / 2
                     binned_timesteps.append(bin_center)
                     binned_rates.append(np.mean(rates_arr[mask]))
-                    binned_stds.append(np.std(rates_arr[mask]))
+                    # Calculate standard error: std / sqrt(n)
+                    n_samples = np.sum(mask)
+                    std = np.std(rates_arr[mask])
+                    se = std / np.sqrt(n_samples) if n_samples > 0 else 0
+                    binned_ses.append(se)
 
             timesteps = binned_timesteps
             rates = binned_rates
-            stds = binned_stds
+            stds = binned_ses  # Use standard errors
         # Apply running average smoothing if requested (only if not binning)
         elif smooth_window > 1 and len(rates) >= smooth_window:
             rates_arr = np.array(rates)
@@ -546,12 +550,15 @@ def plot_barplot_compare(
             rates_smooth = np.convolve(
                 rates_arr, np.ones(smooth_window) / smooth_window, mode="valid"
             )
-            # Compute running std
-            stds_list = []
+            # Compute running standard error
+            ses_list = []
             for i in range(len(rates_smooth)):
                 window_data = rates_arr[i : i + smooth_window]
-                stds_list.append(np.std(window_data))
-            stds = stds_list
+                std = np.std(window_data)
+                # Standard error = std / sqrt(n)
+                se = std / np.sqrt(smooth_window)
+                ses_list.append(se)
+            stds = ses_list  # Actually standard errors
             rates = rates_smooth
             # Adjust timesteps to match the smoothed rates (center the window)
             offset = (smooth_window - 1) // 2
@@ -568,7 +575,7 @@ def plot_barplot_compare(
             alpha=0.8,
         )
 
-        # Plot shaded region for standard deviation if available
+        # Plot shaded region for standard error if available
         if stds is not None:
             rates_arr = np.array(rates)
             stds_arr = np.array(stds)
