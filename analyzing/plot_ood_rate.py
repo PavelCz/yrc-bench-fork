@@ -291,6 +291,8 @@ def plot_barplot_compare_aggregated(
     num_bins: int = 0,
     save_path: Optional[str] = None,
     paper_mode: bool = False,
+    max_ood_rate: Optional[float] = None,
+    max_timesteps: Optional[int] = None,
 ):
     """Plot OOD rates with aggregation across experiments.
     
@@ -302,6 +304,8 @@ def plot_barplot_compare_aggregated(
         num_bins: Number of bins for binned smoothing (0 = no binning)
         save_path: If provided, save figure to this path instead of displaying
         paper_mode: If True, use paper-ready styling
+        max_ood_rate: If provided, set y-axis maximum to this value
+        max_timesteps: If provided, only plot up to this many timesteps
     """
     filter_msg = " (success only)" if success_only else ""
     print(f"\nPlotting {len(all_method_ood_rates)} methods with aggregation{filter_msg}...")
@@ -342,6 +346,14 @@ def plot_barplot_compare_aggregated(
         median_rates = median_rates[valid_mask]
         min_rates = min_rates[valid_mask]
         max_rates = max_rates[valid_mask]
+        
+        # Apply max timesteps filter if specified
+        if max_timesteps is not None and len(timesteps) > 0:
+            timestep_mask = timesteps <= max_timesteps
+            timesteps = timesteps[timestep_mask]
+            median_rates = median_rates[timestep_mask]
+            min_rates = min_rates[timestep_mask]
+            max_rates = max_rates[timestep_mask]
         
         # Apply binned smoothing if requested
         if num_bins > 0 and len(timesteps) > 0:
@@ -405,8 +417,16 @@ def plot_barplot_compare_aggregated(
         )
     
     plt.xlabel("Timestep")
-    plt.ylabel("OOD Rate")
-    plt.ylim(bottom=0)
+    plt.ylabel("Ask For Help Probability")
+    
+    # Set axis limits
+    if max_ood_rate is not None:
+        plt.ylim(bottom=0, top=max_ood_rate)
+    else:
+        plt.ylim(bottom=0)
+    
+    if max_timesteps is not None:
+        plt.xlim(left=0, right=max_timesteps)
     
     # Title only if not in paper mode
     if not paper_mode:
@@ -437,6 +457,9 @@ def plot_barplot_compare(
     smooth_window: int = 0,
     num_bins: int = 0,
     save_path: Optional[str] = None,
+    paper_mode: bool = False,
+    max_ood_rate: Optional[float] = None,
+    max_timesteps: Optional[int] = None,
 ):
     """Plot OOD rates as barplots for multiple runs.
 
@@ -447,14 +470,20 @@ def plot_barplot_compare(
         smooth_window: Window size for running average smoothing (0 = no smoothing)
         num_bins: Number of bins for binned smoothing (0 = no binning)
         save_path: If provided, save figure to this path instead of displaying
+        paper_mode: If True, use paper-ready styling
+        max_ood_rate: If provided, set y-axis maximum to this value
+        max_timesteps: If provided, only plot up to this many timesteps
     """
     filter_msg = " (success only)" if success_only else ""
     print(
         f"\nPlotting {len(all_ood_rates)} OOD rate curves for comparison{filter_msg}..."
     )
+    
+    # Set up plot style
+    setup_plot_style(paper_mode=paper_mode, use_latex=True)
 
     # Plot all curves
-    plt.figure(figsize=(14, 7))
+    plt.figure(figsize=(10, 4.5))
 
     # Use same color scheme as other plots
     if len(all_ood_rates) <= 10:
@@ -470,8 +499,15 @@ def plot_barplot_compare(
                 colors.append(plt.cm.tab20b((i - 20) / 20))
             else:
                 colors.append(plt.cm.tab20c((i - 40) / 20))
+    
+    # Get line styles for paper mode
+    line_styles = get_line_styles(len(all_ood_rates), paper_mode)
 
     for idx, (ood_rates, label) in enumerate(zip(all_ood_rates, all_labels)):
+        # Apply max timesteps filter if specified
+        if max_timesteps is not None:
+            ood_rates = [d for d in ood_rates if d["timestep"] <= max_timesteps]
+        
         timesteps = [d["timestep"] for d in ood_rates]
         rates = [d["ood_rate"] for d in ood_rates]
         stds = None  # Standard deviation (only computed for binning)
@@ -525,11 +561,10 @@ def plot_barplot_compare(
         plt.plot(
             timesteps,
             rates,
-            marker="o",
             label=label,
             color=colors[idx],
             linewidth=2,
-            markersize=4,
+            linestyle=line_styles[idx],
             alpha=0.8,
         )
 
@@ -547,12 +582,28 @@ def plot_barplot_compare(
 
     plt.xlabel("Timestep")
     plt.ylabel("OOD Rate")
-    plt.ylim(bottom=0)
+    
+    # Set axis limits
+    if max_ood_rate is not None:
+        plt.ylim(bottom=0, top=max_ood_rate)
+    else:
+        plt.ylim(bottom=0)
+    
+    if max_timesteps is not None:
+        plt.xlim(left=0, right=max_timesteps)
 
-    title_suffix = " (Success Only)" if success_only else ""
-    plt.title(f"OOD Rate Comparison by Timestep{title_suffix}")
-    plt.legend(loc="best")
-    plt.grid(alpha=0.3)
+    # Title only if not in paper mode
+    if not paper_mode:
+        title_suffix = " (Success Only)" if success_only else ""
+        plt.title(f"OOD Rate Comparison by Timestep{title_suffix}")
+    
+    # Apply publication styling
+    style_plot_for_publication(
+        legend_outside=True,
+        legend_location='center left',
+        legend_bbox_to_anchor=(1.05, 0.5)
+    )
+    
     plt.tight_layout()
     
     if save_path:
@@ -671,6 +722,8 @@ def plot_compare_runs(
     average_experiments: bool = False,
     save_path: Optional[str] = None,
     paper_mode: bool = False,
+    max_ood_rate: Optional[float] = None,
+    max_timesteps: Optional[int] = None,
 ):
     """Plot OOD rates for selected checkpoints from multiple runs.
 
@@ -685,6 +738,8 @@ def plot_compare_runs(
         average_experiments: If True, average over all experiments instead of selecting one
         save_path: If provided, save figure to this path instead of displaying
         paper_mode: If True, use paper-ready styling
+        max_ood_rate: If provided, set y-axis maximum to this value
+        max_timesteps: If provided, only plot up to this many timesteps
     """
     print("\n=== Multi-Run Comparison Mode ===")
     
@@ -834,9 +889,9 @@ def plot_compare_runs(
 
     # Plot OOD rates
     if average_experiments:
-        plot_barplot_compare_aggregated(all_ood_rates, all_labels, success_only, smooth_window, num_bins, save_path, paper_mode)
+        plot_barplot_compare_aggregated(all_ood_rates, all_labels, success_only, smooth_window, num_bins, save_path, paper_mode, max_ood_rate, max_timesteps)
     else:
-        plot_barplot_compare(all_ood_rates, all_labels, success_only, smooth_window, num_bins, save_path)
+        plot_barplot_compare(all_ood_rates, all_labels, success_only, smooth_window, num_bins, save_path, paper_mode, max_ood_rate, max_timesteps)
 
 
 def plot_single_run(
@@ -846,6 +901,9 @@ def plot_single_run(
     num_bins: int = 0,
     target_afhp: Optional[float] = None,
     save_path: Optional[str] = None,
+    paper_mode: bool = False,
+    max_ood_rate: Optional[float] = None,
+    max_timesteps: Optional[int] = None,
 ):
     """Plot OOD rate for a single selected run and checkpoint.
 
@@ -856,6 +914,9 @@ def plot_single_run(
         num_bins: Number of bins for binned smoothing
         target_afhp: If provided, automatically select checkpoint closest to this AFHP
         save_path: If provided, save figure to this path instead of displaying
+        paper_mode: If True, use paper-ready styling
+        max_ood_rate: If provided, set y-axis maximum to this value
+        max_timesteps: If provided, only plot up to this many timesteps
     """
     # Display methods and let user select
     print("\nAvailable methods:")
@@ -914,9 +975,14 @@ def plot_single_run(
 
     # Plot single run
     all_ood_rates = [ood_rates]
-    all_labels = [f"{selected_method}_exp{selected_exp} (OOD: {ood_percentage:.1f}%)"]
+    # Format label based on paper mode
+    if paper_mode:
+        label = format_label(selected_method, paper_mode, n_experiments=None)
+    else:
+        label = f"{selected_method}_exp{selected_exp} (OOD: {ood_percentage:.1f}%)"
+    all_labels = [label]
     
-    plot_barplot_compare(all_ood_rates, all_labels, success_only, smooth_window, num_bins, save_path)
+    plot_barplot_compare(all_ood_rates, all_labels, success_only, smooth_window, num_bins, save_path, paper_mode, max_ood_rate, max_timesteps)
 
 
 def plot_ood_rate_main():
@@ -1006,6 +1072,18 @@ def plot_ood_rate_main():
         action="store_true",
         help="Paper mode: use LaTeX rendering, small caps, and paper-ready styling",
     )
+    parser.add_argument(
+        "--max_ood_rate",
+        type=float,
+        default=None,
+        help="Maximum OOD rate for y-axis (e.g., 0.1 for 10%)",
+    )
+    parser.add_argument(
+        "--max_timesteps",
+        type=int,
+        default=None,
+        help="Maximum number of timesteps to plot on x-axis",
+    )
 
     args = parser.parse_args()
 
@@ -1041,6 +1119,8 @@ def plot_ood_rate_main():
             average_experiments=args.average_experiments,
             save_path=args.save,
             paper_mode=args.paper,
+            max_ood_rate=args.max_ood_rate,
+            max_timesteps=args.max_timesteps,
         )
     else:
         # Single run mode
@@ -1051,6 +1131,9 @@ def plot_ood_rate_main():
             num_bins=args.bins,
             target_afhp=args.target_afhp,
             save_path=args.save,
+            paper_mode=args.paper,
+            max_ood_rate=args.max_ood_rate,
+            max_timesteps=args.max_timesteps,
         )
 
 
