@@ -33,19 +33,19 @@ matplotlib.use("TkAgg")
 
 # Method display names mapping
 METHOD_NAMES = {
-    "max_prob": "MaxProb",
-    "max_logit": "MaxLogit",
-    "lb_random": "Level-Based Random",
-    "ts_random": "Heuristic Strategy",
-    "svdd_image": "ImageSVDD",
-    "svdd_latent": "LatentSVDD",
-    "ensemble": "Ensemble (multi)",
+    "max_prob": r"\textsc{MaxProb}",
+    "max_logit": r"\textsc{MaxLogit}",
+    "lb_random": r"\textsc{Level-Based Random}",
+    "ts_random": r"\textsc{Heuristic}",
+    "svdd_image": r"\textsc{ImageSVDD}",
+    "svdd_latent": r"\textsc{LatentSVDD}",
+    "ensemble": r"\textsc{Ensemble (multi)}",
     # Ensemble Variance (Single Weak)
-    "ensemble_single": "Ensemble",
-    "latent-svdd": "Latent SVDD",
+    "ensemble_single": r"\textsc{Ensemble}",
+    "latent-svdd": r"\textsc{Latent SVDD}",
     # "random": "Timestep Random",
-    "oc-random": "Level-Based Random",
-    "wait": "Wait",
+    "oc-random": r"\textsc{Level-Based Random}",
+    "wait": r"\textsc{Wait}",
 }
 
 # Data key display names mapping
@@ -358,13 +358,42 @@ def plot_icml_results(
         return
 
     # Set up plot style and font
-    # Configure matplotlib to use Palatino Linotype
+    # Configure matplotlib to use LaTeX rendering
+    plt.rcParams['text.usetex'] = True
+    plt.rcParams['text.latex.preamble'] = r'\usepackage{mathpazo}'  # Palatino font in LaTeX
     plt.rcParams['font.family'] = 'serif'
-    plt.rcParams['font.serif'] = ['Palatino Linotype', 'Palatino', 'DejaVu Serif']
-    plt.rcParams['mathtext.fontset'] = 'dejavuserif'
     
-    plt.figure(figsize=(6, 4.5))
+    # Increase font sizes
+    plt.rcParams['font.size'] = 12  # Base font size (was ~10)
+    plt.rcParams['axes.labelsize'] = 16  # Axis labels
+    plt.rcParams['axes.titlesize'] = 16  # Title (if used)
+    plt.rcParams['xtick.labelsize'] = 14  # X-axis tick labels
+    plt.rcParams['ytick.labelsize'] = 14  # Y-axis tick labels
+    plt.rcParams['legend.fontsize'] = 12  # Legend text
+    
+    plt.figure(figsize=(8, 4.5))
     colors = sns.color_palette("husl", len(valid_methods))
+    
+    # Define line styles for paper mode (different textures)
+    if paper_mode:
+        line_styles = [
+            '-',      # solid
+            '--',     # dashed
+            '-.',     # dash-dot
+            ':',      # dotted
+            (0, (3, 1, 1, 1)),  # densely dashdotted
+            (0, (5, 1)),        # densely dashed
+            (0, (1, 1)),        # densely dotted
+            (0, (3, 5, 1, 5)),  # dashdotdotted
+            (0, (5, 5)),        # long dash with offset
+            (0, (3, 1, 1, 1, 1, 1)),  # dashdotdotted
+        ]
+        # Ensure we have enough line styles
+        while len(line_styles) < len(valid_methods):
+            line_styles.extend(line_styles)
+    else:
+        # All solid lines when not in paper mode
+        line_styles = ['-'] * len(valid_methods)
 
     # Store weak/oracle performance for reference lines
     all_first_performances = []
@@ -462,6 +491,7 @@ def plot_icml_results(
                             marker="o",
                             markersize=3,
                             linewidth=1.5,
+                            linestyle=line_styles[method_idx],
                         )
                     else:
                         plt.plot(
@@ -471,6 +501,7 @@ def plot_icml_results(
                             color=base_color,
                             alpha=alpha,
                             linewidth=1.5,
+                            linestyle=line_styles[method_idx],
                         )
             else:
                 # Single experiment
@@ -485,6 +516,7 @@ def plot_icml_results(
                     color=colors[method_idx],
                     marker="o" if method == "wait" else None,
                     markersize=4,
+                    linestyle=line_styles[method_idx],
                 )
         else:
             # Multiple experiments, aggregate using min-max quantile bands
@@ -512,6 +544,7 @@ def plot_icml_results(
                 label=plot_label,
                 color=colors[method_idx],
                 linewidth=2,
+                linestyle=line_styles[method_idx],
             )
             
             # Plot quantile band (25th-75th percentile)
@@ -539,14 +572,14 @@ def plot_icml_results(
             color="red",
             linestyle="--",
             alpha=0.7,
-            label="Novice Agent",
+            label=r"\textsc{Novice}",
         )
         plt.axhline(
             y=mean_last,
             color="blue",
             linestyle="--",
             alpha=0.7,
-            label="Expert",
+            label=r"\textsc{Expert}",
         )
 
     # Add random baseline diagonal line (from weak to oracle)
@@ -568,7 +601,7 @@ def plot_icml_results(
             linestyle=":",
             alpha=0.7,
             linewidth=2,
-            label="Random",
+            label=r"\textsc{Random}",
         )
 
     # Labels and title
@@ -592,7 +625,18 @@ def plot_icml_results(
             plt.title(
                 f"{y_label} vs {x_label} ({env_str}, prefix={prefix_str}, shaded={error_type})"
             )
-    plt.legend(loc="best")
+    # Style improvements: remove top and right spines
+    ax = plt.gca()
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    
+    # Place legend outside the plot on the right side
+    legend = plt.legend(bbox_to_anchor=(1.05, 0.5), loc='center left', frameon=True, fancybox=False)
+    legend.get_frame().set_facecolor('white')
+    legend.get_frame().set_alpha(1.0)
+    legend.get_frame().set_edgecolor('none')
+    
+    # No need to convert - LaTeX handles small caps via \textsc{} in labels
     plt.grid(True, alpha=0.3)
 
     plt.tight_layout()
