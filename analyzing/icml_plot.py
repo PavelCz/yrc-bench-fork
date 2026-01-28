@@ -316,6 +316,7 @@ def plot_icml_results(
     save_path: Optional[str] = None,
     title: Optional[str] = None,
     no_aggregate: bool = False,
+    paper_mode: bool = False,
 ):
     """
     Plot ICML results with aggregation across experiments.
@@ -334,6 +335,7 @@ def plot_icml_results(
         save_path: Path to save the figure
         title: Custom title for the plot (overrides auto-generated title)
         no_aggregate: Plot experiments separately instead of aggregating
+        paper_mode: If True, remove title and n=X from labels for paper figures
     """
     results = extract_icml_results(eval_dir, prefix_filter, env_filter)
 
@@ -355,8 +357,13 @@ def plot_icml_results(
         print("No valid methods found to plot.")
         return
 
-    # Set up plot style
-    plt.figure(figsize=(8, 6))
+    # Set up plot style and font
+    # Configure matplotlib to use Palatino Linotype
+    plt.rcParams['font.family'] = 'serif'
+    plt.rcParams['font.serif'] = ['Palatino Linotype', 'Palatino', 'DejaVu Serif']
+    plt.rcParams['mathtext.fontset'] = 'dejavuserif'
+    
+    plt.figure(figsize=(6, 4.5))
     colors = sns.color_palette("husl", len(valid_methods))
 
     # Store weak/oracle performance for reference lines
@@ -469,10 +476,12 @@ def plot_icml_results(
                 # Single experiment
                 x, y = x_arrays[0], y_arrays[0]
                 sort_idx = np.argsort(x)
+                # Format label based on paper_mode
+                plot_label = label if paper_mode else f"{label} (n=1)"
                 plt.plot(
                     x[sort_idx],
                     y[sort_idx],
-                    label=f"{label} (n=1)",
+                    label=plot_label,
                     color=colors[method_idx],
                     marker="o" if method == "wait" else None,
                     markersize=4,
@@ -493,11 +502,14 @@ def plot_icml_results(
             
             n_exps = len(x_arrays)
             
+            # Format label based on paper_mode
+            plot_label = label if paper_mode else f"{label} (n={n_exps})"
+            
             # Plot median line
             plt.plot(
                 common_x,
                 y_median,
-                label=f"{label} (n={n_exps})",
+                label=plot_label,
                 color=colors[method_idx],
                 linewidth=2,
             )
@@ -527,14 +539,14 @@ def plot_icml_results(
             color="red",
             linestyle="--",
             alpha=0.7,
-            label="Novice Agent Performance",
+            label="Novice Agent",
         )
         plt.axhline(
             y=mean_last,
             color="blue",
             linestyle="--",
             alpha=0.7,
-            label="Expert Performance",
+            label="Expert",
         )
 
     # Add random baseline diagonal line (from weak to oracle)
@@ -572,13 +584,14 @@ def plot_icml_results(
     plt.xlabel(x_label)
     plt.ylabel(y_label)
 
-    # Use custom title if provided, otherwise generate one
-    if title:
-        plt.title(title)
-    else:
-        plt.title(
-            f"{y_label} vs {x_label} ({env_str}, prefix={prefix_str}, shaded={error_type})"
-        )
+    # Use custom title if provided, otherwise generate one (skip if paper_mode)
+    if not paper_mode:
+        if title:
+            plt.title(title)
+        else:
+            plt.title(
+                f"{y_label} vs {x_label} ({env_str}, prefix={prefix_str}, shaded={error_type})"
+            )
     plt.legend(loc="best")
     plt.grid(True, alpha=0.3)
 
@@ -697,6 +710,11 @@ def main():
         action="store_true",
         help="Plot experiments separately instead of aggregating",
     )
+    parser.add_argument(
+        "--paper",
+        action="store_true",
+        help="Paper mode: remove title and n=X from labels for cleaner figures",
+    )
 
     args = parser.parse_args()
 
@@ -725,6 +743,7 @@ def main():
         save_path=args.save,
         title=args.title,
         no_aggregate=args.no_aggregate,
+        paper_mode=args.paper,
     )
 
 
