@@ -27,26 +27,15 @@ import seaborn as sns  # type: ignore
 from scipy import interpolate
 
 from analyzing.utils import extract_x_and_y_values
+from analyzing.plotting_common import (
+    METHOD_NAMES,
+    setup_plot_style,
+    get_line_styles,
+    style_plot_for_publication,
+    format_label,
+)
 
 matplotlib.use("TkAgg")
-
-
-# Method display names mapping
-METHOD_NAMES = {
-    "max_prob": r"\textsc{MaxProb}",
-    "max_logit": r"\textsc{MaxLogit}",
-    "lb_random": r"\textsc{Level-Based Random}",
-    "ts_random": r"\textsc{Heuristic}",
-    "svdd_image": r"\textsc{ImageSVDD}",
-    "svdd_latent": r"\textsc{LatentSVDD}",
-    "ensemble": r"\textsc{Ensemble (multi)}",
-    # Ensemble Variance (Single Weak)
-    "ensemble_single": r"\textsc{Ensemble}",
-    "latent-svdd": r"\textsc{Latent SVDD}",
-    # "random": "Timestep Random",
-    "oc-random": r"\textsc{Level-Based Random}",
-    "wait": r"\textsc{Wait}",
-}
 
 # Data key display names mapping
 DATA_KEY_NAMES = {
@@ -357,43 +346,14 @@ def plot_icml_results(
         print("No valid methods found to plot.")
         return
 
-    # Set up plot style and font
-    # Configure matplotlib to use LaTeX rendering
-    plt.rcParams['text.usetex'] = True
-    plt.rcParams['text.latex.preamble'] = r'\usepackage{mathpazo}'  # Palatino font in LaTeX
-    plt.rcParams['font.family'] = 'serif'
-    
-    # Increase font sizes
-    plt.rcParams['font.size'] = 12  # Base font size (was ~10)
-    plt.rcParams['axes.labelsize'] = 16  # Axis labels
-    plt.rcParams['axes.titlesize'] = 16  # Title (if used)
-    plt.rcParams['xtick.labelsize'] = 14  # X-axis tick labels
-    plt.rcParams['ytick.labelsize'] = 14  # Y-axis tick labels
-    plt.rcParams['legend.fontsize'] = 12  # Legend text
+    # Set up plot style
+    setup_plot_style(paper_mode=paper_mode, use_latex=True)
     
     plt.figure(figsize=(8, 4.5))
     colors = sns.color_palette("husl", len(valid_methods))
     
-    # Define line styles for paper mode (different textures)
-    if paper_mode:
-        line_styles = [
-            '-',      # solid
-            '--',     # dashed
-            '-.',     # dash-dot
-            ':',      # dotted
-            (0, (3, 1, 1, 1)),  # densely dashdotted
-            (0, (5, 1)),        # densely dashed
-            (0, (1, 1)),        # densely dotted
-            (0, (3, 5, 1, 5)),  # dashdotdotted
-            (0, (5, 5)),        # long dash with offset
-            (0, (3, 1, 1, 1, 1, 1)),  # dashdotdotted
-        ]
-        # Ensure we have enough line styles
-        while len(line_styles) < len(valid_methods):
-            line_styles.extend(line_styles)
-    else:
-        # All solid lines when not in paper mode
-        line_styles = ['-'] * len(valid_methods)
+    # Get line styles for paper mode
+    line_styles = get_line_styles(len(valid_methods), paper_mode)
 
     # Store weak/oracle performance for reference lines
     all_first_performances = []
@@ -466,9 +426,6 @@ def plot_icml_results(
             print(f"All unique AFHP values across experiments: {sorted(all_afhp_values)}")
             print(f"Total unique values: {len(all_afhp_values)}")
 
-        # Get display name
-        label = METHOD_NAMES.get(method, method)
-
         if len(x_arrays) == 1 or no_aggregate:
             # Single experiment or no aggregation mode
             if no_aggregate and len(x_arrays) > 1:
@@ -478,7 +435,8 @@ def plot_icml_results(
                     sort_idx = np.argsort(x)
                     # Vary alpha or lightness for different experiments
                     alpha = 0.7 + (i / len(x_arrays)) * 0.3
-                    exp_label = f"{label} exp{exp_id}"
+                    base_label = format_label(method, paper_mode, n_experiments=None)
+                    exp_label = f"{base_label} exp{exp_id}"
                     
                     # Add markers for wait policy
                     if method == "wait":
@@ -507,8 +465,8 @@ def plot_icml_results(
                 # Single experiment
                 x, y = x_arrays[0], y_arrays[0]
                 sort_idx = np.argsort(x)
-                # Format label based on paper_mode
-                plot_label = label if paper_mode else f"{label} (n=1)"
+                # Format label using shared function
+                plot_label = format_label(method, paper_mode, n_experiments=1 if not paper_mode else None)
                 plt.plot(
                     x[sort_idx],
                     y[sort_idx],
@@ -534,8 +492,8 @@ def plot_icml_results(
             
             n_exps = len(x_arrays)
             
-            # Format label based on paper_mode
-            plot_label = label if paper_mode else f"{label} (n={n_exps})"
+            # Format label using shared function
+            plot_label = format_label(method, paper_mode, n_experiments=n_exps)
             
             # Plot median line
             plt.plot(
@@ -625,19 +583,12 @@ def plot_icml_results(
             plt.title(
                 f"{y_label} vs {x_label} ({env_str}, prefix={prefix_str}, shaded={error_type})"
             )
-    # Style improvements: remove top and right spines
-    ax = plt.gca()
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    
-    # Place legend outside the plot on the right side
-    legend = plt.legend(bbox_to_anchor=(1.05, 0.5), loc='center left', frameon=True, fancybox=False)
-    legend.get_frame().set_facecolor('white')
-    legend.get_frame().set_alpha(1.0)
-    legend.get_frame().set_edgecolor('none')
-    
-    # No need to convert - LaTeX handles small caps via \textsc{} in labels
-    plt.grid(True, alpha=0.3)
+    # Apply publication styling
+    style_plot_for_publication(
+        legend_outside=True,
+        legend_location='center left',
+        legend_bbox_to_anchor=(1.05, 0.5)
+    )
 
     plt.tight_layout()
 

@@ -20,6 +20,15 @@ import matplotlib
 
 matplotlib.use("TkAgg")
 
+# Import shared plotting configuration
+from analyzing.plotting_common import (
+    METHOD_NAMES,
+    setup_plot_style,
+    get_line_styles,
+    style_plot_for_publication,
+    format_label,
+)
+
 
 def parse_experiment_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
     """
@@ -281,6 +290,7 @@ def plot_barplot_compare_aggregated(
     smooth_window: int = 0,
     num_bins: int = 0,
     save_path: Optional[str] = None,
+    paper_mode: bool = False,
 ):
     """Plot OOD rates with aggregation across experiments.
     
@@ -291,11 +301,15 @@ def plot_barplot_compare_aggregated(
         smooth_window: Window size for running average smoothing (0 = no smoothing)
         num_bins: Number of bins for binned smoothing (0 = no binning)
         save_path: If provided, save figure to this path instead of displaying
+        paper_mode: If True, use paper-ready styling
     """
     filter_msg = " (success only)" if success_only else ""
     print(f"\nPlotting {len(all_method_ood_rates)} methods with aggregation{filter_msg}...")
     
-    plt.figure(figsize=(14, 7))
+    # Set up plot style
+    setup_plot_style(paper_mode=paper_mode, use_latex=True)
+    
+    plt.figure(figsize=(8, 4.5))
     
     # Use same color scheme as other plots
     colors = []
@@ -312,6 +326,9 @@ def plot_barplot_compare_aggregated(
                 colors.append(plt.cm.tab20b((i - 20) / 20))
             else:
                 colors.append(plt.cm.tab20c((i - 40) / 20))
+    
+    # Get line styles for paper mode
+    line_styles = get_line_styles(n_methods, paper_mode)
     
     for method_idx, (method_ood_rates_by_exp, label) in enumerate(zip(all_method_ood_rates, all_labels)):
         # Calculate aggregated statistics using min/max bands
@@ -371,11 +388,10 @@ def plot_barplot_compare_aggregated(
         plt.plot(
             timesteps,
             median_rates,
-            marker="o",
             label=label,
             color=colors[method_idx],
             linewidth=2,
-            markersize=4,
+            linestyle=line_styles[method_idx],
             alpha=0.8,
         )
         
@@ -392,10 +408,18 @@ def plot_barplot_compare_aggregated(
     plt.ylabel("OOD Rate")
     plt.ylim(bottom=0)
     
-    title_suffix = " (Success Only)" if success_only else ""
-    plt.title(f"OOD Rate Comparison by Timestep (Aggregated){title_suffix}")
-    plt.legend(loc="best")
-    plt.grid(alpha=0.3)
+    # Title only if not in paper mode
+    if not paper_mode:
+        title_suffix = " (Success Only)" if success_only else ""
+        plt.title(f"OOD Rate Comparison by Timestep (Aggregated){title_suffix}")
+    
+    # Apply publication styling
+    style_plot_for_publication(
+        legend_outside=True,
+        legend_location='center left',
+        legend_bbox_to_anchor=(1.05, 0.5)
+    )
+    
     plt.tight_layout()
     
     if save_path:
@@ -646,6 +670,7 @@ def plot_compare_runs(
     target_afhp: Optional[float] = None,
     average_experiments: bool = False,
     save_path: Optional[str] = None,
+    paper_mode: bool = False,
 ):
     """Plot OOD rates for selected checkpoints from multiple runs.
 
@@ -659,6 +684,7 @@ def plot_compare_runs(
         target_afhp: If provided, automatically select checkpoints closest to this AFHP
         average_experiments: If True, average over all experiments instead of selecting one
         save_path: If provided, save figure to this path instead of displaying
+        paper_mode: If True, use paper-ready styling
     """
     print("\n=== Multi-Run Comparison Mode ===")
     
@@ -755,7 +781,8 @@ def plot_compare_runs(
             if len(method_ood_rates_by_exp) > 0:
                 # Store all experiment data for this method
                 all_ood_rates.append(method_ood_rates_by_exp)
-                label = f"{method} (n={len(method_ood_rates_by_exp)})"
+                # Use shared format_label function
+                label = format_label(method, paper_mode, len(method_ood_rates_by_exp))
                 all_labels.append(label)
                 print(f"  Collected data from {len(method_ood_rates_by_exp)} experiments")
             else:
@@ -789,7 +816,12 @@ def plot_compare_runs(
 
             # Store data and label
             all_ood_rates.append(ood_rates)
-            label = f"{method} (OOD: {ood_percentage:.1f}%)"
+            # Use shared format_label function
+            base_label = format_label(method, paper_mode, n_experiments=None)
+            if not paper_mode:
+                label = f"{base_label} (OOD: {ood_percentage:.1f}%)"
+            else:
+                label = base_label
             all_labels.append(label)
 
             rates = [d["ood_rate"] for d in ood_rates]
@@ -802,7 +834,7 @@ def plot_compare_runs(
 
     # Plot OOD rates
     if average_experiments:
-        plot_barplot_compare_aggregated(all_ood_rates, all_labels, success_only, smooth_window, num_bins, save_path)
+        plot_barplot_compare_aggregated(all_ood_rates, all_labels, success_only, smooth_window, num_bins, save_path, paper_mode)
     else:
         plot_barplot_compare(all_ood_rates, all_labels, success_only, smooth_window, num_bins, save_path)
 
@@ -969,6 +1001,11 @@ def plot_ood_rate_main():
         default=None,
         help="Path to save the figure (if not specified, displays interactively)",
     )
+    parser.add_argument(
+        "--paper",
+        action="store_true",
+        help="Paper mode: use LaTeX rendering, small caps, and paper-ready styling",
+    )
 
     args = parser.parse_args()
 
@@ -1003,6 +1040,7 @@ def plot_ood_rate_main():
             target_afhp=args.target_afhp,
             average_experiments=args.average_experiments,
             save_path=args.save,
+            paper_mode=args.paper,
         )
     else:
         # Single run mode
