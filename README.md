@@ -1,3 +1,59 @@
+# Getting by Goal Misgeneralization with a Little Help From an Expert.
+
+## Explanation
+
+This is the code for the paper "Getting by Goal Misgeneralization with a Little Help From an Expert."  
+It is built on top of YRC-Bench.
+YRC-Bench's original readme follows further down.
+
+## Installation
+
+To set up the project, follow the installation steps from the original readme below.
+
+## Reproducing the paper
+
+`scripts` includes convencience scripts to reproduce the experiments for this paper.
+The scripts run on Slurm.
+They assume a directory structure that can be defined in the respective script file.
+The results in the paper were collected with experiments ids 0,1,2,3 (= 4 independent seeds).
+
+### Training pipeline
+
+First, `generate_level_seeds.py` creates the seeds that will be reused so all methods are evaluated on the same levels.
+
+
+Similary, generate_ensemble_seeds.py creates seeds for ensemble policies that are disjoint from the training seeds.
+
+Train RL policies by running the following for `coinrun` and `maze`, for all 4 experiment ids:
+
+```
+./scripts/train_policies.sh --env heist --experiment 0
+```
+
+Train ensemble policies by running the following for `coinrun` and `maze`, for all 4 experiment ids:
+
+```
+./scripts/train_ensemble_policies.sh --env heist --experiment 0
+```
+
+Use `run_gather_results.py` to gather results for the DeepSVDD methods.
+
+Use `run_train.py` to train DeepSVDD policies.
+
+Now evals can be run for all methods:
+
+```
+python scripts/run_eval.py \
+    --prefix icml \
+    --exp-ids 0 1 2 3 \
+    --server chai \
+    --conda-env ood \
+    --env coinrun \
+    --method max-prob   
+```
+
+## Original YRC-Bench Readme
+
 <p align="center">
     <img src="configs/assets/pipeline.png" width="900" height="350">
 </p>
