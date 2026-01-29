@@ -35,15 +35,15 @@ EVAL_DEFAULTS = {
 
 # Server-specific paths
 SERVER_PATHS = {
-    "chai": {
-        "checkpoint_base": "/nas/ucb/czempin/data/goal-misgen/policy/icml",
-        "seeds_base": "/nas/ucb/czempin/data/goal-misgen/seeds/icml",
-        "svdd_base": "/nas/ucb/czempin/data/goal-misgen/trained_svdd",
+    "server1": {
+        "checkpoint_base": "/data/goal-misgen/policy/icml",
+        "seeds_base": "/data/goal-misgen/seeds/icml",
+        "svdd_base": "/data/goal-misgen/trained_svdd",
     },
-    "snoopy": {
-        "checkpoint_base": "/scr/pavel/data/goal-misgen/policy/icml",
-        "seeds_base": "/scr/pavel/data/goal-misgen/seeds/icml",
-        "svdd_base": "/scr/pavel/data/goal-misgen/trained_svdd",
+    "server2": {
+        "checkpoint_base": "/data2/goal-misgen/policy/icml",
+        "seeds_base": "/data2/goal-misgen/seeds/icml",
+        "svdd_base": "/data2/goal-misgen/trained_svdd",
     },
 }
 
@@ -343,9 +343,9 @@ def main():
     )
     parser.add_argument(
         "--server",
-        choices=["chai", "snoopy"],
-        default="chai",
-        help="Server to use for paths (default: chai)",
+        choices=["server1", "server2"],
+        default="server1",
+        help="Server to use for paths (default: server1)",
     )
     parser.add_argument(
         "--qos",

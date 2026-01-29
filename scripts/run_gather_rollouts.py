@@ -40,13 +40,13 @@ EXP_ID_TO_SEED = {
 
 # Server-specific paths
 SERVER_PATHS = {
-    "chai": {
-        "checkpoint_base": "/nas/ucb/czempin/data/goal-misgen/policy/icml",
-        "seeds_base": "/nas/ucb/czempin/data/goal-misgen/seeds/icml",
+    "server1": {
+        "checkpoint_base": "/data/goal-misgen/policy/icml",
+        "seeds_base": "/data/goal-misgen/seeds/icml",
     },
-    "snoopy": {
-        "checkpoint_base": "/scr/pavel/data/goal-misgen/policy/icml",
-        "seeds_base": "/scr/pavel/data/goal-misgen/seeds/icml",
+    "server2": {
+        "checkpoint_base": "/data2/goal-misgen/policy/icml",
+        "seeds_base": "/data2/goal-misgen/seeds/icml",
     },
 }
 
@@ -218,9 +218,9 @@ def main():
     )
     parser.add_argument(
         "--server",
-        choices=["chai", "snoopy"],
-        default="snoopy",
-        help="Server to use for paths (default: snoopy)",
+        choices=["server1", "server2"],
+        default="server1",
+        help="Server to use for paths (default: server1)",
     )
     parser.add_argument(
         "--env", required=True, choices=ENVS, help="Environment to gather rollouts for"

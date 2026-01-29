@@ -31,7 +31,7 @@ class OODAlgorithm(Algorithm):
         policy.initialize_ood_detector(args, envs["train"])
 
         # TODO: There is some asymmetry here. rollout_obs is a list of tensors in the
-        # algorithms that I (pavel) implemented, in order to fit them into memory more
+        # algorithms that were implemented, in order to fit them into memory more
         # easily. OODPolicy expects a single tensor that is a stack of the list.
         # Potentially, we should re-write the OODPolicy to accept a list of tensors
         # to get the same memory benefits.

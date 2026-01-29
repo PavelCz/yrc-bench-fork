@@ -1,10 +1,10 @@
 # Training code for Goal Misgeneralization in Deep Reinforcement Learning
 
-## Explanation of the fork by PavelCz
+## Explanation of the fork
 
 Fork of [jbkjr/train-procgen-pytorch](https://github.com/jbkjr/train-procgen-pytorch). 
-I mainly added the ability to choose to train with disabled backgrounds.
-Additionally, I added a couple of convenience improvements to the scripts to simplify
+This fork mainly adds the ability to choose to train with disabled backgrounds.
+Additionally, it includes several convenience improvements to the scripts to simplify
 reproducing the experiments from the paper.
 
 > [!NOTE]
