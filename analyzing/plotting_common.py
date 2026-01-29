@@ -50,19 +50,21 @@ def setup_plot_style(paper_mode: bool = False, use_latex: bool = True) -> None:
     plt.rcParams['legend.fontsize'] = 12  # Legend text
 
 
-def get_line_styles(num_methods: int, paper_mode: bool = False) -> List[str]:
+def get_line_styles(num_methods: int, paper_mode: bool = False, method_names: Optional[List[str]] = None) -> List[str]:
     """
     Get line styles for plotting multiple methods.
     
     Args:
         num_methods: Number of methods to plot
         paper_mode: If True, return different line styles for distinction in B&W
+        method_names: Optional list of method names to handle special cases
         
     Returns:
         List of line style specifications
     """
     if paper_mode:
-        line_styles = [
+        # Define all available unique line styles
+        all_line_styles = [
             '-',      # solid
             '--',     # dashed
             '-.',     # dash-dot
@@ -72,12 +74,20 @@ def get_line_styles(num_methods: int, paper_mode: bool = False) -> List[str]:
             (0, (1, 1)),        # densely dotted
             (0, (3, 5, 1, 5)),  # dashdotdotted
             (0, (5, 5)),        # long dash with offset
-            (0, (3, 1, 1, 1, 1, 1)),  # dashdotdotted
+            (0, (3, 1, 1, 1, 1, 1)),  # dashdotdotted variant
+            (0, (1, 5)),        # dotted with long gaps
+            (0, (5, 10)),       # long dash with very long gaps
         ]
-        # Ensure we have enough line styles
-        while len(line_styles) < num_methods:
-            line_styles.extend(line_styles)
-        return line_styles[:num_methods]
+        
+        # Simply assign styles in order - each method gets a unique style
+        if num_methods <= len(all_line_styles):
+            return all_line_styles[:num_methods]
+        else:
+            # If we need more styles, cycle through them
+            styles = []
+            for i in range(num_methods):
+                styles.append(all_line_styles[i % len(all_line_styles)])
+            return styles
     else:
         # All solid lines when not in paper mode
         return ['-'] * num_methods

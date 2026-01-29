@@ -24,7 +24,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns  # type: ignore
-from scipy import interpolate
+from scipy import interpolate, integrate
 
 from analyzing.utils import extract_x_and_y_values
 from analyzing.plotting_common import (
@@ -235,7 +235,7 @@ def calculate_minmax_bands(
     Args:
         x_arrays: List of x-value arrays for each experiment
         y_arrays: List of y-value arrays for each experiment
-        quantiles: Tuple of (lower_quantile, upper_quantile), default (0.25, 0.75)
+        quantiles: Tuple of (lower_quantile, upper_quantile), default (0.25, 0.75) for IQR
         
     Returns:
         Tuple of (common_x, y_median, y_lower_quantile, y_upper_quantile)
@@ -291,6 +291,155 @@ def calculate_minmax_bands(
     return common_x, np.array(y_medians), np.array(y_lower_quantiles), np.array(y_upper_quantiles)
 
 
+def calculate_auc_with_bands(
+    x: np.ndarray, 
+    y_median: np.ndarray, 
+    y_lower: np.ndarray, 
+    y_upper: np.ndarray
+) -> Tuple[float, float, float]:
+    """
+    Calculate area under the curve (AUC) for median and quantile bands.
+    
+    Args:
+        x: Common x values
+        y_median: Median y values
+        y_lower: Lower quantile y values  
+        y_upper: Upper quantile y values
+        
+    Returns:
+        Tuple of (auc_median, auc_lower, auc_upper)
+    """
+    # Filter out NaN values
+    valid_mask = ~(np.isnan(y_median) | np.isnan(y_lower) | np.isnan(y_upper))
+    if np.sum(valid_mask) < 2:
+        return np.nan, np.nan, np.nan
+    
+    x_valid = x[valid_mask]
+    y_median_valid = y_median[valid_mask]
+    y_lower_valid = y_lower[valid_mask]
+    y_upper_valid = y_upper[valid_mask]
+    
+    # Calculate AUC using trapezoidal rule
+    auc_median = integrate.trapezoid(y_median_valid, x_valid)
+    auc_lower = integrate.trapezoid(y_lower_valid, x_valid)
+    auc_upper = integrate.trapezoid(y_upper_valid, x_valid)
+    
+    return auc_median, auc_lower, auc_upper
+
+
+def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]], 
+                         x_label: str, y_label: str,
+                         normalize_by_range: bool = True,
+                         x_range: Optional[Tuple[float, float]] = None,
+                         weak_performance: Optional[float] = None,
+                         strong_performance: Optional[float] = None):
+    """
+    Print AUC results as a LaTeX-compatible table.
+    
+    Args:
+        method_auc_data: Dictionary mapping method names to (auc_median, auc_lower, auc_upper)
+        x_label: Label for x-axis (for table caption)
+        y_label: Label for y-axis (for table caption)
+        normalize_by_range: If True, normalize AUC by x-axis range
+        x_range: Optional x-axis range for normalization
+        weak_performance: Weak (novice) agent performance for y-axis normalization
+        strong_performance: Strong (expert) agent performance for y-axis normalization
+    """
+    print("\n" + "="*80)
+    print("AREA UNDER THE CURVE (AUC) RESULTS")
+    print("="*80)
+    
+    # Sort methods by median AUC (descending)
+    sorted_methods = sorted(method_auc_data.items(), 
+                          key=lambda x: x[1][0] if not np.isnan(x[1][0]) else -np.inf, 
+                          reverse=True)
+    
+    # Print LaTeX table
+    print("\n% LaTeX Table")
+    print("\\begin{table}[h]")
+    print("\\centering")
+    print("\\begin{tabular}{lc}")
+    print("\\toprule")
+    print("Method & AUC (Median [IQR]) \\\\")
+    print("\\midrule")
+    
+    for method, (auc_median, auc_lower, auc_upper) in sorted_methods:
+        # Get display name from METHOD_NAMES or use original
+        display_name = METHOD_NAMES.get(method, method)
+        
+        if np.isnan(auc_median):
+            print(f"{display_name} & -- \\\\")
+        else:
+            # First normalize by performance range (weak to strong)
+            if weak_performance is not None and strong_performance is not None:
+                perf_range = strong_performance - weak_performance
+                if abs(perf_range) > 1e-6:  # Avoid division by zero
+                    # Subtract baseline (weak * x_range) and normalize
+                    if x_range is not None:
+                        baseline_area = weak_performance * (x_range[1] - x_range[0])
+                        auc_median = (auc_median - baseline_area) / perf_range
+                        auc_lower = (auc_lower - baseline_area) / perf_range
+                        auc_upper = (auc_upper - baseline_area) / perf_range
+            
+            # Then normalize by x-axis range if requested
+            if normalize_by_range and x_range is not None:
+                range_width = x_range[1] - x_range[0]
+                if range_width > 0:
+                    auc_median /= range_width
+                    auc_lower /= range_width
+                    auc_upper /= range_width
+            
+            # Format as median [lower, upper]
+            print(f"{display_name} & {auc_median:.3f} [{auc_lower:.3f}, {auc_upper:.3f}] \\\\")
+    
+    print("\\bottomrule")
+    print("\\end{tabular}")
+    print(f"\\caption{{Area Under the Curve (AUC) for {y_label} vs {x_label}.")
+    if weak_performance is not None and strong_performance is not None:
+        print(" Values are normalized such that 0 = novice performance and 1 = expert performance.")
+    if normalize_by_range:
+        print(" Values are also normalized by the x-axis range.")
+    print(" IQR shows 25th-75th percentile range.}")
+    print("\\label{tab:auc_results}")
+    print("\\end{table}")
+    
+    # Also print human-readable version
+    print("\n" + "-"*60)
+    print("Human-readable version:")
+    print("-"*60)
+    print(f"{'Method':<30} {'AUC Median':<15} {'AUC IQR':<25}")
+    print("-"*60)
+    
+    for method, (auc_median, auc_lower, auc_upper) in sorted_methods:
+        display_name = METHOD_NAMES.get(method, method).replace(r'\textsc{', '').replace('}', '')
+        
+        if np.isnan(auc_median):
+            print(f"{display_name:<30} {'N/A':<15}")
+        else:
+            # First normalize by performance range (weak to strong)
+            if weak_performance is not None and strong_performance is not None:
+                perf_range = strong_performance - weak_performance
+                if abs(perf_range) > 1e-6:  # Avoid division by zero
+                    # Subtract baseline (weak * x_range) and normalize
+                    if x_range is not None:
+                        baseline_area = weak_performance * (x_range[1] - x_range[0])
+                        auc_median = (auc_median - baseline_area) / perf_range
+                        auc_lower = (auc_lower - baseline_area) / perf_range
+                        auc_upper = (auc_upper - baseline_area) / perf_range
+            
+            # Then normalize by x-axis range if requested
+            if normalize_by_range and x_range is not None:
+                range_width = x_range[1] - x_range[0]
+                if range_width > 0:
+                    auc_median /= range_width
+                    auc_lower /= range_width
+                    auc_upper /= range_width
+                    
+            print(f"{display_name:<30} {auc_median:<15.3f} [{auc_lower:.3f}, {auc_upper:.3f}]")
+    
+    print("-"*60)
+
+
 def plot_icml_results(
     eval_dir: Path,
     prefix_filter: Optional[List[str]],
@@ -306,6 +455,7 @@ def plot_icml_results(
     title: Optional[str] = None,
     no_aggregate: bool = False,
     paper_mode: bool = False,
+    calculate_auc: bool = False,
 ):
     """
     Plot ICML results with aggregation across experiments.
@@ -325,6 +475,7 @@ def plot_icml_results(
         title: Custom title for the plot (overrides auto-generated title)
         no_aggregate: Plot experiments separately instead of aggregating
         paper_mode: If True, remove title and n=X from labels for paper figures
+        calculate_auc: If True, calculate and display AUC for each method
     """
     results = extract_icml_results(eval_dir, prefix_filter, env_filter)
 
@@ -353,7 +504,7 @@ def plot_icml_results(
     colors = sns.color_palette("husl", len(valid_methods))
     
     # Get line styles for paper mode
-    line_styles = get_line_styles(len(valid_methods), paper_mode)
+    line_styles = get_line_styles(len(valid_methods), paper_mode, valid_methods)
 
     # Store weak/oracle performance for reference lines
     all_first_performances = []
@@ -363,6 +514,11 @@ def plot_icml_results(
     # Track x range for random baseline line
     all_x_min = []
     all_x_max = []
+    
+    # Store AUC data for each method
+    method_auc_data = {}
+    overall_x_min = float('inf')
+    overall_x_max = float('-inf')
 
     for method_idx, method in enumerate(valid_methods):
         exp_data = results[method]
@@ -465,19 +621,33 @@ def plot_icml_results(
                 # Single experiment
                 x, y = x_arrays[0], y_arrays[0]
                 sort_idx = np.argsort(x)
+                x_sorted = x[sort_idx]
+                y_sorted = y[sort_idx]
+                
                 # Format label using shared function
                 plot_label = format_label(method, paper_mode, n_experiments=1 if not paper_mode else None)
                 plt.plot(
-                    x[sort_idx],
-                    y[sort_idx],
+                    x_sorted,
+                    y_sorted,
                     label=plot_label,
                     color=colors[method_idx],
                     marker="o" if method == "wait" else None,
                     markersize=4,
                     linestyle=line_styles[method_idx],
                 )
+                
+                # Calculate AUC for single experiment
+                if calculate_auc:
+                    # For single experiment, use the same value for all bands
+                    auc = integrate.trapezoid(y_sorted, x_sorted)
+                    method_auc_data[method] = (auc, auc, auc)
+                    
+                    # Update overall x-range
+                    if len(x_sorted) > 0:
+                        overall_x_min = min(overall_x_min, x_sorted.min())
+                        overall_x_max = max(overall_x_max, x_sorted.max())
         else:
-            # Multiple experiments, aggregate using min-max quantile bands
+            # Multiple experiments, aggregate using quantile bands
             # Use 25th-75th percentile bands (interquartile range)
             common_x, y_median, y_lower_q, y_upper_q = calculate_minmax_bands(
                 x_arrays, y_arrays, quantiles=(0.25, 0.75)
@@ -513,6 +683,18 @@ def plot_icml_results(
                 color=colors[method_idx],
                 alpha=0.2,
             )
+            
+            # Calculate AUC if requested
+            if calculate_auc:
+                auc_median, auc_lower, auc_upper = calculate_auc_with_bands(
+                    common_x, y_median, y_lower_q, y_upper_q
+                )
+                method_auc_data[method] = (auc_median, auc_lower, auc_upper)
+                
+                # Update overall x-range
+                if len(common_x) > 0:
+                    overall_x_min = min(overall_x_min, common_x.min())
+                    overall_x_max = max(overall_x_max, common_x.max())
 
     # Add reference lines
     if not disable_horizontal_lines and all_first_performances:
@@ -552,14 +734,24 @@ def plot_icml_results(
         else:
             random_start = np.mean(all_first_performances)
 
+        # Use a unique line style for random that's different from all methods
+        # Since methods get assigned styles starting from index 0, we'll use a later style
+        random_linestyle = (0, (2, 2, 10, 2))  # Custom pattern: short dash, short dash, long gap, short dash
+        if paper_mode:
+            # In paper mode, ensure random gets a distinct style
+            random_linestyle = (0, (2, 2, 10, 2))
+        else:
+            random_linestyle = ":"  # Keep dotted in non-paper mode
+            
         plt.plot(
             [x_min, x_max],
             [random_start, mean_last],
-            color="gray",
-            linestyle=":",
-            alpha=0.7,
+            color="black",
+            linestyle=random_linestyle,
+            alpha=0.9,
             linewidth=2,
             label=r"\textsc{Random}",
+            zorder=10,  # Draw on top
         )
 
     # Labels and title
@@ -597,6 +789,29 @@ def plot_icml_results(
         print(f"Saved figure to {save_path}")
     else:
         plt.show()
+    
+    # Print AUC table if requested
+    if calculate_auc and method_auc_data:
+        x_range = (overall_x_min, overall_x_max) if overall_x_min != float('inf') else None
+        
+        # Calculate weak and strong performance for normalization
+        weak_perf = None
+        strong_perf = None
+        
+        if all_first_performances:
+            # For filtered performance keys, use unfiltered weak performance
+            if y_data_key in FILTERED_PERFORMANCE_KEYS and all_weak_performances:
+                weak_perf = np.mean(all_weak_performances)
+            else:
+                weak_perf = np.mean(all_first_performances)
+        
+        if all_last_performances:
+            strong_perf = np.mean(all_last_performances)
+        
+        print_auc_latex_table(method_auc_data, x_label, y_label, 
+                            normalize_by_range=True, x_range=x_range,
+                            weak_performance=weak_perf,
+                            strong_performance=strong_perf)
 
 
 def list_available_methods(
@@ -710,6 +925,11 @@ def main():
         action="store_true",
         help="Paper mode: remove title and n=X from labels for cleaner figures",
     )
+    parser.add_argument(
+        "--auc",
+        action="store_true",
+        help="Calculate and display area under the curve (AUC) for each method with IQR bands",
+    )
 
     args = parser.parse_args()
 
@@ -739,6 +959,7 @@ def main():
         title=args.title,
         no_aggregate=args.no_aggregate,
         paper_mode=args.paper,
+        calculate_auc=args.auc,
     )
 
 
