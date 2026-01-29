@@ -52,6 +52,38 @@ python scripts/run_eval.py \
     --method max-prob   
 ```
 
+The methods are `ts-random`, `max-prob`, `max-logit`, `ensemble-single`, `svdd-latent`, `svdd-image`.
+
+### Data analysis and plots
+
+To analyze the results and generate plots, use the following scripts in the `analyzing` directory:
+
+To generate the main AFHP curves (AFHP is called ood_pred_percentage. There is also afhp, which is an older definition of AFHP, not the one we use in the paper):
+
+```
+python -m analyzing.icml_plot \
+  --eval_dir path/to/evals \
+  --prefix icml \
+  --env coinrun \
+  --x_data_key ood_pred_percentage \    --y_data_key performance \
+  --method_order "ts_random,max_prob,max_logit,ensemble_single,svdd_latent,svdd_image" \
+  --paper
+```
+
+This to generate the percentage of asking for help:
+
+```
+python -m analyzing.plot_ood_rate --eval_dir path/to/evals --prefix icml --env maze --bins 50 --compare_runs --target_afhp 50 -a
+```
+
+This to generate the episode length distribution plot:
+
+```
+python -m analyzing.episode_length_dist      --eval_dir /path/to/evals     --env coinrun     --method max_prob     --bins 20  --paper
+```
+
+(You need to specify a method so the script knows where to grab the data, but the results are the same for all the methods since we only calculate level lengths for the weak agent, which is equivalent to AFHP = 0.)
+
 ## Original YRC-Bench Readme
 
 <p align="center">
