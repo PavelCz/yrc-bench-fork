@@ -11,7 +11,7 @@ failed_syncs=0
 
 for env in "${ENVS[@]}"; do
   for exp in "${EXPS[@]}"; do
-    src_dir="${SRC_BASE}/imcl05-seed-ablation_${env}_${exp}"
+    src_dir="${SRC_BASE}/icml04_${env}_${exp}"
     dst_dir="${DST_BASE}/"
 
     echo "Syncing ${src_dir} -> ${dst_dir}"
