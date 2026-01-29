@@ -14,9 +14,12 @@ from typing import Dict, List, Optional, Tuple
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns  # type: ignore
 
-from analyzing.icml_plot import extract_icml_results, METHOD_NAMES
+from analyzing.icml_plot import extract_icml_results
+from analyzing.plotting_common import (
+    setup_plot_style,
+    style_plot_for_publication,
+)
 
 matplotlib.use("TkAgg")
 
@@ -85,26 +88,28 @@ def extract_episode_lengths_by_ood_status(
 
 def plot_episode_length_distribution(
     eval_dir: Path,
-    prefix_filter: Optional[str],
+    prefix_filter: Optional[List[str]],
     env_filter: Optional[str],
     method: Optional[str] = None,
     threshold_idx: Optional[int] = None,
     bins: int = 30,
     save_path: Optional[str] = None,
     title: Optional[str] = None,
+    paper_mode: bool = False,
 ):
     """
     Plot episode length distribution for ID vs OOD levels.
 
     Args:
         eval_dir: Directory containing evaluation results
-        prefix_filter: Only include runs with this prefix
+        prefix_filter: Only include runs with these prefixes (list)
         env_filter: Only include runs for this environment
         method: Specific method to plot (if None, uses first available)
         threshold_idx: Specific threshold index to use
         bins: Number of histogram bins
         save_path: Path to save the figure
         title: Custom title for the plot
+        paper_mode: If True, use paper-ready styling
     """
     results = extract_icml_results(eval_dir, prefix_filter, env_filter)
 
@@ -130,30 +135,66 @@ def plot_episode_length_distribution(
         print("No episode length data found.")
         return
 
-    print(f"ID episodes: {len(id_lengths)}, OOD episodes: {len(ood_lengths)}")
+    # Print statistics to CLI
+    print("\nEpisode Length Statistics:")
+    print("-" * 50)
+    print(f"ID episodes: {len(id_lengths)}")
+    if id_lengths:
+        print(f"  Mean length: {np.mean(id_lengths):.2f}")
+        print(f"  Std dev: {np.std(id_lengths):.2f}")
+        print(f"  Median: {np.median(id_lengths):.2f}")
+        print(f"  Min/Max: {min(id_lengths):.0f}/{max(id_lengths):.0f}")
+    print(f"\nOOD episodes: {len(ood_lengths)}")
+    if ood_lengths:
+        print(f"  Mean length: {np.mean(ood_lengths):.2f}")
+        print(f"  Std dev: {np.std(ood_lengths):.2f}")
+        print(f"  Median: {np.median(ood_lengths):.2f}")
+        print(f"  Min/Max: {min(ood_lengths):.0f}/{max(ood_lengths):.0f}")
+    print("-" * 50)
+
+    # Set up plot style
+    setup_plot_style(paper_mode=paper_mode, use_latex=False)
 
     # Create plot
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(4, 3))
 
     # Plot histograms
     if id_lengths:
+        if paper_mode:
+            id_label = "ID Levels"
+        else:
+            id_label = (
+                f"ID Levels (n={len(id_lengths)}, mean={np.mean(id_lengths):.1f})"
+            )
+
         plt.hist(
             id_lengths,
             bins=bins,
             alpha=0.6,
-            label=f"ID Levels (n={len(id_lengths)}, mean={np.mean(id_lengths):.1f})",
+            label=id_label,
             color="blue",
             density=True,
+            edgecolor="black",
+            linewidth=0.5,
         )
 
     if ood_lengths:
+        if paper_mode:
+            ood_label = "OOD Levels"
+        else:
+            ood_label = (
+                f"OOD Levels (n={len(ood_lengths)}, mean={np.mean(ood_lengths):.1f})"
+            )
+
         plt.hist(
             ood_lengths,
             bins=bins,
             alpha=0.6,
-            label=f"OOD Levels (n={len(ood_lengths)}, mean={np.mean(ood_lengths):.1f})",
+            label=ood_label,
             color="red",
             density=True,
+            edgecolor="black",
+            linewidth=0.5,
         )
 
     # Labels and title
@@ -164,11 +205,15 @@ def plot_episode_length_distribution(
 
     if title:
         plt.title(title)
-    else:
+    elif not paper_mode:
         plt.title(f"Episode Length Distribution ({env_str})")
 
-    plt.legend(loc="best")
-    plt.grid(True, alpha=0.3)
+    # Apply publication styling
+    style_plot_for_publication(
+        legend_outside=False,  # Keep legend inside for histograms
+        legend_location="best",
+    )
+
     plt.tight_layout()
 
     if save_path:
@@ -179,7 +224,7 @@ def plot_episode_length_distribution(
 
 
 def list_available_methods(
-    eval_dir: Path, prefix_filter: Optional[str], env_filter: Optional[str]
+    eval_dir: Path, prefix_filter: Optional[List[str]], env_filter: Optional[str]
 ):
     """List available methods."""
     results = extract_icml_results(eval_dir, prefix_filter, env_filter)
@@ -256,24 +301,33 @@ def main():
         action="store_true",
         help="List available methods and exit",
     )
+    parser.add_argument(
+        "--paper",
+        action="store_true",
+        help="Use paper-ready styling (no titles, cleaner appearance)",
+    )
 
     args = parser.parse_args()
 
     eval_dir = Path(args.eval_dir)
 
+    # Handle prefix filter as list
+    prefix_filter = [args.prefix] if args.prefix else None
+
     if args.list:
-        list_available_methods(eval_dir, args.prefix, args.env)
+        list_available_methods(eval_dir, prefix_filter, args.env)
         return
 
     plot_episode_length_distribution(
         eval_dir=eval_dir,
-        prefix_filter=args.prefix,
+        prefix_filter=prefix_filter,
         env_filter=args.env,
         method=args.method,
         threshold_idx=args.threshold_idx,
         bins=args.bins,
         save_path=args.save,
         title=args.title,
+        paper_mode=args.paper,
     )
 
 
