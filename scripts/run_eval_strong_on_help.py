@@ -344,7 +344,7 @@ def process_npz_files(args, npz_files, checkpoint_base_path, wandb_run):
         "submitted": 0,
         "skipped": 0,
         "failed": 0,
-        "processing_time": 0
+        "processing_time": 0.0,
     }
     
     print("\nProcessing NPZ files...")
