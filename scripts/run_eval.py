@@ -272,6 +272,10 @@ def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str, qos: st
         f"-coverage_fraction {eval_args['coverage_fraction']}",
     ]
 
+    # Add wandb project if specified
+    if eval_args.get("wandb_project"):
+        python_args.append(f"-wandb_project {eval_args['wandb_project']}")
+
     # Add SVDD-specific arguments if present
     if eval_args.get("cp_feature"):
         python_args.append(f"-cp_feature {eval_args['cp_feature']}")
@@ -406,6 +410,11 @@ def main():
         default=EVAL_DEFAULTS["coverage_fraction"],
         help=f"Coverage fraction for threshold sampling (default: {EVAL_DEFAULTS['coverage_fraction']})",
     )
+    parser.add_argument(
+        "--wandb-project",
+        default=None,
+        help="Override wandb project name",
+    )
     # Override checkpoints if needed
     parser.add_argument("--sim", help="Override sim weak checkpoint path")
     parser.add_argument("--weak", help="Override weak checkpoint path")
@@ -539,6 +548,7 @@ def main():
             "video_logging_mode": args.video_logging_mode,
             "video_filter_mode": args.video_filter_mode,
             "coverage_fraction": args.coverage_fraction,
+            "wandb_project": args.wandb_project,
             "level_seeds_file": str(level_seeds_file),
             "svdd_model_path": svdd_model_path,
             "cp_feature": cp_feature,
