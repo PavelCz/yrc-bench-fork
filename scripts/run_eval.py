@@ -29,7 +29,7 @@ EVAL_DEFAULTS = {
     "num_levels": 5000,
     "video_filter": "all",
     "cp_rolling_average": "none",
-    "video_logging_mode": "wandb",
+    "video_logging_mode": "folder",
     "video_filter_mode": "any",
     "coverage_fraction": 0.05,
 }
