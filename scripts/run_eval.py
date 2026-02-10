@@ -6,6 +6,7 @@ Script to run evaluation jobs in parallel via SLURM sbatch.
 import os
 import re
 import subprocess
+from datetime import date
 from pathlib import Path
 from typing import List, Optional
 
@@ -39,11 +40,13 @@ SERVER_PATHS = {
         "checkpoint_base": "/nas/ucb/czempin/data/goal-misgen/policy/icml",
         "seeds_base": "/nas/ucb/czempin/data/goal-misgen/seeds/icml",
         "svdd_base": "/nas/ucb/czempin/data/goal-misgen/trained_svdd",
+        "log_base": "/nas/ucb/czempin/data/goal-misgen/slurm-logs",
     },
     "snoopy": {
         "checkpoint_base": "/scr/pavel/data/goal-misgen/policy/icml",
         "seeds_base": "/scr/pavel/data/goal-misgen/seeds/icml",
         "svdd_base": "/scr/pavel/data/goal-misgen/trained_svdd",
+        "log_base": "/scr/pavel/data/goal-misgen/slurm-logs",
     },
 }
 
@@ -245,7 +248,7 @@ def get_ensemble_member_paths(
     return member_paths
 
 
-def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str, qos: str = "default") -> str:
+def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str, log_dir: Path, qos: str = "default") -> str:
     """Build the sbatch command string."""
     # Override QOS in SLURM config
     slurm_config = SLURM_CONFIG.copy()
@@ -293,8 +296,8 @@ def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str, qos: st
 
     sbatch_script = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
-#SBATCH --output=logs/slurm/%x_%j.out
-#SBATCH --error=logs/slurm/%x_%j.err
+#SBATCH --output={log_dir}/%x_%j.out
+#SBATCH --error={log_dir}/%x_%j.err
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
 
 echo "Using conda env: {conda_env}"
@@ -306,10 +309,10 @@ srun {slurm_args} {python_cmd}
 
 
 def submit_job(
-    job_name: str, eval_args: dict, conda_env: str, qos: str = "default", dry_run: bool = False
+    job_name: str, eval_args: dict, conda_env: str, log_dir: Path, qos: str = "default", dry_run: bool = False
 ) -> None:
     """Submit a single job via sbatch."""
-    sbatch_script = build_sbatch_command(job_name, eval_args, conda_env, qos)
+    sbatch_script = build_sbatch_command(job_name, eval_args, conda_env, log_dir, qos)
 
     if dry_run:
         print(f"=== Job: {job_name} ===")
@@ -318,7 +321,7 @@ def submit_job(
         return
 
     # Ensure logs directory exists
-    Path("logs/slurm").mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
 
     # Submit via sbatch
     result = subprocess.run(
@@ -446,6 +449,12 @@ def main():
 
     print(f"Conda env: {args.conda_env}")
 
+    # Build log directory path: base / wandb_project / prefix / date
+    log_base = Path(paths["log_base"])
+    wandb_project = args.wandb_project or "default"
+    log_dir = log_base / wandb_project / args.prefix / date.today().isoformat()
+    print(f"Log dir: {log_dir}")
+
     if args.dry_run:
         print(f"Server: {args.server}")
         print(f"Config: {config_path}")
@@ -559,7 +568,7 @@ def main():
             **checkpoints,
         }
 
-        submit_job(job_name, eval_args, args.conda_env, args.qos, dry_run=False)
+        submit_job(job_name, eval_args, args.conda_env, log_dir, args.qos, dry_run=False)
 
     return 0
 
