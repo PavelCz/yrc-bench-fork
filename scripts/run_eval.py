@@ -297,6 +297,7 @@ def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str, qos: st
 #SBATCH --error=logs/slurm/%x_%j.err
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
 
+echo "Using conda env: {conda_env}"
 eval "$(conda shell.bash hook)"
 conda activate {conda_env}
 srun {slurm_args} {python_cmd}
@@ -442,6 +443,8 @@ def main():
     if not Path(config_path).exists():
         print(f"Error: Config file not found: {config_path}")
         return 1
+
+    print(f"Conda env: {args.conda_env}")
 
     if args.dry_run:
         print(f"Server: {args.server}")
