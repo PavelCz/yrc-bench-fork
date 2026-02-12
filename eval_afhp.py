@@ -88,8 +88,8 @@ def main():
 
     if isinstance(policy, ThresholdPolicy):
         metric = config.coord_policy.metric
-        # These metrics require the training score distribution for percentile computation
-        if metric in ("max_logit", "ensemble_variance"):
+        # Generate training score distribution for percentile computation
+        if metric in ("max_prob", "max_logit", "ensemble_variance"):
             # Use algorithm.num_rollouts if available, otherwise use a default
             num_rollouts = getattr(config.algorithm, "num_rollouts", 256)
             print(

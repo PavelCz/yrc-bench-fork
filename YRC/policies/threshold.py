@@ -297,22 +297,8 @@ class ThresholdPolicy(Policy):
         self.params = torch.load(load_path)
 
     def train_percentile(self, percentile: float) -> float:
-        metric = self.args.metric
-        if metric == "max_prob":
-            # Percentile means what percentile of the scores are below the threshold
-            # percentile 100 -> all are below, set threshold to max, which is 1 since
-            # we are working with probabilities.
-            # percentile 0 -> vice versa
-            return percentile * 0.01
-        elif metric in ("max_logit", "ensemble_variance"):
-            # For max_logit and ensemble_variance, we need the actual training
-            # score distribution
-            if self._train_scores is None:
-                raise ValueError(
-                    "Training scores not available. Call generate_scores() first."
-                )
-            return np.percentile(self._train_scores, percentile)
-        else:
-            raise NotImplementedError(
-                f"Getting training percentiles not implemented for {metric} metric"
+        if self._train_scores is None:
+            raise ValueError(
+                "Training scores not available. Call generate_scores() first."
             )
+        return np.percentile(self._train_scores, percentile)
