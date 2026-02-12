@@ -83,6 +83,14 @@ Results are saved to an NPZ file containing:
 
 The coverage metric is the **max normalized neighbor gap**: the largest gap between adjacent samples on the output axis, divided by the total output range. With `coverage_fraction=0.05`, the target is that no gap exceeds 5% of the output range.
 
+## Percentile Calibration
+
+For threshold-based methods (`max_prob`, `max_logit`, `ensemble_variance`), the sampler works in percentile space of the training score distribution. Before sampling begins, `eval_afhp.py` runs `policy.generate_scores()` on the training environment to collect per-step OOD scores. `train_percentile(p)` then maps percentile `p` to an actual threshold via `np.percentile(scores, p)`.
+
+For `TimestepRandomPolicy`, there is no OOD score distribution — the "score" is `torch.rand()`. However, the mapping from per-step help probability to per-episode OOD percentage is nonlinear: with probability `p` per step and episode length `L`, the fraction of episodes with any help request is `1 - (1-p)^L`. To account for this, `eval_afhp.py` runs a calibration step before sampling: it evaluates the weak agent alone (prob=0) on the training environment to measure the mean episode length, then `train_percentile` uses the inverse formula `prob = 1 - (percentile/100)^(1/L)`.
+
+For `LevelBasedRandomPolicy`, the decision is per-episode, so `ood_percentage` equals the help probability directly — no calibration is needed.
+
 ## Sampler Variants
 
 The `threshold_sampler` config option selects the output axis:

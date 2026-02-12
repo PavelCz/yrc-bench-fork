@@ -99,6 +99,22 @@ def main():
 
     evaluator = Evaluator(config, config.environment)
 
+    # Calibrate TimestepRandomPolicy: measure mean episode length on training data
+    # so that train_percentile can account for the nonlinear mapping between
+    # per-step probability and per-episode OOD percentage.
+    from YRC.policies.base import TimestepRandomPolicy
+
+    if isinstance(policy, TimestepRandomPolicy):
+        print("Calibrating TimestepRandomPolicy: measuring mean episode length...")
+        old_prob = policy.prob
+        policy.prob = 0.0  # weak agent only
+        cal_envs = make_envs()
+        cal_summary = evaluator.eval(policy, cal_envs, ["train"], close_envs=True)
+        mean_ep_length = cal_summary["train"]["episode_length_mean"]
+        policy._mean_episode_length = mean_ep_length
+        policy.prob = old_prob
+        print(f"Mean episode length (weak only): {mean_ep_length:.1f}")
+
     coverage_fraction = config.evaluation.coverage_fraction
     threshold_sampler: str = config.evaluation.threshold_sampler
 
