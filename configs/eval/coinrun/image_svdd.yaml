@@ -12,7 +12,7 @@ wandb:
 # Evaluation settings
 evaluation:
     coverage_fraction: 0.05
-    threshold_sampler: 'ood_percentage'
+    threshold_sampler: 'level_afhp'
     video_episodes_to_collect: 16
     video_filter: ['all']
 

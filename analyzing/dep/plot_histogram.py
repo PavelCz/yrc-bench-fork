@@ -49,14 +49,14 @@ def plot_single_run(
     if result is None:
         return
 
-    values, checkpoint_idx, ood_percentage = result
+    values, checkpoint_idx, level_afhp = result
 
     # Plot histogram
     filter_msg = " (success only)" if success_only else ""
     print(
         f"\nPlotting histogram for '{key}' at checkpoint {checkpoint_idx}{filter_msg}"
     )
-    print(f"  OOD prediction percentage: {ood_percentage:.2f}%")
+    print(f"  Level AFHP: {level_afhp:.2f}%")
     print(f"  Number of episodes: {len(values)}")
     print(f"  Mean: {np.mean(values):.2f}")
     print(f"  Std: {np.std(values):.2f}")
@@ -77,7 +77,7 @@ def plot_single_run(
     plt.title(
         f"{key.replace('_', ' ').title()} Distribution{title_suffix}\n"
         f"Run: {selected_run}, Checkpoint: {checkpoint_idx}, "
-        f"OOD%: {ood_percentage:.1f}%"
+        f"Level AFHP: {level_afhp:.1f}%"
     )
     plt.grid(axis="y", alpha=0.3)
     plt.tight_layout()
@@ -118,11 +118,11 @@ def plot_compare_runs(
         if result is None:
             continue
 
-        values, checkpoint_idx, ood_percentage = result
+        values, checkpoint_idx, level_afhp = result
 
         # Store data and label
         all_data.append(values)
-        label = f"{run_name} (OOD: {ood_percentage:.1f}%)"
+        label = f"{run_name} (Level AFHP: {level_afhp:.1f}%)"
         all_labels.append(label)
 
         print(f"  Selected checkpoint {checkpoint_idx}")
@@ -198,21 +198,21 @@ def select_and_load_checkpoint_data(
         success_only: If True, only return values for episodes with reward > 0
 
     Returns:
-        Tuple of (values, checkpoint_idx, ood_percentage) or None if error/no data
+        Tuple of (values, checkpoint_idx, level_afhp) or None if error/no data
     """
     print(f"\nLoading data from: {data_path}")
 
     # Load the evaluation data
     eval_data = np.load(data_path, allow_pickle=True)
 
-    # Display ood_pred_percentage for each checkpoint
-    print("\nCheckpoints with OOD prediction percentages:")
-    ood_percentages = []
+    # Display level_afhp for each checkpoint
+    print("\nCheckpoints with level AFHP percentages:")
+    level_afhps = []
 
     for idx, element in enumerate(eval_data["meta"]):
         level_ood_pred = element["summary"]["test"]["level_ood_pred"]
         percentage = sum(level_ood_pred) / len(level_ood_pred) * 100
-        ood_percentages.append(percentage)
+        level_afhps.append(percentage)
 
         # Also show AFHP and performance if available
         afhp = eval_data["afhps"][idx] if idx < len(eval_data["afhps"]) else "N/A"
@@ -222,19 +222,19 @@ def select_and_load_checkpoint_data(
             else "N/A"
         )
 
-        print(f"  [{idx}] OOD%: {percentage:.2f}%, AFHP: {afhp}, Performance: {perf}")
+        print(f"  [{idx}] Level AFHP: {percentage:.2f}%, AFHP: {afhp}, Performance: {perf}")
 
     # Let user select a checkpoint
     while True:
         try:
             selection = input(
-                f"\nSelect a checkpoint for '{run_name}' (0-{len(ood_percentages) - 1}): "
+                f"\nSelect a checkpoint for '{run_name}' (0-{len(level_afhps) - 1}): "
             )
             checkpoint_idx = int(selection)
-            if 0 <= checkpoint_idx < len(ood_percentages):
+            if 0 <= checkpoint_idx < len(level_afhps):
                 break
             else:
-                print(f"Please enter a number between 0 and {len(ood_percentages) - 1}")
+                print(f"Please enter a number between 0 and {len(level_afhps) - 1}")
         except ValueError:
             print("Please enter a valid number")
 
@@ -255,7 +255,7 @@ def select_and_load_checkpoint_data(
         )
         return None
 
-    return values, checkpoint_idx, ood_percentages[checkpoint_idx]
+    return values, checkpoint_idx, level_afhps[checkpoint_idx]
 
 
 def plot_episode_metrics_main():

@@ -127,7 +127,7 @@ def extract_from_data(data, key: str) -> np.ndarray:
     level_ood_pred = [
         element["summary"]["test"]["level_ood_pred"] for element in data["meta"]
     ]
-    if key == "ood_pred_percentage":
+    if key == "level_afhp":
         pred_percentages = []
         for preds in level_ood_pred:
             percentage = sum(preds) / len(preds)

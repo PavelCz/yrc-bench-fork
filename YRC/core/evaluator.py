@@ -168,7 +168,7 @@ class Evaluator:
 
             # Calculate AFHP for logging
             if self.defer_to_oracle:
-                afhp = summary[split]["ood_pred_percentage"]
+                afhp = summary[split]["level_afhp"]
             else:
                 afhp = summary[split]["action_1_frac"]
 
@@ -575,7 +575,7 @@ class Evaluator:
 
     def summarize(self, log):
         total_steps = int(sum(log["episode_length"]))
-        ood_pred_percentage = float(np.mean(log["level_ood_pred"]))
+        level_afhp = float(np.mean(log["level_ood_pred"]))
         ood_accuracy = float(np.mean(log["level_ood_pred"] == log["level_ood_gt"]))
         return {
             "steps": total_steps,
@@ -592,7 +592,7 @@ class Evaluator:
             f"action_{self.LOGGED_ACTION}_frac": float(
                 sum(log[f"action_{self.LOGGED_ACTION}"]) / total_steps
             ),
-            "ood_pred_percentage": ood_pred_percentage,
+            "level_afhp": level_afhp,
             "ood_accuracy": ood_accuracy,
             "level_ood_gt": log["level_ood_gt"],
             "level_ood_pred": log["level_ood_pred"],
@@ -624,7 +624,7 @@ class Evaluator:
             t = summary["threshold"]
             t_str = f"{t:7.4f}" if np.isfinite(t) else f"{t}"
             log_str += f"   Threshold:          {t_str}\n"
-        log_str += f"   OOD Pred Percentage: {summary['ood_pred_percentage']:7.2f}\n"
+        log_str += f"   Level AFHP: {summary['level_afhp']:7.2f}\n"
         log_str += f"   OOD Accuracy: {summary['ood_accuracy']:7.2f}\n"
         if summary.get('randomize_goal_percentage') is not None:
             log_str += f"   Random Goal %: {summary['randomize_goal_percentage']:7.2f}%\n"

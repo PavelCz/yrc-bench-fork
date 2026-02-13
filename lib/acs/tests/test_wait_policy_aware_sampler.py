@@ -62,7 +62,7 @@ def create_wait_policy_evaluator(
     Create evaluation functions that simulate wait policy behavior.
     
     The wait policy asks for help if episode_length < threshold.
-    This creates a discrete distribution where certain ood_pred_percentage
+    This creates a discrete distribution where certain level_afhp
     values are impossible to achieve.
     
     Returns:
@@ -79,13 +79,13 @@ def create_wait_policy_evaluator(
         # So episodes ending before threshold don't ask for help
         # Episodes lasting >= threshold do ask for help
         asked_for_help = np.sum(episode_lengths >= threshold)
-        ood_pred_percentage = (asked_for_help / len(episode_lengths)) * 100.0
+        level_afhp = (asked_for_help / len(episode_lengths)) * 100.0
         
         # Simulate performance (higher threshold = lower performance)
         # This is because waiting longer means less help from strong agent
         performance = 85.0 - (threshold / max_episode_length) * 60.0
-        
-        return ood_pred_percentage, performance
+
+        return level_afhp, performance
     
     def eval_at_percentile(p: float) -> Tuple[float, float, Dict[str, Any]]:
         """Evaluate at a percentile (0-1)."""

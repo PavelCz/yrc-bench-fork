@@ -23,7 +23,7 @@ scripts/run_eval.py
 | `coverage_fraction` | 0.05 | `scripts/run_eval.py` | Max normalized neighbor gap allowed on output axis |
 | `max_total_evals` | 200 | `eval_afhp.py` | Hard budget of evaluations |
 | `num_levels` | 5000 | `scripts/run_eval.py` | Episodes per evaluation |
-| `threshold_sampler` | `"afhp"` | Config YAML | Which output axis to cover (`"afhp"` or `"ood_percentage"`) |
+| `threshold_sampler` | `"afhp"` | Config YAML | Which output axis to cover (`"afhp"` or `"level_afhp"`) |
 
 `coverage_fraction` controls granularity: `num_bins = int(1.0 / coverage_fraction)`. With the default of 0.05, this yields 20 bins.
 
@@ -89,14 +89,14 @@ For threshold-based methods (`max_prob`, `max_logit`, `ensemble_variance`), the 
 
 For `TimestepRandomPolicy`, there is no OOD score distribution — the "score" is `torch.rand()`. However, the mapping from per-step help probability to per-episode OOD percentage is nonlinear: with probability `p` per step and episode length `L`, the fraction of episodes with any help request is `1 - (1-p)^L`. To account for this, `eval_afhp.py` runs a calibration step before sampling: it evaluates the weak agent alone (prob=0) on the training environment to measure the mean episode length, then `train_percentile` uses the inverse formula `prob = 1 - (percentile/100)^(1/L)`.
 
-For `LevelBasedRandomPolicy`, the decision is per-episode, so `ood_percentage` equals the help probability directly — no calibration is needed.
+For `LevelBasedRandomPolicy`, the decision is per-episode, so `level_afhp` equals the help probability directly — no calibration is needed.
 
 ## Sampler Variants
 
 The `threshold_sampler` config option selects the output axis:
 
 - `"afhp"`: Covers the AFHP axis (% of steps where help is requested).
-- `"ood_percentage"`: Covers the OOD% axis (% of episodes flagged as OOD).
+- `"level_afhp"`: Covers the level AFHP axis (% of episodes where help is requested).
 
 Both use the same `BinarySearchSampler` algorithm; they differ only in which metric defines the output bins.
 

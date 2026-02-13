@@ -14,7 +14,7 @@ from YRC.core.configs.global_configs import get_global_variable
 from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
 
 from YRC.coverage.coverage_search import create_afhp_threshold_sampler
-from YRC.coverage.coverage_search import create_ood_percentage_threshold_sampler
+from YRC.coverage.coverage_search import create_level_afhp_threshold_sampler
 
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger
@@ -164,8 +164,8 @@ def main():
             logger=wandb_logger,
             wandb_run=exp,
         )
-    elif threshold_sampler == "ood_percentage":
-        sampler = create_ood_percentage_threshold_sampler(
+    elif threshold_sampler == "level_afhp":
+        sampler = create_level_afhp_threshold_sampler(
             policy=policy,
             evaluator=evaluator,
             envs_factory=make_envs,

@@ -35,7 +35,7 @@ class EvalStepTracker:
         self,
         threshold: float,
         afhp: float,
-        ood_pred_percentage: float,
+        level_afhp: float,
         performance: float,
     ):
         """Log evaluation metrics to console and wandb."""
@@ -44,7 +44,7 @@ class EvalStepTracker:
         # Print to console
         print(
             f"[Eval {self.step:3d}] threshold={threshold:10.4f}, "
-            f"afhp={afhp:6.2f}%, ood_pred={ood_pred_percentage:6.2f}%, "
+            f"afhp={afhp:6.2f}%, level_afhp={level_afhp:6.2f}%, "
             f"performance={performance:.4f}"
         )
 
@@ -55,7 +55,7 @@ class EvalStepTracker:
                     "eval/step": self.step,
                     "eval/threshold": threshold if not np.isinf(threshold) else (1e10 if threshold > 0 else -1e10),
                     "eval/afhp": afhp,
-                    "eval/ood_pred_percentage": ood_pred_percentage,
+                    "eval/level_afhp": level_afhp,
                     "eval/performance": performance,
                 },
                 step=self.step,
@@ -63,7 +63,7 @@ class EvalStepTracker:
 
 
 
-def create_ood_percentage_threshold_sampler(
+def create_level_afhp_threshold_sampler(
     policy,
     evaluator: Evaluator,
     envs_factory,
@@ -133,7 +133,7 @@ def create_ood_percentage_threshold_sampler(
             policy, envs, [split], logger=logger, threshold=threshold, close_envs=True
         )
         level_ood_preds = summary[split]["level_ood_pred"]
-        ood_pred_percentage = float(np.mean(level_ood_preds)) * 100.0
+        level_afhp = float(np.mean(level_ood_preds)) * 100.0
         afhp = summary[split]["action_1_frac"] * 100.0
         performance = float(summary[split]["env_return_mean"])  # Y-axis
 
@@ -141,12 +141,12 @@ def create_ood_percentage_threshold_sampler(
         tracker.log_eval(
             threshold=threshold,
             afhp=afhp,
-            ood_pred_percentage=ood_pred_percentage,
+            level_afhp=level_afhp,
             performance=performance,
         )
 
-        # Return ood_pred_percentage in [0, 1] for the sampler
-        target_metric = ood_pred_percentage / 100.0
+        # Return level_afhp in [0, 1] for the sampler
+        target_metric = level_afhp / 100.0
         return target_metric, performance, {"summary": summary, "threshold": threshold}
 
     def eval_at_percentile(p: float) -> Tuple[float, float, Dict[str, Any]]:
@@ -261,7 +261,7 @@ def create_afhp_threshold_sampler(
             policy, envs, [split], logger=logger, threshold=threshold, close_envs=True
         )
         level_ood_preds = summary[split]["level_ood_pred"]
-        ood_pred_percentage = float(np.mean(level_ood_preds)) * 100.0
+        level_afhp = float(np.mean(level_ood_preds)) * 100.0
         afhp = summary[split]["action_1_frac"] * 100.0
         performance = float(summary[split]["env_return_mean"])  # Y-axis
 
@@ -269,7 +269,7 @@ def create_afhp_threshold_sampler(
         tracker.log_eval(
             threshold=threshold,
             afhp=afhp,
-            ood_pred_percentage=ood_pred_percentage,
+            level_afhp=level_afhp,
             performance=performance,
         )
 
