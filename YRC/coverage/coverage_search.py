@@ -34,7 +34,7 @@ class EvalStepTracker:
     def log_eval(
         self,
         threshold: float,
-        afhp: float,
+        step_afhp: float,
         level_afhp: float,
         performance: float,
     ):
@@ -44,7 +44,7 @@ class EvalStepTracker:
         # Print to console
         print(
             f"[Eval {self.step:3d}] threshold={threshold:10.4f}, "
-            f"afhp={afhp:6.2f}%, level_afhp={level_afhp:6.2f}%, "
+            f"step_afhp={step_afhp:6.2f}%, level_afhp={level_afhp:6.2f}%, "
             f"performance={performance:.4f}"
         )
 
@@ -54,7 +54,7 @@ class EvalStepTracker:
                 {
                     "eval/step": self.step,
                     "eval/threshold": threshold if not np.isinf(threshold) else (1e10 if threshold > 0 else -1e10),
-                    "eval/afhp": afhp,
+                    "eval/step_afhp": step_afhp,
                     "eval/level_afhp": level_afhp,
                     "eval/performance": performance,
                 },
@@ -134,13 +134,13 @@ def create_level_afhp_threshold_sampler(
         )
         level_ood_preds = summary[split]["level_ood_pred"]
         level_afhp = float(np.mean(level_ood_preds)) * 100.0
-        afhp = summary[split]["action_1_frac"] * 100.0
+        step_afhp = summary[split]["action_1_frac"] * 100.0
         performance = float(summary[split]["env_return_mean"])  # Y-axis
 
         # Log to console and wandb
         tracker.log_eval(
             threshold=threshold,
-            afhp=afhp,
+            step_afhp=step_afhp,
             level_afhp=level_afhp,
             performance=performance,
         )
@@ -191,7 +191,7 @@ def create_level_afhp_threshold_sampler(
         )
 
 
-def create_afhp_threshold_sampler(
+def create_step_afhp_threshold_sampler(
     policy,
     evaluator: Evaluator,
     envs_factory,
@@ -262,33 +262,33 @@ def create_afhp_threshold_sampler(
         )
         level_ood_preds = summary[split]["level_ood_pred"]
         level_afhp = float(np.mean(level_ood_preds)) * 100.0
-        afhp = summary[split]["action_1_frac"] * 100.0
+        step_afhp = summary[split]["action_1_frac"] * 100.0
         performance = float(summary[split]["env_return_mean"])  # Y-axis
 
         # Log to console and wandb
         tracker.log_eval(
             threshold=threshold,
-            afhp=afhp,
+            step_afhp=step_afhp,
             level_afhp=level_afhp,
             performance=performance,
         )
 
-        return afhp, performance, {"summary": summary, "threshold": threshold}
+        return step_afhp, performance, {"summary": summary, "threshold": threshold}
 
     def eval_at_percentile(p: float) -> Tuple[float, float, Dict[str, Any]]:
         thr = percentile_to_threshold(p)
-        afhp, performance, meta = _eval_with_threshold(thr)
-        return afhp, performance, meta
+        step_afhp, performance, meta = _eval_with_threshold(thr)
+        return step_afhp, performance, meta
 
     def eval_at_lower_extreme() -> Tuple[float, float, Dict[str, Any]]:
         thr = float("inf")
-        afhp, performance, meta = _eval_with_threshold(thr)
-        return afhp, performance, meta
+        step_afhp, performance, meta = _eval_with_threshold(thr)
+        return step_afhp, performance, meta
 
     def eval_at_upper_extreme() -> Tuple[float, float, Dict[str, Any]]:
         thr = float("-inf")
-        afhp, performance, meta = _eval_with_threshold(thr)
-        return afhp, performance, meta
+        step_afhp, performance, meta = _eval_with_threshold(thr)
+        return step_afhp, performance, meta
 
     # Convert coverate fraction to num_bins
     num_bins = int(1.0 / coverage_fraction)

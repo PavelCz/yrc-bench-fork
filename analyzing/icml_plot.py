@@ -39,7 +39,7 @@ matplotlib.use("TkAgg")
 
 # Data key display names mapping
 DATA_KEY_NAMES = {
-    "afhp": "Ask-For-Help Percentage (AFHP, per timestep)",
+    "step_afhp": "Ask-For-Help Percentage (AFHP, per timestep)",
     "level_afhp": "Ask-For-Help Percentage (AFHP)",
     "performance": "Average Return",
     "performance_asked": "Average Reward (Asked for Help)",
@@ -572,7 +572,7 @@ def plot_icml_results(
             continue
         
         # Print AFHP values for wait policy
-        if method == "wait" and x_data_key in ["afhp", "level_afhp"]:
+        if method == "wait" and x_data_key in ["step_afhp", "level_afhp"]:
             print(f"\n=== Wait Policy AFHP Values ===")
             for exp_idx, x_values in enumerate(x_arrays):
                 print(f"Experiment {exp_ids[exp_idx]}: {sorted(set(x_values))}")
@@ -859,8 +859,8 @@ def main():
     parser.add_argument(
         "--x_data_key",
         type=str,
-        default="afhp",
-        help="Key for the x data (default: afhp)",
+        default="step_afhp",
+        help="Key for the x data (default: step_afhp)",
     )
     parser.add_argument(
         "--y_data_key",

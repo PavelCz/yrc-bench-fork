@@ -23,7 +23,7 @@ scripts/run_eval.py
 | `coverage_fraction` | 0.05 | `scripts/run_eval.py` | Max normalized neighbor gap allowed on output axis |
 | `max_total_evals` | 200 | `eval_afhp.py` | Hard budget of evaluations |
 | `num_levels` | 5000 | `scripts/run_eval.py` | Episodes per evaluation |
-| `threshold_sampler` | `"afhp"` | Config YAML | Which output axis to cover (`"afhp"` or `"level_afhp"`) |
+| `threshold_sampler` | `"step_afhp"` | Config YAML | Which output axis to cover (`"step_afhp"` or `"level_afhp"`) |
 
 `coverage_fraction` controls granularity: `num_bins = int(1.0 / coverage_fraction)`. With the default of 0.05, this yields 20 bins.
 
@@ -95,7 +95,7 @@ For `LevelBasedRandomPolicy`, the decision is per-episode, so `level_afhp` equal
 
 The `threshold_sampler` config option selects the output axis:
 
-- `"afhp"`: Covers the AFHP axis (% of steps where help is requested).
+- `"step_afhp"`: Covers the step AFHP axis (% of steps where help is requested).
 - `"level_afhp"`: Covers the level AFHP axis (% of episodes where help is requested).
 
 Both use the same `BinarySearchSampler` algorithm; they differ only in which metric defines the output bins.

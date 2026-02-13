@@ -58,7 +58,7 @@ The methods are `ts-random`, `max-prob`, `max-logit`, `ensemble-single`, `svdd-l
 
 To analyze the results and generate plots, use the following scripts in the `analyzing` directory:
 
-To generate the main AFHP curves (level_afhp is the per-episode AFHP metric. There is also afhp, which is an older per-timestep definition of AFHP, not the one we use in the paper):
+To generate the main AFHP curves (level_afhp is the per-episode AFHP metric. There is also step_afhp, which is an older per-timestep definition of AFHP, not the one we use in the paper):
 
 ```
 python -m analyzing.icml_plot \

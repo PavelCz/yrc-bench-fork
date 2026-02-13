@@ -13,7 +13,7 @@ from YRC.core.configs.global_configs import get_global_variable
 
 from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
 
-from YRC.coverage.coverage_search import create_afhp_threshold_sampler
+from YRC.coverage.coverage_search import create_step_afhp_threshold_sampler
 from YRC.coverage.coverage_search import create_level_afhp_threshold_sampler
 
 import numpy as np
@@ -153,8 +153,8 @@ def main():
     for split_name in envs:
         envs[split_name].close()
 
-    if threshold_sampler == "afhp":
-        sampler = create_afhp_threshold_sampler(
+    if threshold_sampler == "step_afhp":
+        sampler = create_step_afhp_threshold_sampler(
             policy=policy,
             evaluator=evaluator,
             envs_factory=make_envs,

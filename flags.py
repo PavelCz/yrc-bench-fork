@@ -338,7 +338,7 @@ def make():
         "-threshold_sampler",
         "--evaluation.threshold_sampler",
         type=str,
-        choices=["afhp", "level_afhp"],
+        choices=["step_afhp", "level_afhp"],
         help="threshold sampler to use",
     )
 
