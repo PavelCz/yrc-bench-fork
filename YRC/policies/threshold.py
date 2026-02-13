@@ -46,6 +46,7 @@ class ThresholdPolicy(Policy):
 
         # Store training scores for percentile computation (used in AFHP eval)
         self._train_scores = None
+        self._train_episode_max_scores = None
 
         # Ensemble for ensemble_variance metric
         self.ensemble_members = None
@@ -122,10 +123,14 @@ class ThresholdPolicy(Policy):
     def generate_scores(self, env, num_rollouts):
         assert num_rollouts % env.num_envs == 0
         scores = []
+        episode_max_scores = []
         for i in range(num_rollouts // env.num_envs):
-            scores.extend(self._rollout_once(env))
+            ep_scores, ep_maxes = self._rollout_once(env)
+            scores.extend(ep_scores)
+            episode_max_scores.extend(ep_maxes)
         # Store scores for percentile computation (used in AFHP eval)
         self._train_scores = np.array(scores)
+        self._train_episode_max_scores = np.array(episode_max_scores)
         return scores
 
     def _rollout_once(self, env):
@@ -147,6 +152,7 @@ class ThresholdPolicy(Policy):
         obs = env.reset()
         has_done = np.array([False] * env.num_envs)
         scores = []
+        episode_max_scores = [float("-inf")] * env.num_envs
 
         while not has_done.all():
             if self.args.metric == "ensemble_variance":
@@ -158,16 +164,20 @@ class ThresholdPolicy(Policy):
 
             if env.num_envs == 1:
                 scores.append(score.item())
+                episode_max_scores[0] = max(episode_max_scores[0], score.item())
             else:
                 for i in range(env.num_envs):
                     if not has_done[i]:
                         scores.append(score[i].item())
+                        episode_max_scores[i] = max(
+                            episode_max_scores[i], score[i].item()
+                        )
 
             action = sample_action(logit)
             obs, reward, done, info = env.step(action)
             has_done |= done
 
-        return scores
+        return scores, episode_max_scores
 
     def _compute_score(self, logit):
         # NOTE: higher score = more certain for some of the metrics, but not all.
@@ -296,9 +306,27 @@ class ThresholdPolicy(Policy):
     def load_model(self, load_path):
         self.params = torch.load(load_path)
 
-    def train_percentile(self, percentile: float) -> float:
+    def train_percentile_step(self, percentile: float) -> float:
+        """Return threshold for a target step_afhp percentile.
+
+        Uses per-step scores: the p-th percentile of all per-step scores.
+        """
         if self._train_scores is None:
             raise ValueError(
                 "Training scores not available. Call generate_scores() first."
             )
         return np.percentile(self._train_scores, percentile)
+
+    def train_percentile_level(self, percentile: float) -> float:
+        """Return threshold for a target level_afhp percentile.
+
+        Uses per-episode max scores: the p-th percentile of episode-max-scores
+        is the threshold where (100-p)% of episodes have at least one step
+        exceeding it, i.e., level_afhp = (100-p)%.
+        """
+        if self._train_episode_max_scores is None:
+            raise ValueError(
+                "Episode-level training scores not available. "
+                "Call generate_scores() first."
+            )
+        return np.percentile(self._train_episode_max_scores, percentile)

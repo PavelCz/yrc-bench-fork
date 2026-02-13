@@ -111,11 +111,14 @@ def create_level_afhp_threshold_sampler(
             return float("inf")
         if p >= 1.0:
             return float("-inf")
-        return policy.train_percentile(100.0 - (p * 100.0))
+        percentile = 100.0 - (p * 100.0)
+        if hasattr(policy, "train_percentile_level"):
+            return policy.train_percentile_level(percentile)
+        return policy.train_percentile(percentile)
 
     def _eval_with_threshold(threshold: float) -> Tuple[float, float, Dict[str, Any]]:
         update_policy_params(policy, threshold)
-        
+
         # Track thresholds for WaitPolicy
         if isinstance(policy, WaitPolicy) and max_episode_length is not None:
             # Convert inf thresholds to actual values for tracking
@@ -125,7 +128,7 @@ def create_level_afhp_threshold_sampler(
             elif threshold == float("-inf"):
                 actual_threshold = 0
             thresholds_evaluated.append(actual_threshold)
-        
+
         # Create fresh environments for each evaluation to ensure reproducibility
         # Each evaluation sees the same seeds in the same order
         envs = envs_factory()
@@ -239,11 +242,14 @@ def create_step_afhp_threshold_sampler(
             return float("inf")
         if p >= 1.0:
             return float("-inf")
-        return policy.train_percentile(100.0 - (p * 100.0))
+        percentile = 100.0 - (p * 100.0)
+        if hasattr(policy, "train_percentile_step"):
+            return policy.train_percentile_step(percentile)
+        return policy.train_percentile(percentile)
 
     def _eval_with_threshold(threshold: float) -> Tuple[float, float, Dict[str, Any]]:
         update_policy_params(policy, threshold)
-        
+
         # Track thresholds for WaitPolicy
         if isinstance(policy, WaitPolicy) and max_episode_length is not None:
             # Convert inf thresholds to actual values for tracking
@@ -253,7 +259,7 @@ def create_step_afhp_threshold_sampler(
             elif threshold == float("-inf"):
                 actual_threshold = 0
             thresholds_evaluated.append(actual_threshold)
-        
+
         # Create fresh environments for each evaluation to ensure reproducibility
         # Each evaluation sees the same seeds in the same order
         envs = envs_factory()
