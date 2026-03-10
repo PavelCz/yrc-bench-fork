@@ -27,7 +27,7 @@ Not all policies support both. Unsupported variants raise `NotImplementedError`.
 | `ThresholdPolicy` | per-step score percentiles | per-episode max score percentiles |
 | `TimestepRandomPolicy` | linear mapping | `1 - p^(1/L)` formula using mean episode length |
 | `LevelBasedRandomPolicy` | `NotImplementedError` | linear mapping |
-| `ExponentialHeuristicPolicy` | `NotImplementedError` | linear mapping |
+| `ExponentialHeuristicPolicy` | `NotImplementedError` | `1 - p^(2/(L(L-1)))` formula using mean episode length |
 | `WaitPolicy` | timestep threshold from episode length | `NotImplementedError` |
 | `OODPolicy` | training decision scores | `NotImplementedError` |
 | `LightningAEPolicy` | training decision scores | `NotImplementedError` |
@@ -64,7 +64,15 @@ Decides once per episode whether to ask for help, so level_afhp equals the proba
 
 ### ExponentialHeuristicPolicy (`YRC/policies/heuristic.py`)
 
-Same as `LevelBasedRandomPolicy`: the parameter controls the per-episode starting probability.
+At timestep `t`, the probability of asking for help is `1 - (1 - ood_starting_prob)^t`. The probability of no help in an entire episode of length `L` is:
+
+```
+P(no help) = product_{t=0}^{L-1} (1 - ood_starting_prob)^t = (1 - ood_starting_prob)^{L(L-1)/2}
+```
+
+`train_percentile_level(p)` inverts this: `ood_starting_prob = 1 - (p/100)^{2/(L(L-1))}`, where `L` is the mean episode length measured during calibration. This is analogous to `TimestepRandomPolicy`'s formula but with exponent `2/(L(L-1))` instead of `1/L`, because the per-step probability grows over time.
+
+`train_percentile_step` is not supported.
 
 ### WaitPolicy (`YRC/policies/heuristic.py`)
 

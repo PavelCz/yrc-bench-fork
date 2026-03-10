@@ -156,7 +156,7 @@ The project uses hierarchical YAML configs in `configs/`:
    | `ThresholdPolicy` | per-step scores | per-episode max scores |
    | `TimestepRandomPolicy` | linear | `1 - p^(1/L)` formula |
    | `LevelBasedRandomPolicy` | NotImplementedError | linear |
-   | `ExponentialHeuristicPolicy` | NotImplementedError | linear |
+   | `ExponentialHeuristicPolicy` | NotImplementedError | `1 - p^(2/(L(L-1)))` formula |
    | `WaitPolicy` | timestep threshold | NotImplementedError |
    | `OODPolicy` | training decision scores | NotImplementedError |
    | `LightningAEPolicy` | training decision scores | NotImplementedError |

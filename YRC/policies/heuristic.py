@@ -20,6 +20,7 @@ class ExponentialHeuristicPolicy(Policy):
         self.non_ood_starting_prob = 0.5
         self.device = get_global_variable("device")
         self.timestep = 0
+        self._mean_episode_length = None
         
     def reset_episode(self, env_idx: int = None):
         """Reset the timestep counter at the start of a new episode.
@@ -80,7 +81,27 @@ class ExponentialHeuristicPolicy(Policy):
         )
 
     def train_percentile_level(self, percentile: float) -> float:
-        """Take a percentile and return the threshold for that percentile."""
+        """Map percentile to ood_starting_prob calibrated for level_afhp.
+
+        At timestep t, P(no help) = (1 - ood_starting_prob)^t.
+        Over an episode of length L:
+            P(no help in episode) = product_{t=0}^{L-1} (1 - ood_starting_prob)^t
+                                  = (1 - ood_starting_prob)^{L(L-1)/2}
+
+        Inverting: ood_starting_prob = 1 - (percentile/100)^{2/(L(L-1))}
+
+        Falls back to linear mapping if mean episode length is not calibrated.
+        """
+        if self._mean_episode_length is not None:
+            p = percentile / 100.0
+            p = max(0.0, min(1.0, p))
+            if p <= 0.0:
+                return 1.0  # always ask
+            if p >= 1.0:
+                return 0.0  # never ask
+            L = self._mean_episode_length
+            exponent = 2.0 / (L * (L - 1))
+            return 1.0 - p**exponent
         return (100 - percentile) * 0.01
 
 
