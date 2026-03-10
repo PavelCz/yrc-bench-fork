@@ -112,9 +112,7 @@ def create_level_afhp_threshold_sampler(
         if p >= 1.0:
             return float("-inf")
         percentile = 100.0 - (p * 100.0)
-        if hasattr(policy, "train_percentile_level"):
-            return policy.train_percentile_level(percentile)
-        return policy.train_percentile(percentile)
+        return policy.train_percentile_level(percentile)
 
     def _eval_with_threshold(threshold: float) -> Tuple[float, float, Dict[str, Any]]:
         update_policy_params(policy, threshold)
@@ -243,9 +241,7 @@ def create_step_afhp_threshold_sampler(
         if p >= 1.0:
             return float("-inf")
         percentile = 100.0 - (p * 100.0)
-        if hasattr(policy, "train_percentile_step"):
-            return policy.train_percentile_step(percentile)
-        return policy.train_percentile(percentile)
+        return policy.train_percentile_step(percentile)
 
     def _eval_with_threshold(threshold: float) -> Tuple[float, float, Dict[str, Any]]:
         update_policy_params(policy, threshold)

@@ -470,5 +470,15 @@ class LightningAEPolicy(OODPolicy):
 
         return self
 
-    def train_percentile(self, percentile: float) -> float:
+    def train_percentile_step(self, percentile: float) -> float:
+        """Return threshold for a target step_afhp percentile.
+
+        Uses per-step decision scores from AE training.
+        """
         return np.percentile(self._train_decision_scores, percentile)
+
+    def train_percentile_level(self, percentile: float) -> float:
+        raise NotImplementedError(
+            "LightningAEPolicy does not support level_afhp calibration. "
+            "Fixing this requires tracking episode boundaries during training."
+        )

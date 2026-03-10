@@ -127,8 +127,12 @@ class TimestepRandomPolicy(Policy):
         ckpt = torch.load(load_path)
         self.prob = ckpt["prob"]
 
-    def train_percentile(self, percentile: float) -> float:
-        """Map percentile to ask-for-help probability.
+    def train_percentile_step(self, percentile: float) -> float:
+        """Map percentile to per-step ask-for-help probability (linear)."""
+        return (100 - percentile) * 0.01
+
+    def train_percentile_level(self, percentile: float) -> float:
+        """Map percentile to ask-for-help probability calibrated for level_afhp.
 
         If mean episode length has been calibrated, uses the formula:
             prob = 1 - (percentile / 100) ^ (1 / L)
@@ -188,6 +192,11 @@ class LevelBasedRandomPolicy(Policy):
         ckpt = torch.load(load_path)
         self.prob = ckpt["prob"]
 
-    def train_percentile(self, percentile: float) -> float:
+    def train_percentile_step(self, percentile: float) -> float:
+        raise NotImplementedError(
+            "LevelBasedRandomPolicy does not support step_afhp calibration."
+        )
+
+    def train_percentile_level(self, percentile: float) -> float:
         """Take a percentile and return the threshold for that percentile."""
         return (100 - percentile) * 0.01

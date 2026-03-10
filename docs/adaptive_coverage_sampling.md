@@ -42,7 +42,7 @@ Each extreme is placed into its corresponding output bin.
 
 Recursively:
 1. Pick the midpoint percentile between two already-evaluated percentiles.
-2. Convert the percentile to a threshold via `policy.train_percentile()`.
+2. Convert the percentile to a threshold via `policy.train_percentile_level()` or `policy.train_percentile_step()`.
 3. Run a full evaluation (all `num_levels` episodes) at that threshold.
 4. Place the result into its output bin based on the observed AFHP.
 5. Recurse into left and right sub-intervals where empty bins remain.
@@ -85,9 +85,9 @@ The coverage metric is the **max normalized neighbor gap**: the largest gap betw
 
 ## Percentile Calibration
 
-For threshold-based methods (`max_prob`, `max_logit`, `ensemble_variance`), the sampler works in percentile space of the training score distribution. Before sampling begins, `eval_afhp.py` runs `policy.generate_scores()` on the training environment to collect per-step OOD scores. `train_percentile(p)` then maps percentile `p` to an actual threshold via `np.percentile(scores, p)`.
+For threshold-based methods (`max_prob`, `max_logit`, `ensemble_variance`), the sampler works in percentile space of the training score distribution. Before sampling begins, `eval_afhp.py` runs `policy.generate_scores()` on the training environment to collect per-step OOD scores and per-episode max scores. `train_percentile_step(p)` maps percentile `p` to a threshold via `np.percentile(step_scores, p)` (calibrated for step_afhp), while `train_percentile_level(p)` uses `np.percentile(episode_max_scores, p)` (calibrated for level_afhp).
 
-For `TimestepRandomPolicy`, there is no OOD score distribution — the "score" is `torch.rand()`. However, the mapping from per-step help probability to per-episode OOD percentage is nonlinear: with probability `p` per step and episode length `L`, the fraction of episodes with any help request is `1 - (1-p)^L`. To account for this, `eval_afhp.py` runs a calibration step before sampling: it evaluates the weak agent alone (prob=0) on the training environment to measure the mean episode length, then `train_percentile` uses the inverse formula `prob = 1 - (percentile/100)^(1/L)`.
+For `TimestepRandomPolicy`, there is no OOD score distribution — the "score" is `torch.rand()`. However, the mapping from per-step help probability to per-episode OOD percentage is nonlinear: with probability `p` per step and episode length `L`, the fraction of episodes with any help request is `1 - (1-p)^L`. To account for this, `eval_afhp.py` runs a calibration step before sampling: it evaluates the weak agent alone (prob=0) on the training environment to measure the mean episode length, then `train_percentile_level` uses the inverse formula `prob = 1 - (percentile/100)^(1/L)`. `train_percentile_step` uses a simple linear mapping instead.
 
 For `LevelBasedRandomPolicy`, the decision is per-episode, so `level_afhp` equals the help probability directly — no calibration is needed.
 

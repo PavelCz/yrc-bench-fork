@@ -74,7 +74,12 @@ class ExponentialHeuristicPolicy(Policy):
         ckpt = torch.load(load_path)
         self.non_ood_starting_prob = ckpt["prob"]
 
-    def train_percentile(self, percentile: float) -> float:
+    def train_percentile_step(self, percentile: float) -> float:
+        raise NotImplementedError(
+            "ExponentialHeuristicPolicy does not support step_afhp calibration."
+        )
+
+    def train_percentile_level(self, percentile: float) -> float:
         """Take a percentile and return the threshold for that percentile."""
         return (100 - percentile) * 0.01
 
@@ -151,9 +156,8 @@ class WaitPolicy(Policy):
         ckpt = torch.load(load_path)
         self.threshold = ckpt["threshold"]
 
-    def train_percentile(self, percentile: float) -> float:
-        """
-        Take a percentile and return the threshold for that percentile.
+    def train_percentile_step(self, percentile: float) -> float:
+        """Map percentile to a wait-timestep threshold for step_afhp.
 
         Note: percentile_to_threshold already inverts the target AFHP before
         calling this. So if we want 10% AFHP, this receives percentile=90.
@@ -167,3 +171,8 @@ class WaitPolicy(Policy):
         # threshold = episode_length * percentile / 100
         threshold = int(self.max_episode_length * percentile / 100)
         return threshold
+
+    def train_percentile_level(self, percentile: float) -> float:
+        raise NotImplementedError(
+            "WaitPolicy does not support level_afhp calibration."
+        )

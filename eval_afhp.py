@@ -100,7 +100,7 @@ def main():
     evaluator = Evaluator(config, config.environment)
 
     # Calibrate TimestepRandomPolicy: measure mean episode length on training data
-    # so that train_percentile can account for the nonlinear mapping between
+    # so that train_percentile_level can account for the nonlinear mapping between
     # per-step probability and per-episode OOD percentage.
     from YRC.policies.base import TimestepRandomPolicy
 
