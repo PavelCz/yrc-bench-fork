@@ -141,52 +141,28 @@ The project uses hierarchical YAML configs in `configs/`:
    - Phase 4: Refines return axis to ensure smooth curves
    - Maintains backward compatibility with legacy format
 
-2. **AFHP Metrics and Percentile Calibration**: There are two AFHP (ask-for-help percentage) metrics:
-   - **step_afhp**: fraction of *timesteps* where help was requested
-   - **level_afhp**: fraction of *episodes* where help was requested at least once
+2. **AFHP Metrics and Percentile Calibration**: Two AFHP metrics exist: **step_afhp** (fraction of timesteps) and **level_afhp** (fraction of episodes with any help). All policies implement `train_percentile_step(p)` and `train_percentile_level(p)` to map percentiles to thresholds calibrated for each metric. Calibration runs in `calibrate_percentile_mapping()` in `eval_afhp.py` before the sampler starts. See `docs/percentile_calibration.md` for the full support matrix, per-policy formulas, and calibration data sources.
 
-   All policies implement two calibration methods instead of the old `train_percentile()`:
-   - `train_percentile_step(p)` — returns a threshold calibrated for step_afhp
-   - `train_percentile_level(p)` — returns a threshold calibrated for level_afhp
-
-   Not all policies support both. Unsupported variants raise `NotImplementedError`:
-
-   | Policy | `_step` | `_level` |
-   |---|---|---|
-   | `ThresholdPolicy` | per-step scores | per-episode max scores |
-   | `TimestepRandomPolicy` | linear | `1 - p^(1/L)` formula |
-   | `LevelBasedRandomPolicy` | NotImplementedError | linear |
-   | `ExponentialHeuristicPolicy` | NotImplementedError | `1 - p^(2/(L(L-1)))` formula |
-   | `WaitPolicy` | timestep threshold | empirical episode length percentiles |
-   | `OODPolicy` | per-step scores (rollout or training) | per-episode max scores |
-   | `LightningAEPolicy` | per-step scores (rollout or training) | per-episode max scores |
-
-   `ThresholdPolicy.generate_scores()` collects both per-step scores (`_train_scores`) and per-episode max scores (`_train_episode_max_scores`). The episode-max approach means that `np.percentile(episode_max_scores, 90)` directly gives the threshold where 10% of episodes have any step exceeding it.
-
-   The samplers in `YRC/coverage/coverage_search.py` call these methods directly:
-   - `create_level_afhp_threshold_sampler` → `train_percentile_level`
-   - `create_step_afhp_threshold_sampler` → `train_percentile_step`
-
-4. **Feature Types**: Coordination policies can use:
+3. **Feature Types**: Coordination policies can use:
    - Raw observations (`obs`)
    - Weak agent's hidden features (`feature`)
    - Weak agent's action distributions (`action`)
    - Combinations (e.g., `obs+feature`, `obs+action`, `feature+action`, `obs+feature+action`)
 
-5. **Memory Management**: Recent work focuses on efficient handling of large rollout datasets, especially for OOD detection methods that require storing and processing many samples.
+4. **Memory Management**: Recent work focuses on efficient handling of large rollout datasets, especially for OOD detection methods that require storing and processing many samples.
 
-6. **Experiment Tracking**: All experiments are tracked with Weights & Biases (wandb) for reproducibility. The tracking includes:
+5. **Experiment Tracking**: All experiments are tracked with Weights & Biases (wandb) for reproducibility. The tracking includes:
    - Training metrics and curves
    - Evaluation videos with score bars
    - Hyperparameters and configurations
    - Model checkpoints
 
-7. **Checkpoint Management**: Three types of checkpoints are saved during training:
+6. **Checkpoint Management**: Three types of checkpoints are saved during training:
    - `best_val_sim.ckpt`: Best validation performance on simulated weak agent
    - `best_val_true.ckpt`: Best validation performance on true weak agent
    - `last.ckpt`: Most recent checkpoint
 
-8. **Acting Policy Requirements**: Pre-trained acting policies (sim weak, weak, strong) must be provided for most environments. These should be placed in `YRC/checkpoints/{environment}/` following the existing structure.
+7. **Acting Policy Requirements**: Pre-trained acting policies (sim weak, weak, strong) must be provided for most environments. These should be placed in `YRC/checkpoints/{environment}/` following the existing structure.
 
 ## Python Best Practices
 
