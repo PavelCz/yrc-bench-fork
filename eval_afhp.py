@@ -55,8 +55,8 @@ def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs):
 
     Different policy types need different calibration:
 
-    - ThresholdPolicy: Runs rollouts to collect per-step OOD scores and per-episode
-      max scores. These are stored in policy._train_scores and
+    - ThresholdPolicy / OODPolicy: Runs rollouts to collect per-step OOD scores and
+      per-episode max scores. These are stored in policy._train_scores and
       policy._train_episode_max_scores for use by train_percentile_step/level.
 
     - TimestepRandomPolicy / ExponentialHeuristicPolicy: Runs the weak agent alone
@@ -73,14 +73,15 @@ def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs):
         policy: The coordination policy to calibrate.
         config: Experiment configuration.
         evaluator: Evaluator instance for running episodes.
-        envs: Pre-created environments (used for ThresholdPolicy score generation).
+        envs: Pre-created environments (used for score generation rollouts).
         make_envs: Factory that creates fresh environments for calibration runs.
     """
     from YRC.policies.threshold import ThresholdPolicy
+    from YRC.policies.ood import OODPolicy
     from YRC.policies.base import TimestepRandomPolicy
     from YRC.policies.heuristic import ExponentialHeuristicPolicy, WaitPolicy
 
-    # Score-based calibration: collect OOD score distributions
+    # Score-based calibration: collect OOD score distributions via rollouts
     if isinstance(policy, ThresholdPolicy):
         metric = config.coord_policy.metric
         if metric in ("max_prob", "max_logit", "ensemble_variance"):
@@ -90,6 +91,14 @@ def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs):
                 f"policy with {metric} metric..."
             )
             policy.generate_scores(envs["train"], num_rollouts)
+
+    if isinstance(policy, OODPolicy) and not isinstance(policy, ThresholdPolicy):
+        num_rollouts = getattr(config.algorithm, "num_rollouts", 256)
+        print(
+            f"Generating {num_rollouts} training scores for "
+            f"{type(policy).__name__}..."
+        )
+        policy.generate_scores(envs["train"], num_rollouts)
 
     # Episode-length calibration: run weak agent alone on training levels
     if isinstance(policy, (TimestepRandomPolicy, ExponentialHeuristicPolicy, WaitPolicy)):

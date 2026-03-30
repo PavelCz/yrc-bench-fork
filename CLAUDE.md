@@ -158,8 +158,8 @@ The project uses hierarchical YAML configs in `configs/`:
    | `LevelBasedRandomPolicy` | NotImplementedError | linear |
    | `ExponentialHeuristicPolicy` | NotImplementedError | `1 - p^(2/(L(L-1)))` formula |
    | `WaitPolicy` | timestep threshold | empirical episode length percentiles |
-   | `OODPolicy` | training decision scores | NotImplementedError |
-   | `LightningAEPolicy` | training decision scores | NotImplementedError |
+   | `OODPolicy` | per-step scores (rollout or training) | per-episode max scores |
+   | `LightningAEPolicy` | per-step scores (rollout or training) | per-episode max scores |
 
    `ThresholdPolicy.generate_scores()` collects both per-step scores (`_train_scores`) and per-episode max scores (`_train_episode_max_scores`). The episode-max approach means that `np.percentile(episode_max_scores, 90)` directly gives the threshold where 10% of episodes have any step exceeding it.
 
