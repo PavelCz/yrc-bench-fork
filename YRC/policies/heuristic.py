@@ -118,6 +118,7 @@ class WaitPolicy(Policy):
         self.num_envs = env.num_envs
         self.timesteps = np.zeros(self.num_envs, dtype=np.int32)
         self.threshold = 0  # Number of timesteps to wait before asking
+        self._episode_lengths = None
 
         # Get max episode length from config for threshold sampling
         max_steps = getattr(config.environment.common, "max_steps", None)
@@ -194,6 +195,17 @@ class WaitPolicy(Policy):
         return threshold
 
     def train_percentile_level(self, percentile: float) -> float:
-        raise NotImplementedError(
-            "WaitPolicy does not support level_afhp calibration."
-        )
+        """Map percentile to a wait-timestep threshold for level_afhp.
+
+        An episode has help iff its length > threshold. So the threshold
+        at the p-th percentile of episode lengths is where (100-p)% of
+        episodes are long enough to receive help, i.e., level_afhp = (100-p)%.
+
+        Requires calibration: _episode_lengths must be set from training data.
+        """
+        if self._episode_lengths is None:
+            raise ValueError(
+                "Episode lengths not calibrated. "
+                "Run calibration in eval_afhp.py first."
+            )
+        return np.percentile(self._episode_lengths, percentile)

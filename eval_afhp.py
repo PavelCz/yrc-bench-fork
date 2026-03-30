@@ -103,24 +103,33 @@ def main():
     # so that train_percentile_level can account for the nonlinear mapping between
     # per-step probability and per-episode OOD percentage.
     from YRC.policies.base import TimestepRandomPolicy
-    from YRC.policies.heuristic import ExponentialHeuristicPolicy
+    from YRC.policies.heuristic import ExponentialHeuristicPolicy, WaitPolicy
 
-    if isinstance(policy, (TimestepRandomPolicy, ExponentialHeuristicPolicy)):
-        print(f"Calibrating {type(policy).__name__}: measuring mean episode length...")
+    if isinstance(policy, (TimestepRandomPolicy, ExponentialHeuristicPolicy, WaitPolicy)):
+        print(f"Calibrating {type(policy).__name__}: measuring episode lengths...")
         if isinstance(policy, TimestepRandomPolicy):
             old_prob = policy.prob
             policy.prob = 0.0  # weak agent only
-        else:
+        elif isinstance(policy, ExponentialHeuristicPolicy):
             old_prob = 1 - policy.non_ood_starting_prob
             policy.non_ood_starting_prob = 1.0  # weak agent only (ood_starting_prob=0)
+        elif isinstance(policy, WaitPolicy):
+            old_threshold = policy.threshold
+            policy.threshold = 10000  # weak agent only (never ask)
         cal_envs = make_envs()
         cal_summary = evaluator.eval(policy, cal_envs, ["train"], close_envs=True)
         mean_ep_length = cal_summary["train"]["episode_length_mean"]
-        policy._mean_episode_length = mean_ep_length
         if isinstance(policy, TimestepRandomPolicy):
+            policy._mean_episode_length = mean_ep_length
             policy.prob = old_prob
-        else:
+        elif isinstance(policy, ExponentialHeuristicPolicy):
+            policy._mean_episode_length = mean_ep_length
             policy.non_ood_starting_prob = 1 - old_prob
+        elif isinstance(policy, WaitPolicy):
+            policy._episode_lengths = np.array(
+                cal_summary["train"]["episode_lengths"]
+            )
+            policy.threshold = old_threshold
         print(f"Mean episode length (weak only): {mean_ep_length:.1f}")
 
     coverage_fraction = config.evaluation.coverage_fraction
