@@ -130,12 +130,13 @@ def run_bin(
     """
     target_afhp = (bin_lo + bin_hi) / 2.0
 
-    # Initial guess: convert target AFHP to percentile and query the heuristic
-    percentile = 100.0 - target_afhp * 100.0
+    # Initial guess: convert target AFHP to percentile and query the heuristic.
+    # This is the training-calibrated estimate; it may miss on test data.
+    init_pct = 100.0 - target_afhp * 100.0
     if afhp_metric == "level_afhp":
-        threshold = policy.train_percentile_level(percentile)
+        threshold = policy.train_percentile_level(init_pct)
     else:
-        threshold = policy.train_percentile_step(percentile)
+        threshold = policy.train_percentile_step(init_pct)
 
     afhp, performance, meta = _eval_at_threshold(
         policy, threshold, evaluator, envs_factory, split, afhp_metric
@@ -145,14 +146,26 @@ def run_bin(
         f"got={afhp:.3f}, threshold={threshold:.4f}"
     )
 
-    # Binary search within the percentile bracket for this bin
-    lo_pct = 100.0 - bin_hi * 100.0  # low percentile → high AFHP
-    hi_pct = 100.0 - bin_lo * 100.0  # high percentile → low AFHP
+    if bin_lo <= afhp <= bin_hi:
+        return afhp, performance, meta, threshold
+
+    # Binary search over the full percentile range [0, 100].
+    # We seed the bracket from the initial guess so the first midpoint is a
+    # fresh evaluation, not a repeat.  Using [0, 100] rather than the narrow
+    # training-calibrated bracket lets the search adapt when the test
+    # distribution has shifted and the calibrated range does not cover the bin.
+    #
+    # Higher percentile → higher threshold → lower AFHP (fewer help requests).
+    if afhp > bin_hi:
+        # Observed AFHP above target bin: need higher threshold (higher pct).
+        lo_pct = init_pct
+        hi_pct = 100.0
+    else:
+        # Observed AFHP below target bin: need lower threshold (lower pct).
+        lo_pct = 0.0
+        hi_pct = init_pct
 
     for depth in range(search_depth_limit):
-        if bin_lo <= afhp <= bin_hi:
-            break
-
         mid_pct = (lo_pct + hi_pct) / 2.0
         if afhp_metric == "level_afhp":
             threshold = policy.train_percentile_level(mid_pct)
@@ -167,11 +180,11 @@ def run_bin(
             f"threshold={threshold:.4f}"
         )
 
+        if bin_lo <= afhp <= bin_hi:
+            break
         if afhp > bin_hi:
-            # AFHP too high → need higher threshold → raise lo_pct
             lo_pct = mid_pct
-        elif afhp < bin_lo:
-            # AFHP too low → need lower threshold → lower hi_pct
+        else:
             hi_pct = mid_pct
 
     if not (bin_lo <= afhp <= bin_hi):
