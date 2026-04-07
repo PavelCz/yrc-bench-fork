@@ -203,3 +203,4 @@ fabric.properties
 /src/
 *.egg-info/
 __pycache__/
+.claude/
