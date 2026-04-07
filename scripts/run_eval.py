@@ -248,50 +248,48 @@ def get_ensemble_member_paths(
     return member_paths
 
 
-def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str, log_dir: Path, qos: str = "default") -> str:
-    """Build the sbatch command string."""
-    # Override QOS in SLURM config
-    slurm_config = SLURM_CONFIG.copy()
-    slurm_config["qos"] = qos
-    slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
-
-    # Build the python command arguments
-    python_args = [
-        "python eval_afhp.py",
+def _build_policy_python_args(script: str, eval_args: dict) -> List[str]:
+    """Build the python args shared across all job types (policy loading, env setup)."""
+    args = [
+        f"python {script}",
         f"-c {eval_args['config']}",
         f"-n {eval_args['name']}",
         "-defer_to_oracle",
         f"-experiment_group {eval_args['experiment_group']}",
-        f"-video_episodes_to_collect {eval_args['video_episodes_to_collect']}",
         f"-num_levels={eval_args['num_levels']}",
-        f"-video_filter {eval_args['video_filter']}",
-        f"-cp_rolling_average {eval_args['cp_rolling_average']}",
-        f"-video_logging_mode={eval_args['video_logging_mode']}",
-        f"-video_filter_mode={eval_args['video_filter_mode']}",
         f"-sim {eval_args['sim']}",
         f"-weak {eval_args['weak']}",
         f"-strong {eval_args['strong']}",
         f"-level_seeds_file {eval_args['level_seeds_file']}",
+    ]
+    if eval_args.get("wandb_project"):
+        args.append(f"-wandb_project {eval_args['wandb_project']}")
+    if eval_args.get("cp_feature"):
+        args.append(f"-cp_feature {eval_args['cp_feature']}")
+    if eval_args.get("svdd_model_path"):
+        args.append(f"-f_n {eval_args['svdd_model_path']}")
+    if eval_args.get("ensemble_members"):
+        args.append("-cp_ensemble_members")
+        for member_path in eval_args["ensemble_members"]:
+            args.append(f"    {member_path}")
+    return args
+
+
+def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str, log_dir: Path, qos: str = "default") -> str:
+    """Build the sbatch script for a single sequential evaluation job."""
+    slurm_config = SLURM_CONFIG.copy()
+    slurm_config["qos"] = qos
+    slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
+
+    python_args = _build_policy_python_args("eval_afhp.py", eval_args)
+    python_args += [
+        f"-video_episodes_to_collect {eval_args['video_episodes_to_collect']}",
+        f"-video_filter {eval_args['video_filter']}",
+        f"-cp_rolling_average {eval_args['cp_rolling_average']}",
+        f"-video_logging_mode={eval_args['video_logging_mode']}",
+        f"-video_filter_mode={eval_args['video_filter_mode']}",
         f"-num_bins {eval_args['num_bins']}",
     ]
-
-    # Add wandb project if specified
-    if eval_args.get("wandb_project"):
-        python_args.append(f"-wandb_project {eval_args['wandb_project']}")
-
-    # Add SVDD-specific arguments if present
-    if eval_args.get("cp_feature"):
-        python_args.append(f"-cp_feature {eval_args['cp_feature']}")
-    if eval_args.get("svdd_model_path"):
-        python_args.append(f"-f_n {eval_args['svdd_model_path']}")
-
-    # Add ensemble-specific arguments if present
-    if eval_args.get("ensemble_members"):
-        python_args.append("-cp_ensemble_members")
-        for member_path in eval_args["ensemble_members"]:
-            python_args.append(f"    {member_path}")
-
-    # Join python args as single line
     python_cmd = " ".join(python_args)
 
     sbatch_script = f"""#!/bin/bash
@@ -308,10 +306,99 @@ srun {slurm_args} {python_cmd}
     return sbatch_script
 
 
+def build_calibration_sbatch_command(
+    job_name: str,
+    eval_args: dict,
+    conda_env: str,
+    log_dir: Path,
+    calibration_path: Path,
+    qos: str = "default",
+) -> str:
+    """Build the sbatch script for the calibration-only job."""
+    slurm_config = SLURM_CONFIG.copy()
+    slurm_config["qos"] = qos
+    slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
+
+    python_args = _build_policy_python_args("eval_afhp.py", eval_args)
+    python_args += [
+        "--calibrate_only",
+        f"--calibration_path {calibration_path}",
+    ]
+    python_cmd = " ".join(python_args)
+
+    return f"""#!/bin/bash
+#SBATCH --job-name={job_name}_calib
+#SBATCH --output={log_dir}/%x_%j.out
+#SBATCH --error={log_dir}/%x_%j.err
+{chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
+
+echo "Calibration job for {job_name}"
+eval "$(conda shell.bash hook)"
+conda activate {conda_env}
+srun {slurm_args} {python_cmd}
+"""
+
+
+def build_bin_array_sbatch_command(
+    job_name: str,
+    eval_args: dict,
+    conda_env: str,
+    log_dir: Path,
+    calibration_path: Path,
+    num_bins: int,
+    dep_job_id: str,
+    qos: str = "default",
+) -> str:
+    """Build the sbatch script for the bin evaluation array job."""
+    slurm_config = SLURM_CONFIG.copy()
+    slurm_config["qos"] = qos
+    slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
+
+    # $SLURM_ARRAY_TASK_ID must expand at runtime, not be interpolated by Python
+    checkpoint_path = f"{log_dir}/{job_name}_bin_$SLURM_ARRAY_TASK_ID.npz"
+    python_args = _build_policy_python_args("eval_afhp_bin.py", eval_args)
+    python_args += [
+        "--bin_idx $SLURM_ARRAY_TASK_ID",
+        f"--checkpoint_path {checkpoint_path}",
+        f"--calibration_path {calibration_path}",
+    ]
+    python_cmd = " ".join(python_args)
+
+    return f"""#!/bin/bash
+#SBATCH --job-name={job_name}_bin
+#SBATCH --output={log_dir}/%x_%j_%a.out
+#SBATCH --error={log_dir}/%x_%j_%a.err
+#SBATCH --array=0-{num_bins - 1}
+#SBATCH --dependency=afterok:{dep_job_id}
+{chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
+
+echo "Bin $SLURM_ARRAY_TASK_ID / {num_bins} for {job_name}"
+eval "$(conda shell.bash hook)"
+conda activate {conda_env}
+srun {slurm_args} {python_cmd}
+"""
+
+
+def _sbatch_submit(script: str, log_dir: Path) -> Optional[str]:
+    """Submit an sbatch script, return the job ID string or None on failure."""
+    log_dir.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        ["sbatch"], input=script, text=True, capture_output=True
+    )
+    if result.returncode == 0:
+        # Output is "Submitted batch job 12345"
+        job_id = result.stdout.strip().split()[-1]
+        print(f"  Submitted: {result.stdout.strip()}")
+        return job_id
+    else:
+        print(f"  Failed: {result.stderr.strip()}")
+        return None
+
+
 def submit_job(
     job_name: str, eval_args: dict, conda_env: str, log_dir: Path, qos: str = "default", dry_run: bool = False
 ) -> None:
-    """Submit a single job via sbatch."""
+    """Submit a single sequential evaluation job via sbatch."""
     sbatch_script = build_sbatch_command(job_name, eval_args, conda_env, log_dir, qos)
 
     if dry_run:
@@ -320,10 +407,7 @@ def submit_job(
         print()
         return
 
-    # Ensure logs directory exists
     log_dir.mkdir(parents=True, exist_ok=True)
-
-    # Submit via sbatch
     result = subprocess.run(
         ["sbatch"],
         input=sbatch_script,
@@ -335,6 +419,56 @@ def submit_job(
         print(f"Submitted {job_name}: {result.stdout.strip()}")
     else:
         print(f"Failed to submit {job_name}: {result.stderr}")
+
+
+def submit_parallel_bins(
+    job_name: str,
+    eval_args: dict,
+    conda_env: str,
+    log_dir: Path,
+    num_bins: int,
+    qos: str = "default",
+    dry_run: bool = False,
+) -> None:
+    """Submit calibration job + bin array job with SLURM dependency.
+
+    The calibration job runs eval_afhp.py --calibrate_only and saves the
+    policy's calibration state to disk. The bin array job (one task per bin)
+    depends on the calibration job and runs eval_afhp_bin.py for each bin.
+    Per-bin checkpoints are saved to log_dir/{job_name}_bin_N.npz.
+    """
+    calibration_path = log_dir / f"{job_name}_calibration.npz"
+
+    calib_script = build_calibration_sbatch_command(
+        job_name, eval_args, conda_env, log_dir, calibration_path, qos
+    )
+    bin_script_template = build_bin_array_sbatch_command(
+        job_name, eval_args, conda_env, log_dir, calibration_path, num_bins,
+        dep_job_id="CALIB_JOB_ID",  # placeholder replaced below
+        qos=qos,
+    )
+
+    if dry_run:
+        print(f"=== Calibration job: {job_name}_calib ===")
+        print(calib_script)
+        print(f"=== Bin array job: {job_name}_bin (0-{num_bins - 1}) ===")
+        print(bin_script_template.replace("CALIB_JOB_ID", "<calib_job_id>"))
+        print()
+        return
+
+    print(f"  Submitting calibration job...")
+    calib_job_id = _sbatch_submit(calib_script, log_dir)
+    if calib_job_id is None:
+        print(f"  Aborting bin array submission for {job_name}.")
+        return
+
+    bin_script = build_bin_array_sbatch_command(
+        job_name, eval_args, conda_env, log_dir, calibration_path, num_bins,
+        dep_job_id=calib_job_id,
+        qos=qos,
+    )
+    print(f"  Submitting bin array job (0-{num_bins - 1}, depends on {calib_job_id})...")
+    _sbatch_submit(bin_script, log_dir)
 
 
 def main():
@@ -413,6 +547,17 @@ def main():
         type=int,
         default=EVAL_DEFAULTS["num_bins"],
         help=f"Number of AFHP bins to evaluate (default: {EVAL_DEFAULTS['num_bins']})",
+    )
+    parser.add_argument(
+        "--parallel-bins",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Submit parallel SLURM bin jobs instead of one sequential job. "
+            "Submits a calibration job then a SLURM array of N bin jobs "
+            "that depend on it."
+        ),
     )
     parser.add_argument(
         "--wandb-project",
@@ -532,23 +677,6 @@ def main():
         job_name = f"{args.env}_{method_name}_exp{exp_id}"
         experiment_group = f"{args.prefix}_{args.env}_exp{exp_id}"
 
-        if args.dry_run:
-            print(f"=== exp{exp_id} ===")
-            print(f"  Job name: {job_name}")
-            print(f"  Experiment group: {experiment_group}")
-            print(f"  Weak:   {checkpoints['weak']}")
-            print(f"  Strong: {checkpoints['strong']}")
-            print(f"  Seeds:  {level_seeds_file}")
-            if svdd_model_path:
-                print(f"  SVDD model: {svdd_model_path}")
-                print(f"  Feature type: {cp_feature}")
-            if ensemble_members:
-                print(f"  Ensemble members ({len(ensemble_members)}):")
-                for i, member_path in enumerate(ensemble_members):
-                    print(f"    m{i}: {member_path}")
-            print()
-            continue
-
         eval_args = {
             "config": config_path,
             "name": job_name,
@@ -568,7 +696,18 @@ def main():
             **checkpoints,
         }
 
-        submit_job(job_name, eval_args, args.conda_env, log_dir, args.qos, dry_run=False)
+        if args.parallel_bins is not None:
+            submit_parallel_bins(
+                job_name=job_name,
+                eval_args=eval_args,
+                conda_env=args.conda_env,
+                log_dir=log_dir,
+                num_bins=args.parallel_bins,
+                qos=args.qos,
+                dry_run=args.dry_run,
+            )
+        else:
+            submit_job(job_name, eval_args, args.conda_env, log_dir, args.qos, dry_run=args.dry_run)
 
     return 0
 
