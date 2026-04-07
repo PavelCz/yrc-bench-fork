@@ -338,6 +338,21 @@ def make():
         choices=["step_afhp", "level_afhp"],
         help="AFHP metric to use for bin evaluation.",
     )
+    parser.add_argument(
+        "--calibrate_only",
+        action="store_true",
+        default=False,
+        help=(
+            "Run calibration only: save state to --calibration_path and exit. "
+            "Used by the SLURM parallel-bin workflow."
+        ),
+    )
+    parser.add_argument(
+        "--calibration_path",
+        type=str,
+        default=None,
+        help="Path to save calibration state (.npz). Required with --calibrate_only.",
+    )
 
     # parser.add_argument(
     #     "-test_episodes",

@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 import os
 import time
-from typing import Optional
+from typing import List, Optional
 
 import flags
 import YRC.core.configs.utils as config_utils
@@ -13,7 +13,7 @@ from YRC.core.configs.global_configs import get_global_variable
 
 from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
 
-from YRC.coverage.coverage_search import run_parallel_eval
+from YRC.coverage.coverage_search import run_parallel_eval, save_calibration_state
 
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger
@@ -162,6 +162,18 @@ def main():
     evaluator = Evaluator(config, config.environment)
 
     calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs)
+
+    # Calibrate-only mode: save state to disk and exit without running evaluation.
+    # Used by the SLURM parallel-bin workflow where bin jobs load the saved state.
+    if args.calibrate_only:
+        if args.calibration_path is None:
+            raise ValueError("--calibration_path is required with --calibrate_only")
+        for split_name in envs:
+            envs[split_name].close()
+        save_calibration_state(policy, args.calibration_path)
+        print(f"Calibration state saved to: {args.calibration_path}")
+        print(f"Time taken: {time.time() - start_time:.1f}s")
+        return
 
     num_bins: int = config.evaluation.num_bins
     afhp_metric: str = config.evaluation.afhp_metric
