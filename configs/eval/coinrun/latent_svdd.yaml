@@ -12,7 +12,7 @@ wandb:
 # Evaluation settings
 evaluation:
     num_bins: 20
-    threshold_sampler: 'level_afhp'
+    afhp_metric: 'level_afhp'
     video_episodes_to_collect: 16
     video_filter: ['all']
 

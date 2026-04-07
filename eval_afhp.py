@@ -163,16 +163,8 @@ def main():
 
     calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs)
 
-    # Support both new (num_bins / afhp_metric) and legacy (coverage_fraction /
-    # threshold_sampler) config keys for backwards compatibility.
-    num_bins = getattr(config.evaluation, "num_bins", None)
-    if num_bins is None:
-        coverage_fraction = getattr(config.evaluation, "coverage_fraction", 0.05)
-        num_bins = int(1.0 / coverage_fraction)
-
-    afhp_metric = getattr(config.evaluation, "afhp_metric", None)
-    if afhp_metric is None:
-        afhp_metric = getattr(config.evaluation, "threshold_sampler", "level_afhp")
+    num_bins: int = config.evaluation.num_bins
+    afhp_metric: str = config.evaluation.afhp_metric
 
     if afhp_metric not in ("level_afhp", "step_afhp"):
         raise ValueError(f"Invalid afhp_metric: {afhp_metric}")

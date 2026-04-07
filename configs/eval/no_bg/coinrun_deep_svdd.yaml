@@ -13,7 +13,7 @@ wandb:
 evaluation:
     test_episodes: 1024
     num_bins: 20
-    threshold_sampler: 'level_afhp'
+    afhp_metric: 'level_afhp'
 
 # Inherit all settings from common.yaml
 environment: 

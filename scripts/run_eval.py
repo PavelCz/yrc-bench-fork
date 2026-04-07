@@ -31,7 +31,7 @@ EVAL_DEFAULTS = {
     "cp_rolling_average": "none",
     "video_logging_mode": "folder",
     "video_filter_mode": "any",
-    "coverage_fraction": 0.05,
+    "num_bins": 20,
 }
 
 # Server-specific paths
@@ -272,7 +272,7 @@ def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str, log_dir
         f"-weak {eval_args['weak']}",
         f"-strong {eval_args['strong']}",
         f"-level_seeds_file {eval_args['level_seeds_file']}",
-        f"-coverage_fraction {eval_args['coverage_fraction']}",
+        f"-num_bins {eval_args['num_bins']}",
     ]
 
     # Add wandb project if specified
@@ -409,10 +409,10 @@ def main():
         help="Video filter mode",
     )
     parser.add_argument(
-        "--coverage-fraction",
-        type=float,
-        default=EVAL_DEFAULTS["coverage_fraction"],
-        help=f"Coverage fraction for threshold sampling (default: {EVAL_DEFAULTS['coverage_fraction']})",
+        "--num-bins",
+        type=int,
+        default=EVAL_DEFAULTS["num_bins"],
+        help=f"Number of AFHP bins to evaluate (default: {EVAL_DEFAULTS['num_bins']})",
     )
     parser.add_argument(
         "--wandb-project",
@@ -559,7 +559,7 @@ def main():
             "cp_rolling_average": args.cp_rolling_average,
             "video_logging_mode": args.video_logging_mode,
             "video_filter_mode": args.video_filter_mode,
-            "coverage_fraction": args.coverage_fraction,
+            "num_bins": args.num_bins,
             "wandb_project": args.wandb_project,
             "level_seeds_file": str(level_seeds_file),
             "svdd_model_path": svdd_model_path,

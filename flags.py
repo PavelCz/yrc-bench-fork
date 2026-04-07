@@ -326,20 +326,17 @@ def make():
 
     # Additional flags for evaluation.
     parser.add_argument(
-        "-coverage_fraction",
-        "--evaluation.coverage_fraction",
-        type=float,
-        help=(
-            "The maximum gap allowed between consecutive points, as a fraction of the "
-            "total range. Choose at least 0.01"
-        ),
+        "-num_bins",
+        "--evaluation.num_bins",
+        type=int,
+        help="Number of equal-width AFHP bins to evaluate.",
     )
     parser.add_argument(
-        "-threshold_sampler",
-        "--evaluation.threshold_sampler",
+        "-afhp_metric",
+        "--evaluation.afhp_metric",
         type=str,
         choices=["step_afhp", "level_afhp"],
-        help="threshold sampler to use",
+        help="AFHP metric to use for bin evaluation.",
     )
 
     # parser.add_argument(
