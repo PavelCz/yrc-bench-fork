@@ -106,7 +106,7 @@ def _eval_at_threshold(
     return afhp, performance, meta
 
 
-def _run_bin(
+def run_bin(
     bin_idx: int,
     bin_lo: float,
     bin_hi: float,
@@ -252,7 +252,7 @@ def run_parallel_eval(
         # Deep-copy policy so each worker has independent mutable state
         policy_copy = copy.deepcopy(policy)
 
-        afhp, performance, meta, threshold = _run_bin(
+        afhp, performance, meta, threshold = run_bin(
             bin_idx=bin_idx,
             bin_lo=bin_lo,
             bin_hi=bin_hi,

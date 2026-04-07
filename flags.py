@@ -339,6 +339,18 @@ def make():
         help="AFHP metric to use for bin evaluation.",
     )
     parser.add_argument(
+        "--bin_idx",
+        type=int,
+        default=None,
+        help="Index of the AFHP bin to evaluate (used by eval_afhp_bin.py).",
+    )
+    parser.add_argument(
+        "--checkpoint_path",
+        type=str,
+        default=None,
+        help="Path to save the per-bin result .npz (used by eval_afhp_bin.py).",
+    )
+    parser.add_argument(
         "--calibrate_only",
         action="store_true",
         default=False,
