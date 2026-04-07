@@ -12,7 +12,7 @@ wandb:
 # Evaluation settings
 evaluation:
     test_episodes: 1024
-    coverage_fraction: 0.05
+    num_bins: 20
     threshold_sampler: 'level_afhp'
 
 # Inherit all settings from common.yaml

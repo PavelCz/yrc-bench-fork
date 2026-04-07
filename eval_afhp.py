@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 import os
 import time
-from typing import List, Optional
+from typing import Optional
 
 import flags
 import YRC.core.configs.utils as config_utils
@@ -13,13 +13,11 @@ from YRC.core.configs.global_configs import get_global_variable
 
 from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
 
-from YRC.coverage.coverage_search import create_step_afhp_threshold_sampler
-from YRC.coverage.coverage_search import create_level_afhp_threshold_sampler
+from YRC.coverage.coverage_search import run_parallel_eval
 
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger
 import wandb
-from acs.types import CurvePoint
 
 
 
@@ -165,11 +163,19 @@ def main():
 
     calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs)
 
-    coverage_fraction = config.evaluation.coverage_fraction
-    threshold_sampler: str = config.evaluation.threshold_sampler
+    # Support both new (num_bins / afhp_metric) and legacy (coverage_fraction /
+    # threshold_sampler) config keys for backwards compatibility.
+    num_bins = getattr(config.evaluation, "num_bins", None)
+    if num_bins is None:
+        coverage_fraction = getattr(config.evaluation, "coverage_fraction", 0.05)
+        num_bins = int(1.0 / coverage_fraction)
 
-    if coverage_fraction < 0.01:
-        raise ValueError("Coverage fraction must be at least 0.01")
+    afhp_metric = getattr(config.evaluation, "afhp_metric", None)
+    if afhp_metric is None:
+        afhp_metric = getattr(config.evaluation, "threshold_sampler", "level_afhp")
+
+    if afhp_metric not in ("level_afhp", "step_afhp"):
+        raise ValueError(f"Invalid afhp_metric: {afhp_metric}")
 
     # Initialize wandb logger
     save_dir = Path(str(get_global_variable("experiment_dir")))
@@ -196,59 +202,9 @@ def main():
 
     split = "test"
 
-    # Create the joint-coverage sampler via YRC wrapper (adapts to new abcs API)
-    max_total_evals = 200
-
-    # Close initial environments - the sampler will create fresh ones for each evaluation
+    # Close initial environments - workers create fresh ones for each evaluation
     for split_name in envs:
         envs[split_name].close()
-
-    if threshold_sampler == "step_afhp":
-        sampler = create_step_afhp_threshold_sampler(
-            policy=policy,
-            evaluator=evaluator,
-            envs_factory=make_envs,
-            split=split,
-            coverage_fraction=coverage_fraction,
-            max_total_evals=max_total_evals,
-            logger=wandb_logger,
-            wandb_run=exp,
-        )
-    elif threshold_sampler == "level_afhp":
-        sampler = create_level_afhp_threshold_sampler(
-            policy=policy,
-            evaluator=evaluator,
-            envs_factory=make_envs,
-            split=split,
-            coverage_fraction=coverage_fraction,
-            max_total_evals=max_total_evals,
-            logger=wandb_logger,
-            wandb_run=exp,
-        )
-    else:
-        raise ValueError(f"Invalid threshold sampler: {threshold_sampler}")
-
-    # Run the sampling
-    print(
-        f"Running joint coverage sampling with coverage_fraction="
-        f"{coverage_fraction:.3f}, budget={max_total_evals}..."
-    )
-    sampling_result = sampler.run()
-
-    # Report coverage
-    print(
-        f"Coverage x-gap: {sampling_result.coverage_x_max_gap:.3f}, "
-        f"y-gap: {sampling_result.coverage_y_max_gap:.3f}"
-    )
-
-    # TODO: Rename
-    # The sort metric is called afhp for legacy reasons, sort metric or threshold metric
-    # would be more appropriate.
-    sorted_points: List[CurvePoint] = sorted(
-        sampling_result.points, key=lambda p: p.afhp
-    )
-
-    total_evals = sampling_result.total_evals
 
     # Save result summary to file.
     log_file_path = get_global_variable("log_file")
@@ -260,18 +216,35 @@ def main():
     results_file_path = log_file_path.with_name(
         log_file_path.name.replace(".log", f"_{split}.npz")
     )
+
+    print(
+        f"Running parallel bin-based eval: num_bins={num_bins}, "
+        f"afhp_metric={afhp_metric}"
+    )
+    results = run_parallel_eval(
+        policy=policy,
+        evaluator=evaluator,
+        envs_factory=make_envs,
+        split=split,
+        num_bins=num_bins,
+        results_path=results_file_path,
+        wandb_run=exp,
+        logger=wandb_logger,
+        afhp_metric=afhp_metric,
+    )
+
     np.savez(
         results_file_path,
-        afhps=np.array([pt.afhp for pt in sorted_points]),
-        performances=np.array([pt.performance for pt in sorted_points]),
-        desired_percentiles=np.array([pt.desired_percentile for pt in sorted_points]),
-        meta=np.array([pt.meta for pt in sorted_points]),
-        order=np.array([pt.order for pt in sorted_points]),
+        afhps=np.array([r["afhp"] for r in results]),
+        performances=np.array([r["performance"] for r in results]),
+        desired_percentiles=np.array([r["desired_percentile"] for r in results]),
+        meta=np.array([r["meta"] for r in results], dtype=object),
+        order=np.array([r["order"] for r in results]),
     )
 
     end_time = time.time()
     print(f"Time taken: {end_time - start_time} seconds")
-    print(f"Total evals: {total_evals}")
+    print(f"Total evals: {len(results)}")
 
 
 if __name__ == "__main__":
