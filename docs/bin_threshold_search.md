@@ -119,13 +119,27 @@ Using `[0, 100]` means the search can always reach the correct threshold as
 long as one exists. The initial guess is still used — it seeds the bracket so
 the first midpoint is genuinely new information, not a repeat evaluation.
 
-### When the search still fails
+### Remaining limitations
 
-Even with `[0, 100]`, failure is possible if no threshold achieves an AFHP in
-the target bin — for example if the policy's AFHP function has a discontinuity
-that "jumps over" the bin (common with `WaitPolicy` on short-episode
-environments where a one-step change in the wait threshold flips many episodes
-from 0% to 100% help). In that case the search converges to the jump boundary,
+**Threshold range is bounded by training data.** Percentile space `[0, 100]`
+maps to a threshold range of `[train_percentile_level(0), train_percentile_level(100)]`,
+i.e., the minimum and maximum scores seen in training. If test scores fall
+outside this range, the corresponding AFHP values are unreachable by the
+search. For example, if test episodes consistently produce higher scores than
+any training episode, even the threshold `train_percentile_level(100)` may
+not be high enough to drive AFHP to near zero.
+
+The correct fix would be to search directly in threshold space and set bounds
+based on the actual test score range. This is not currently implemented because
+threshold space has no natural policy-agnostic scale (a max-logit value and a
+reconstruction error are not comparable), making it hard to define a
+policy-generic search procedure. In practice this limitation matters most under
+large distribution shift between training and test.
+
+**Discontinuous AFHP functions.** Some policies (notably `WaitPolicy`) have
+discrete thresholds where a one-step change flips many episodes simultaneously.
+If the AFHP function "jumps over" a bin entirely, no threshold achieves the
+target AFHP and the search converges to the nearest jump point. In that case
 the worker saves whatever result it found and logs a warning. These out-of-bin
 points are visible in the final data as points that do not fall at their
 `desired_percentile`.
