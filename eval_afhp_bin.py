@@ -18,46 +18,15 @@ Restart: if --checkpoint_path already exists the job exits immediately, so
 re-submitting failed array tasks is safe.
 """
 
-import json
-import os
 import time
 from pathlib import Path
-from typing import List, Optional
 
 import numpy as np
 
 import flags
 import YRC.core.configs.utils as config_utils
-import YRC.core.environment as env_factory
-import YRC.core.policy as policy_factory
-from YRC.core import Evaluator
+from YRC.core.eval_setup import build_eval_runtime
 from YRC.coverage.coverage_search import load_calibration_state, run_bin
-from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
-
-
-def load_level_seeds(config) -> dict:
-    """Load level seeds from file.
-
-    Returns:
-        Dict with keys 'ood_eval' and 'validation', each a list of seeds or None.
-    """
-    level_seeds_file = getattr(config.environment, "level_seeds_file", None)
-    if level_seeds_file is None:
-        return {"ood_eval": None, "validation": None}
-
-    print(f"Loading level seeds from {level_seeds_file}...")
-    with open(level_seeds_file) as f:
-        seeds_data = json.load(f)
-
-    ood_eval = seeds_data["seeds"].get("ood_eval") or None
-    validation = seeds_data["seeds"].get("validation") or None
-
-    if ood_eval:
-        print(f"  Loaded {len(ood_eval)} ood_eval seeds")
-    if validation:
-        print(f"  Loaded {len(validation)} validation seeds (calibration)")
-
-    return {"ood_eval": ood_eval, "validation": validation}
 
 
 def main():
@@ -94,49 +63,23 @@ def main():
         f"metric={afhp_metric}"
     )
 
-    # Load policy (same as eval_afhp.py)
-    seeds = load_level_seeds(config)
-    ood_eval_seeds = seeds["ood_eval"]
-    cal_seeds = seeds["validation"]
-
-    def make_envs():
-        return env_factory.make(config, ood_eval_seeds, "sequential", cal_seeds=cal_seeds)
-
-    envs = make_envs()
-    policy = policy_factory.make(config, envs["train"])
-
-    if config.general.algorithm != "always" and not config.coord_policy.baseline:
-        algorithms = [
-            "timestep_random",
-            "level_based_random",
-            "threshold",
-            "heuristic",
-            "wait",
-        ]
-        if config.general.algorithm not in algorithms:
-            policy.load_model(os.path.join(config.experiment_dir, config.file_name))
-
-        if isinstance(policy, MahalanobisAEPolicy):
-            policy.initialize_mahalanobis_detector(config)
-
-    evaluator = Evaluator(config, config.environment)
+    runtime = build_eval_runtime(config)
 
     # Load calibration state saved by the calibration job
     print(f"Loading calibration state from: {calibration_path}")
-    load_calibration_state(policy, calibration_path)
+    load_calibration_state(runtime.policy, calibration_path)
 
     # Close initial environments; run_bin creates fresh ones per evaluation
-    for split_name in envs:
-        envs[split_name].close()
+    runtime.close_envs()
 
     split = "test"
     afhp, performance, meta, threshold = run_bin(
         bin_idx=bin_idx,
         bin_lo=bin_lo,
         bin_hi=bin_hi,
-        policy=policy,
-        evaluator=evaluator,
-        envs_factory=make_envs,
+        policy=runtime.policy,
+        evaluator=runtime.evaluator,
+        envs_factory=runtime.make_envs,
         split=split,
         afhp_metric=afhp_metric,
         search_depth_limit=search_depth_limit,
