@@ -21,84 +21,94 @@ import wandb
 
 
 
-def load_level_seeds(config) -> Optional[List[int]]:
-    """Load ood_eval level seeds from file if configured.
-    
+def load_level_seeds(config) -> dict:
+    """Load level seeds from file.
+
     Args:
         config: Configuration object with environment.level_seeds_file path
-        
+
     Returns:
-        List of level seeds for OOD evaluation, or None if not configured
+        Dict with keys 'ood_eval' and 'validation', each a list of seeds or None.
     """
     level_seeds_file = getattr(config.environment, 'level_seeds_file', None)
     if level_seeds_file is None:
-        return None
-    
-    print(f'LOADING LEVEL SEEDS FROM {level_seeds_file}...')
+        return {"ood_eval": None, "validation": None}
+
+    print(f'Loading level seeds from {level_seeds_file}...')
     with open(level_seeds_file) as f:
         seeds_data = json.load(f)
-    
-    # Use ood_eval seeds for evaluation (sequential mode, fresh envs per eval)
-    level_seeds = seeds_data['seeds'].get('ood_eval', None)
-    if level_seeds:
-        print(f'  - Loaded {len(level_seeds)} ood_eval seeds (mode: sequential)')
-    else:
-        print('  - No ood_eval seeds in file')
-    
-    return level_seeds
+
+    ood_eval = seeds_data['seeds'].get('ood_eval') or None
+    validation = seeds_data['seeds'].get('validation') or None
+
+    if ood_eval:
+        print(f'  - Loaded {len(ood_eval)} ood_eval seeds')
+    if validation:
+        print(f'  - Loaded {len(validation)} validation seeds (calibration)')
+
+    return {"ood_eval": ood_eval, "validation": validation}
 
 
-def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs):
-    """Calibrate the policy's train_percentile_step/level methods using training data.
+def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs, cal_seeds):
+    """Calibrate the policy's train_percentile_step/level methods.
+
+    Uses fixed validation seeds (held out from RL training, same ID distribution)
+    so calibration is reproducible across runs and independent of num_rollouts.
 
     Different policy types need different calibration:
 
-    - ThresholdPolicy / OODPolicy: Runs rollouts to collect per-step OOD scores and
-      per-episode max scores. These are stored in policy._train_scores and
-      policy._train_episode_max_scores for use by train_percentile_step/level.
+    - ThresholdPolicy / OODPolicy: Runs rollouts on the "cal" env to collect
+      per-step OOD scores and per-episode max scores. Stored in
+      policy._train_scores and policy._train_episode_max_scores.
 
     - TimestepRandomPolicy / ExponentialHeuristicPolicy: Runs the weak agent alone
-      (no help requests) on training levels to measure mean episode length. This is
-      needed because the mapping from per-step probability to per-episode help rate
-      is nonlinear (see docs/percentile_calibration.md).
+      on "cal" levels to measure mean episode length (needed because the mapping
+      from per-step probability to per-episode help rate is nonlinear).
 
     - WaitPolicy: Runs the weak agent alone to collect the full distribution of
-      episode lengths. train_percentile_level uses empirical percentiles of this
-      distribution, since an episode has help iff its length exceeds the wait
-      threshold.
+      episode lengths. train_percentile_level uses empirical percentiles.
 
     Args:
         policy: The coordination policy to calibrate.
         config: Experiment configuration.
         evaluator: Evaluator instance for running episodes.
-        envs: Pre-created environments (used for score generation rollouts).
+        envs: Pre-created environments dict (must include "cal" if cal_seeds given).
         make_envs: Factory that creates fresh environments for calibration runs.
+        cal_seeds: Fixed validation seeds used for the "cal" environment, or None
+            to fall back to the train env with config.algorithm.num_rollouts.
     """
     from YRC.policies.threshold import ThresholdPolicy
     from YRC.policies.ood import OODPolicy
     from YRC.policies.base import TimestepRandomPolicy
     from YRC.policies.heuristic import ExponentialHeuristicPolicy, WaitPolicy
 
+    if cal_seeds is None or "cal" not in envs:
+        raise ValueError(
+            "Calibration requires validation seeds. "
+            "Ensure the seed file contains a non-empty 'validation' set and "
+            "--level_seeds_file is set."
+        )
+
+    num_cal = len(cal_seeds)
+
     # Score-based calibration: collect OOD score distributions via rollouts
     if isinstance(policy, ThresholdPolicy):
         metric = config.coord_policy.metric
         if metric in ("max_prob", "max_logit", "ensemble_variance"):
-            num_rollouts = getattr(config.algorithm, "num_rollouts", 256)
             print(
-                f"Generating {num_rollouts} training scores for threshold "
+                f"Generating {num_cal} calibration scores for threshold "
                 f"policy with {metric} metric..."
             )
-            policy.generate_scores(envs["train"], num_rollouts)
+            policy.generate_scores(envs["cal"], num_cal)
 
     if isinstance(policy, OODPolicy) and not isinstance(policy, ThresholdPolicy):
-        num_rollouts = getattr(config.algorithm, "num_rollouts", 256)
         print(
-            f"Generating {num_rollouts} training scores for "
+            f"Generating {num_cal} calibration scores for "
             f"{type(policy).__name__}..."
         )
-        policy.generate_scores(envs["train"], num_rollouts)
+        policy.generate_scores(envs["cal"], num_cal)
 
-    # Episode-length calibration: run weak agent alone on training levels
+    # Episode-length calibration: run weak agent alone on cal levels
     if isinstance(policy, (TimestepRandomPolicy, ExponentialHeuristicPolicy, WaitPolicy)):
         print(f"Calibrating {type(policy).__name__}: measuring episode lengths...")
         if isinstance(policy, TimestepRandomPolicy):
@@ -111,9 +121,8 @@ def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs):
             old_threshold = policy.threshold
             policy.threshold = 10000  # weak agent only (never ask)
         cal_envs = make_envs()
-        cal_num_episodes = config.environment.val_sim.num_levels
-        cal_summary = evaluator.eval(policy, cal_envs, ["train"], num_episodes=cal_num_episodes, close_envs=True)
-        mean_ep_length = cal_summary["train"]["episode_length_mean"]
+        cal_summary = evaluator.eval(policy, cal_envs, ["cal"], num_episodes=num_cal, close_envs=True)
+        mean_ep_length = cal_summary["cal"]["episode_length_mean"]
         if isinstance(policy, TimestepRandomPolicy):
             policy._mean_episode_length = mean_ep_length
             policy.prob = old_prob
@@ -121,9 +130,7 @@ def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs):
             policy._mean_episode_length = mean_ep_length
             policy.non_ood_starting_prob = 1 - old_prob
         elif isinstance(policy, WaitPolicy):
-            policy._episode_lengths = np.array(
-                cal_summary["train"]["episode_lengths"]
-            )
+            policy._episode_lengths = np.array(cal_summary["cal"]["episode_lengths"])
             policy.threshold = old_threshold
         print(f"Mean episode length (weak only): {mean_ep_length:.1f}")
 
@@ -137,13 +144,15 @@ def main():
     # Record time for profiling purposes
     start_time = time.time()
 
-    # Load level seeds for evaluation
-    level_seeds = load_level_seeds(config)
+    # Load level seeds for evaluation and calibration
+    seeds = load_level_seeds(config)
+    ood_eval_seeds = seeds["ood_eval"]
+    cal_seeds = seeds["validation"]
 
     # Create environment factory for the sampler
     # Each evaluation gets fresh environments with the same seeds in sequential order
     def make_envs():
-        return env_factory.make(config, level_seeds, "sequential")
+        return env_factory.make(config, ood_eval_seeds, "sequential", cal_seeds=cal_seeds)
 
     # Create initial environments for policy creation and score generation
     envs = make_envs()
@@ -162,7 +171,7 @@ def main():
 
     evaluator = Evaluator(config, config.environment)
 
-    calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs)
+    calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs, cal_seeds)
 
     # Calibrate-only mode: save state to disk and exit without running evaluation.
     # Used by the SLURM parallel-bin workflow where bin jobs load the saved state.

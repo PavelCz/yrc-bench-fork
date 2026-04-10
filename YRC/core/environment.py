@@ -14,26 +14,31 @@ from copy import deepcopy as dc
 from YRC.core.configs import get_global_variable
 
 
-def make(config, level_seeds=None, level_seeds_mode="sequential"):
+def make(config, level_seeds=None, level_seeds_mode="sequential", cal_seeds=None):
     """Create coordination environments.
-    
+
     Args:
         config: Configuration object
         level_seeds: Optional list of level seeds to use for test environment
         level_seeds_mode: Mode for level seeds (sequential, container, random)
+        cal_seeds: Optional list of level seeds for the calibration environment.
+            Uses train config settings (same distribution) with fixed seeds so
+            calibration is reproducible and independent of num_rollouts.
     """
-    base_envs = make_raw_envs(config, level_seeds, level_seeds_mode)
+    base_envs = make_raw_envs(config, level_seeds, level_seeds_mode, cal_seeds)
     sim_weak_agent, weak_agent, strong_agent = load_agents(config, base_envs["val_sim"])
 
+    # "cal" uses sim_weak/weak agent setup (same as "train") regardless of skyline mode
+    cal_agent_names = {"train", "val_sim", "cal"}
     coord_envs = {}
     for name in base_envs:
-        if config.general.skyline or name not in ["train", "val_sim"]:
+        if config.general.skyline or name not in cal_agent_names:
             if type(strong_agent) is dict:
                 coord_envs[name] = CoordEnv(config.coord_env, base_envs[name], weak_agent, strong_agent[name])
             else:
                 coord_envs[name] = CoordEnv(config.coord_env, base_envs[name], weak_agent, strong_agent)
         else:
-            # NOTE: not skyline and name in ["train", "val_sim"]
+            # NOTE: not skyline and name in ["train", "val_sim", "cal"]
             # use weak agent as strong agent
             # use sim_weak agent as weak agent
             coord_envs[name] = CoordEnv(config.coord_env, base_envs[name], sim_weak_agent, weak_agent)
@@ -99,13 +104,15 @@ def get_test_eval_info(config, coord_envs):
     return ret
 
 
-def make_raw_envs(config, level_seeds=None, level_seeds_mode="sequential"):
+def make_raw_envs(config, level_seeds=None, level_seeds_mode="sequential", cal_seeds=None):
     """Create raw environments for each split.
-    
+
     Args:
         config: Configuration object
         level_seeds: Optional list of level seeds to use for test environment
         level_seeds_mode: Mode for level seeds (sequential, container, random)
+        cal_seeds: Optional list of level seeds for a "cal" calibration environment.
+            Uses train config settings with fixed seeds for reproducible calibration.
     """
     module = importlib.import_module(f"YRC.envs.{get_global_variable('benchmark')}")
     create_fn = getattr(module, "create_env")
@@ -117,14 +124,21 @@ def make_raw_envs(config, level_seeds=None, level_seeds_mode="sequential"):
         if name == "test" and level_seeds is not None:
             kwargs['level_seeds'] = level_seeds
             kwargs['level_seeds_mode'] = level_seeds_mode
-        
+
         if name == "train" and config.general.skyline:
             env = create_fn("test", config.environment, **kwargs)
         else:
             env = create_fn(name, config.environment, **kwargs)
-        # some extra information
         env.name = config.environment.common.env_name
         envs[name] = env
+
+    if cal_seeds is not None:
+        env = create_fn(
+            "train", config.environment,
+            level_seeds=cal_seeds, level_seeds_mode="sequential",
+        )
+        env.name = config.environment.common.env_name
+        envs["cal"] = env
 
     return envs
 

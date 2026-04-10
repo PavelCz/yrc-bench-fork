@@ -35,23 +35,29 @@ from YRC.coverage.coverage_search import load_calibration_state, run_bin
 from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
 
 
-def load_level_seeds(config) -> Optional[List[int]]:
-    """Load ood_eval level seeds from file if configured."""
+def load_level_seeds(config) -> dict:
+    """Load level seeds from file.
+
+    Returns:
+        Dict with keys 'ood_eval' and 'validation', each a list of seeds or None.
+    """
     level_seeds_file = getattr(config.environment, "level_seeds_file", None)
     if level_seeds_file is None:
-        return None
+        return {"ood_eval": None, "validation": None}
 
     print(f"Loading level seeds from {level_seeds_file}...")
     with open(level_seeds_file) as f:
         seeds_data = json.load(f)
 
-    level_seeds = seeds_data["seeds"].get("ood_eval", None)
-    if level_seeds:
-        print(f"  Loaded {len(level_seeds)} ood_eval seeds")
-    else:
-        print("  No ood_eval seeds in file")
+    ood_eval = seeds_data["seeds"].get("ood_eval") or None
+    validation = seeds_data["seeds"].get("validation") or None
 
-    return level_seeds
+    if ood_eval:
+        print(f"  Loaded {len(ood_eval)} ood_eval seeds")
+    if validation:
+        print(f"  Loaded {len(validation)} validation seeds (calibration)")
+
+    return {"ood_eval": ood_eval, "validation": validation}
 
 
 def main():
@@ -89,10 +95,12 @@ def main():
     )
 
     # Load policy (same as eval_afhp.py)
-    level_seeds = load_level_seeds(config)
+    seeds = load_level_seeds(config)
+    ood_eval_seeds = seeds["ood_eval"]
+    cal_seeds = seeds["validation"]
 
     def make_envs():
-        return env_factory.make(config, level_seeds, "sequential")
+        return env_factory.make(config, ood_eval_seeds, "sequential", cal_seeds=cal_seeds)
 
     envs = make_envs()
     policy = policy_factory.make(config, envs["train"])
