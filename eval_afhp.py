@@ -111,7 +111,8 @@ def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs):
             old_threshold = policy.threshold
             policy.threshold = 10000  # weak agent only (never ask)
         cal_envs = make_envs()
-        cal_summary = evaluator.eval(policy, cal_envs, ["train"], close_envs=True)
+        cal_num_episodes = config.environment.val_sim.num_levels
+        cal_summary = evaluator.eval(policy, cal_envs, ["train"], num_episodes=cal_num_episodes, close_envs=True)
         mean_ep_length = cal_summary["train"]["episode_length_mean"]
         if isinstance(policy, TimestepRandomPolicy):
             policy._mean_episode_length = mean_ep_length
