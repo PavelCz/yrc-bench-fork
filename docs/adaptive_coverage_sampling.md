@@ -10,7 +10,8 @@ The goal is to efficiently sample enough thresholds to produce a well-covered cu
 
 ```
 scripts/run_eval.py
-  → eval_afhp.py
+  → calibrate_afhp.py
+  → eval_afhp_seq.py / eval_afhp_bin.py
     → YRC/coverage/coverage_search.py  (creates sampler + callbacks)
       → lib/acs/src/acs/sampler.py     (BinarySearchSampler)
         → YRC/core/evaluator.py        (runs episodes per threshold)
@@ -21,7 +22,7 @@ scripts/run_eval.py
 | Parameter | Default | Set In | Meaning |
 |---|---|---|---|
 | `coverage_fraction` | 0.05 | `scripts/run_eval.py` | Max normalized neighbor gap allowed on output axis |
-| `max_total_evals` | 200 | `eval_afhp.py` | Hard budget of evaluations |
+| `max_total_evals` | 200 | `eval_afhp_seq.py` / `eval_afhp_bin.py` | Hard budget of evaluations |
 | `num_levels` | 5000 | `scripts/run_eval.py` | Episodes per evaluation |
 | `threshold_sampler` | `"step_afhp"` | Config YAML | Which output axis to cover (`"step_afhp"` or `"level_afhp"`) |
 
@@ -85,9 +86,9 @@ The coverage metric is the **max normalized neighbor gap**: the largest gap betw
 
 ## Percentile Calibration
 
-For threshold-based methods (`max_prob`, `max_logit`, `ensemble_variance`), the sampler works in percentile space of the training score distribution. Before sampling begins, `eval_afhp.py` runs `policy.generate_scores()` on the training environment to collect per-step OOD scores and per-episode max scores. `train_percentile_step(p)` maps percentile `p` to a threshold via `np.percentile(step_scores, p)` (calibrated for step_afhp), while `train_percentile_level(p)` uses `np.percentile(episode_max_scores, p)` (calibrated for level_afhp).
+For threshold-based methods (`max_prob`, `max_logit`, `ensemble_variance`), the sampler works in percentile space of the training score distribution. Before sampling begins, `calibrate_afhp.py` runs `policy.generate_scores()` on the calibration environment to collect per-step OOD scores and per-episode max scores. `train_percentile_step(p)` maps percentile `p` to a threshold via `np.percentile(step_scores, p)` (calibrated for step_afhp), while `train_percentile_level(p)` uses `np.percentile(episode_max_scores, p)` (calibrated for level_afhp).
 
-For `TimestepRandomPolicy`, there is no OOD score distribution — the "score" is `torch.rand()`. However, the mapping from per-step help probability to per-episode OOD percentage is nonlinear: with probability `p` per step and episode length `L`, the fraction of episodes with any help request is `1 - (1-p)^L`. To account for this, `eval_afhp.py` runs a calibration step before sampling: it evaluates the weak agent alone (prob=0) on the training environment to measure the mean episode length, then `train_percentile_level` uses the inverse formula `prob = 1 - (percentile/100)^(1/L)`. `train_percentile_step` uses a simple linear mapping instead.
+For `TimestepRandomPolicy`, there is no OOD score distribution — the "score" is `torch.rand()`. However, the mapping from per-step help probability to per-episode OOD percentage is nonlinear: with probability `p` per step and episode length `L`, the fraction of episodes with any help request is `1 - (1-p)^L`. To account for this, `calibrate_afhp.py` runs a calibration step before sampling: it evaluates the weak agent alone (prob=0) on the calibration environment to measure the mean episode length, then `train_percentile_level` uses the inverse formula `prob = 1 - (percentile/100)^(1/L)`. `train_percentile_step` uses a simple linear mapping instead.
 
 For `LevelBasedRandomPolicy`, the decision is per-episode, so `level_afhp` equals the help probability directly — no calibration is needed.
 

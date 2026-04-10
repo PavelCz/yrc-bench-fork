@@ -275,14 +275,23 @@ def _build_policy_python_args(script: str, eval_args: dict) -> List[str]:
     return args
 
 
-def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str, log_dir: Path, qos: str = "default") -> str:
-    """Build the sbatch script for a single sequential evaluation job."""
+def build_sequential_eval_sbatch_command(
+    job_name: str,
+    eval_args: dict,
+    conda_env: str,
+    log_dir: Path,
+    calibration_path: Path,
+    dep_job_id: str,
+    qos: str = "default",
+) -> str:
+    """Build the sbatch script for a sequential AFHP evaluation job."""
     slurm_config = SLURM_CONFIG.copy()
     slurm_config["qos"] = qos
     slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
 
-    python_args = _build_policy_python_args("eval_afhp.py", eval_args)
+    python_args = _build_policy_python_args("eval_afhp_seq.py", eval_args)
     python_args += [
+        f"--calibration_path {calibration_path}",
         f"-video_episodes_to_collect {eval_args['video_episodes_to_collect']}",
         f"-video_filter {eval_args['video_filter']}",
         f"-cp_rolling_average {eval_args['cp_rolling_average']}",
@@ -293,9 +302,10 @@ def build_sbatch_command(job_name: str, eval_args: dict, conda_env: str, log_dir
     python_cmd = " ".join(python_args)
 
     sbatch_script = f"""#!/bin/bash
-#SBATCH --job-name={job_name}
+#SBATCH --job-name={job_name}_seq
 #SBATCH --output={log_dir}/%x_%j.out
 #SBATCH --error={log_dir}/%x_%j.err
+#SBATCH --dependency=afterok:{dep_job_id}
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
 
 echo "Using conda env: {conda_env}"
@@ -319,9 +329,8 @@ def build_calibration_sbatch_command(
     slurm_config["qos"] = qos
     slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
 
-    python_args = _build_policy_python_args("eval_afhp.py", eval_args)
+    python_args = _build_policy_python_args("calibrate_afhp.py", eval_args)
     python_args += [
-        "--calibrate_only",
         f"--calibration_path {calibration_path}",
     ]
     python_cmd = " ".join(python_args)
@@ -395,30 +404,54 @@ def _sbatch_submit(script: str, log_dir: Path) -> Optional[str]:
         return None
 
 
-def submit_job(
-    job_name: str, eval_args: dict, conda_env: str, log_dir: Path, qos: str = "default", dry_run: bool = False
+def submit_sequential_eval(
+    job_name: str,
+    eval_args: dict,
+    conda_env: str,
+    log_dir: Path,
+    qos: str = "default",
+    dry_run: bool = False,
 ) -> None:
-    """Submit a single sequential evaluation job via sbatch."""
-    sbatch_script = build_sbatch_command(job_name, eval_args, conda_env, log_dir, qos)
+    """Submit calibration job + sequential evaluation job with SLURM dependency."""
+    calibration_path = log_dir / f"{job_name}_calibration.npz"
+    calib_script = build_calibration_sbatch_command(
+        job_name, eval_args, conda_env, log_dir, calibration_path, qos
+    )
+    seq_script_template = build_sequential_eval_sbatch_command(
+        job_name,
+        eval_args,
+        conda_env,
+        log_dir,
+        calibration_path,
+        dep_job_id="CALIB_JOB_ID",
+        qos=qos,
+    )
 
     if dry_run:
-        print(f"=== Job: {job_name} ===")
-        print(sbatch_script)
+        print(f"=== Calibration job: {job_name}_calib ===")
+        print(calib_script)
+        print(f"=== Sequential eval job: {job_name}_seq ===")
+        print(seq_script_template.replace("CALIB_JOB_ID", "<calib_job_id>"))
         print()
         return
 
-    log_dir.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(
-        ["sbatch"],
-        input=sbatch_script,
-        text=True,
-        capture_output=True,
-    )
+    print("  Submitting calibration job...")
+    calib_job_id = _sbatch_submit(calib_script, log_dir)
+    if calib_job_id is None:
+        print(f"  Aborting sequential eval submission for {job_name}.")
+        return
 
-    if result.returncode == 0:
-        print(f"Submitted {job_name}: {result.stdout.strip()}")
-    else:
-        print(f"Failed to submit {job_name}: {result.stderr}")
+    seq_script = build_sequential_eval_sbatch_command(
+        job_name,
+        eval_args,
+        conda_env,
+        log_dir,
+        calibration_path,
+        dep_job_id=calib_job_id,
+        qos=qos,
+    )
+    print(f"  Submitting sequential eval job (depends on {calib_job_id})...")
+    _sbatch_submit(seq_script, log_dir)
 
 
 def submit_parallel_bins(
@@ -432,8 +465,8 @@ def submit_parallel_bins(
 ) -> None:
     """Submit calibration job + bin array job with SLURM dependency.
 
-    The calibration job runs eval_afhp.py --calibrate_only and saves the
-    policy's calibration state to disk. The bin array job (one task per bin)
+    The calibration job runs calibrate_afhp.py and saves the policy's
+    calibration state to disk. The bin array job (one task per bin)
     depends on the calibration job and runs eval_afhp_bin.py for each bin.
     Per-bin checkpoints are saved to log_dir/{job_name}_bin_N.npz.
     """
@@ -552,7 +585,7 @@ def main():
         "--sequential",
         action="store_true",
         help=(
-            "Submit a single sequential job instead of parallel SLURM array jobs. "
+            "Submit a calibration job followed by a single sequential AFHP eval job. "
             "By default, a calibration job is submitted first, followed by a "
             "SLURM array of --num-bins bin jobs that depend on it."
         ),
@@ -695,7 +728,14 @@ def main():
         }
 
         if args.sequential:
-            submit_job(job_name, eval_args, args.conda_env, log_dir, args.qos, dry_run=args.dry_run)
+            submit_sequential_eval(
+                job_name,
+                eval_args,
+                args.conda_env,
+                log_dir,
+                args.qos,
+                dry_run=args.dry_run,
+            )
         else:
             submit_parallel_bins(
                 job_name=job_name,

@@ -351,19 +351,14 @@ def make():
         help="Path to save the per-bin result .npz (used by eval_afhp_bin.py).",
     )
     parser.add_argument(
-        "--calibrate_only",
-        action="store_true",
-        default=False,
-        help=(
-            "Run calibration only: save state to --calibration_path and exit. "
-            "Used by the SLURM parallel-bin workflow."
-        ),
-    )
-    parser.add_argument(
         "--calibration_path",
         type=str,
         default=None,
-        help="Path to save calibration state (.npz). Required with --calibrate_only.",
+        help=(
+            "Path to calibration state (.npz). Used as an output by "
+            "calibrate_afhp.py and as an input by eval_afhp_seq.py / "
+            "eval_afhp_bin.py."
+        ),
     )
 
     # parser.add_argument(

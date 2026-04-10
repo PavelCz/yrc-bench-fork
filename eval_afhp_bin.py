@@ -7,7 +7,7 @@ scripts/run_eval.py.
 
 Typical workflow:
   # 1. Calibration job (run once per experiment)
-  python eval_afhp.py --calibrate_only --calibration_path /shared/calib.npz [...]
+  python calibrate_afhp.py --calibration_path /shared/calib.npz [...]
 
   # 2. Bin array job (one task per bin, depends on calibration job)
   python eval_afhp_bin.py --bin_idx $SLURM_ARRAY_TASK_ID \\

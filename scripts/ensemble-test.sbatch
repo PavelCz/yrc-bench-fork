@@ -11,13 +11,28 @@
 source $(conda info --base)/etc/profile.d/conda.sh
 conda activate ood
 
-python eval_afhp.py -c configs/eval/coinrun/ensemble_variance.yaml \
+CALIBRATION_PATH=/tmp/test_ensemble_calibration.npz
+
+python calibrate_afhp.py -c configs/eval/coinrun/ensemble_variance.yaml \
+    -en coinrun \
+    -n test_ensemble \
+    -sim /project2/biyik_1165/czempin/data/goal-misgen/policy/icml/coinrun/icml2_coinrun_exp0_0p/2026-01-13__06-46-28__seed_6033/model_200015872.pth \
+    -weak /project2/biyik_1165/czempin/data/goal-misgen/policy/icml/coinrun/icml2_coinrun_exp0_0p/2026-01-13__06-46-28__seed_6033/model_200015872.pth \
+    -strong /project2/biyik_1165/czempin/data/goal-misgen/policy/icml/coinrun/icml2_coinrun_exp0_50p/2026-01-13__14-46-26__seed_6033/model_200015872.pth \
+    --calibration_path ${CALIBRATION_PATH} \
+    --experiment_group test_ensemble \
+    -cp_ensemble_members \
+        /project2/biyik_1165/czempin/data/goal-misgen/policy/icml/coinrun/icml2_coinrun_exp1_0p/2026-01-15__13-30-21__seed_1/model_200015872.pth \
+        /project2/biyik_1165/czempin/data/goal-misgen/policy/icml/coinrun/icml2_coinrun_exp2_0p/2026-01-15__13-30-24__seed_2/model_200015872.pth
+
+python eval_afhp_seq.py -c configs/eval/coinrun/ensemble_variance.yaml \
     -en coinrun \
     -n test_ensemble \
     -sim /project2/biyik_1165/czempin/data/goal-misgen/policy/icml/coinrun/icml2_coinrun_exp0_0p/2026-01-13__06-46-28__seed_6033/model_200015872.pth \
     -weak /project2/biyik_1165/czempin/data/goal-misgen/policy/icml/coinrun/icml2_coinrun_exp0_0p/2026-01-13__06-46-28__seed_6033/model_200015872.pth \
     -strong /project2/biyik_1165/czempin/data/goal-misgen/policy/icml/coinrun/icml2_coinrun_exp0_50p/2026-01-13__14-46-26__seed_6033/model_200015872.pth \
     -num_bins 10 \
+    --calibration_path ${CALIBRATION_PATH} \
     --experiment_group test_ensemble \
     -cp_ensemble_members \
         /project2/biyik_1165/czempin/data/goal-misgen/policy/icml/coinrun/icml2_coinrun_exp1_0p/2026-01-15__13-30-21__seed_1/model_200015872.pth \

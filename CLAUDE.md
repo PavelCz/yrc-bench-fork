@@ -141,7 +141,7 @@ The project uses hierarchical YAML configs in `configs/`:
    - Phase 4: Refines return axis to ensure smooth curves
    - Maintains backward compatibility with legacy format
 
-2. **AFHP Metrics and Percentile Calibration**: Two AFHP metrics exist: **step_afhp** (fraction of timesteps) and **level_afhp** (fraction of episodes with any help). All policies implement `train_percentile_step(p)` and `train_percentile_level(p)` to map percentiles to thresholds calibrated for each metric. Calibration runs in `calibrate_percentile_mapping()` in `eval_afhp.py` before the sampler starts. See `docs/percentile_calibration.md` for the full support matrix, per-policy formulas, and calibration data sources.
+2. **AFHP Metrics and Percentile Calibration**: Two AFHP metrics exist: **step_afhp** (fraction of timesteps) and **level_afhp** (fraction of episodes with any help). All policies implement `train_percentile_step(p)` and `train_percentile_level(p)` to map percentiles to thresholds calibrated for each metric. Calibration runs in `calibrate_afhp.py` before `eval_afhp_seq.py` or `eval_afhp_bin.py`. See `docs/percentile_calibration.md` for the full support matrix, per-policy formulas, and calibration data sources.
 
 3. **Feature Types**: Coordination policies can use:
    - Raw observations (`obs`)
