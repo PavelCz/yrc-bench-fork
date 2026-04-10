@@ -549,14 +549,12 @@ def main():
         help=f"Number of AFHP bins to evaluate (default: {EVAL_DEFAULTS['num_bins']})",
     )
     parser.add_argument(
-        "--parallel-bins",
-        type=int,
-        default=None,
-        metavar="N",
+        "--sequential",
+        action="store_true",
         help=(
-            "Submit parallel SLURM bin jobs instead of one sequential job. "
-            "Submits a calibration job then a SLURM array of N bin jobs "
-            "that depend on it."
+            "Submit a single sequential job instead of parallel SLURM array jobs. "
+            "By default, a calibration job is submitted first, followed by a "
+            "SLURM array of --num-bins bin jobs that depend on it."
         ),
     )
     parser.add_argument(
@@ -696,18 +694,18 @@ def main():
             **checkpoints,
         }
 
-        if args.parallel_bins is not None:
+        if args.sequential:
+            submit_job(job_name, eval_args, args.conda_env, log_dir, args.qos, dry_run=args.dry_run)
+        else:
             submit_parallel_bins(
                 job_name=job_name,
                 eval_args=eval_args,
                 conda_env=args.conda_env,
                 log_dir=log_dir,
-                num_bins=args.parallel_bins,
+                num_bins=args.num_bins,
                 qos=args.qos,
                 dry_run=args.dry_run,
             )
-        else:
-            submit_job(job_name, eval_args, args.conda_env, log_dir, args.qos, dry_run=args.dry_run)
 
     return 0
 
