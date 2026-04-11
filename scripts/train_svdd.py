@@ -177,7 +177,9 @@ def submit_svdd_prep_for_exp(
 def main() -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Train SVDD coordination models via SLURM")
+    parser = argparse.ArgumentParser(
+        description="Train SVDD coordination models via SLURM"
+    )
     parser.add_argument(
         "--dry-run", action="store_true", help="Print commands without submitting"
     )
