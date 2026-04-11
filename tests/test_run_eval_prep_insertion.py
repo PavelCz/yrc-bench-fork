@@ -116,7 +116,8 @@ class TestCacheMissSvdd(unittest.TestCase):
         self.assertEqual(result, "8888")
         submitted_script = submit_mock.call_args.args[0]
         self.assertIn("calibrate_afhp.py", submitted_script)
-        # SVDD basename is passed via -f_n to match run_prepare_coordination.py.
+        # SVDD passes just the basename via -f_n; the worker resolves it
+        # against experiment_dir at runtime.
         self.assertIn("-f_n trained.joblib", submitted_script)
 
     def test_svdd_cache_miss_without_trained_model_returns_skip_sentinel(self):
