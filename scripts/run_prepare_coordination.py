@@ -21,6 +21,8 @@ from YRC.core.artifacts import (  # noqa: E402
     default_coordination_artifact_root,
     resolve_calibration_path,
     resolve_coordination_artifact_dir,
+    resolve_metadata_path,
+    write_coordination_metadata,
 )
 from scripts.common import (  # noqa: E402
     DEFAULT_NUM_ENSEMBLE_MEMBERS,
@@ -238,6 +240,50 @@ srun {slurm_args} {python_cmd}
 """
 
 
+def build_coordination_metadata(
+    *,
+    env: str,
+    exp_id: int,
+    method: str,
+    method_name: str,
+    experiment_group: str,
+    coordination_artifact_dir: Path,
+    calibration_path: Path,
+    plan: PreparePlan,
+    checkpoints: dict,
+    level_seeds_file: Path,
+    feature_type: Optional[str] = None,
+    ensemble_members: Optional[List[Optional[str]]] = None,
+) -> dict:
+    """Build the initial metadata manifest for a coordination artifact."""
+    phases = []
+    if plan.requires_rollouts:
+        phases.append("gather_rollouts")
+    if plan.requires_training:
+        phases.append("train")
+    if plan.requires_calibration:
+        phases.append("calibrate")
+
+    return {
+        "env": env,
+        "exp_id": exp_id,
+        "method": method,
+        "method_name": method_name,
+        "run_key": experiment_group,
+        "coordination_artifact_dir": str(coordination_artifact_dir),
+        "metadata_path": str(resolve_metadata_path(coordination_artifact_dir)),
+        "calibration_path": str(calibration_path),
+        "level_seeds_file": str(level_seeds_file),
+        "acting_policies": {key: str(value) for key, value in checkpoints.items()},
+        "ensemble_members": []
+        if ensemble_members is None
+        else [None if path is None else str(path) for path in ensemble_members],
+        "feature_type": feature_type,
+        "phases": phases,
+        "phase_status": {phase: "pending" for phase in phases},
+    }
+
+
 def main() -> int:
     import argparse
 
@@ -411,7 +457,29 @@ def main() -> int:
         print(f"=== exp{exp_id} ===")
         print(f"  Method: {args.method}")
         print(f"  Coordination artifact dir: {coordination_artifact_dir}")
+        print(f"  Metadata path: {resolve_metadata_path(coordination_artifact_dir)}")
         print(f"  Calibration path: {calibration_path}")
+
+        metadata = build_coordination_metadata(
+            env=args.env,
+            exp_id=exp_id,
+            method=args.method,
+            method_name=method_name,
+            experiment_group=experiment_group,
+            coordination_artifact_dir=coordination_artifact_dir,
+            calibration_path=calibration_path,
+            plan=plan,
+            checkpoints=checkpoints,
+            level_seeds_file=level_seeds_file,
+            feature_type=feature_type,
+            ensemble_members=ensemble_members,
+        )
+
+        if not args.dry_run:
+            metadata_path = write_coordination_metadata(
+                coordination_artifact_dir, metadata
+            )
+            print(f"  Wrote metadata manifest: {metadata_path}")
 
         gather_job_id = None
         train_job_id = None
