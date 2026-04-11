@@ -36,10 +36,19 @@ Train ensemble policies by running the following for `coinrun` and `maze`, for a
 ./scripts/train_ensemble_policies.sh --env heist --experiment 0
 ```
 
-Use `run_prepare_coordination.py` to prepare coordination artifacts for the
-supported methods. For trainable DeepSVDD methods this submits rollout
-gathering, training, and calibration; for non-trainable methods it submits
-calibration only.
+Train SVDD coordination models (only required for the `svdd-latent` and
+`svdd-image` methods) with `scripts/train_svdd.py`. This submits a
+`gather_rollouts -> train` chain via SLURM:
+
+```
+python scripts/train_svdd.py \
+    --prefix icml \
+    --exp-ids 0 1 2 3 \
+    --server chai \
+    --conda-env ood \
+    --env coinrun \
+    --method svdd-latent
+```
 
 Now evals can be run for all methods:
 
@@ -50,8 +59,13 @@ python scripts/run_eval.py \
     --server chai \
     --conda-env ood \
     --env coinrun \
-    --method max-prob   
+    --method max-prob
 ```
+
+`run_eval.py` auto-inserts a calibration job before the eval array on cache
+miss, chained via `--dependency=afterok`. Calibration artifacts are stored at
+`<coordination_artifact_dir>/calibration.npz`; subsequent eval invocations
+reuse the cached file.
 
 The methods are `ts-random`, `max-prob`, `max-logit`, `ensemble-single`, `svdd-latent`, `svdd-image`.
 
