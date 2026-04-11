@@ -40,19 +40,23 @@ class TestCalibrationPathNaming(unittest.TestCase):
             Path("/tmp/checkpoints/maze_wait_exp3_calibration.npz"),
         )
 
-    def test_prefers_svdd_timestep_when_available(self):
+    def test_svdd_model_path_does_not_affect_timestep(self):
+        # svdd_model_path is always 'trained.joblib' in practice and never
+        # contains a timestep, so it must not influence the suffix even when
+        # a matching-looking path is present.  The weak checkpoint should be
+        # used instead.
         eval_args = {
             "weak": "/tmp/checkpoints/model_100000.pth",
             "sim": "/tmp/checkpoints/model_110000.pth",
             "strong": "/tmp/checkpoints/model_120000.pth",
-            "svdd_model_path": "/tmp/checkpoints/model_900000.pth",
+            "svdd_model_path": "/tmp/svdd/svdd_maze_latent_exp2/trained.joblib",
         }
 
         path = resolve_calibration_path("maze_svdd_latent_exp2", eval_args)
 
         self.assertEqual(
             path,
-            Path("/tmp/checkpoints/maze_svdd_latent_exp2_calibration_900k.npz"),
+            Path("/tmp/checkpoints/maze_svdd_latent_exp2_calibration_100k.npz"),
         )
 
     def test_formats_exact_tens_of_millions_correctly(self):

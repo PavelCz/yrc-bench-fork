@@ -287,13 +287,16 @@ def _calibration_timestep_suffix(eval_args: dict) -> Optional[str]:
     """Pick a representative timestep suffix from relevant policy checkpoints.
 
     Priority order:
-    1) svdd_model_path (coordination policy checkpoint, when method uses it),
-    2) weak policy checkpoint (primary acting policy reference),
-    3) sim policy checkpoint,
-    4) strong policy checkpoint.
+    1) weak policy checkpoint (primary acting policy reference),
+    2) sim policy checkpoint,
+    3) strong policy checkpoint.
+
+    Note: svdd_model_path is intentionally excluded from this priority list.
+    SVDD artifacts are stored as 'trained.joblib' files, which do not contain
+    a timestep in their filename and will never match the timestep extraction
+    pattern.
     """
     for path in (
-        eval_args.get("svdd_model_path"),
         eval_args.get("weak"),
         eval_args.get("sim"),
         eval_args.get("strong"),
