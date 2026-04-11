@@ -304,17 +304,58 @@ def _calibration_timestep_suffix(eval_args: dict) -> Optional[str]:
     return None
 
 
-def resolve_calibration_path(job_name: str, eval_args: dict) -> Path:
+def default_coordination_artifact_root(checkpoint_base_path: Path) -> Path:
+    """Derive a coordination-artifact root separate from acting checkpoints.
+
+    Example:
+    ``/scr/.../policy/icml`` -> ``/scr/.../coordination-policies/icml``
+    """
+    return (
+        checkpoint_base_path.parent.parent
+        / "coordination-policies"
+        / (checkpoint_base_path.name)
+    )
+
+
+def resolve_coordination_artifact_dir(
+    env: str,
+    exp_id: int,
+    method_name: str,
+    experiment_group: str,
+    *,
+    coordination_root: Path,
+) -> Path:
+    """Return the coordination-method artifact directory for one eval run.
+
+    `experiment_group` acts as the current run key so repeated runs of the same
+    env/exp/method do not collide.
+    """
+    return coordination_root / env / f"exp{exp_id}" / method_name / experiment_group
+
+
+def resolve_calibration_path(
+    env: str,
+    exp_id: int,
+    method_name: str,
+    experiment_group: str,
+    job_name: str,
+    eval_args: dict,
+    *,
+    coordination_root: Path,
+) -> Path:
     """Resolve the pre-computed calibration artifact path for an eval job."""
     suffix = _calibration_timestep_suffix(eval_args)
     suffix_part = f"_{suffix}" if suffix is not None else ""
     filename = f"{job_name}_calibration{suffix_part}.npz"
 
-    weak_ckpt = eval_args.get("weak")
-    if weak_ckpt:
-        return Path(weak_ckpt).parent / filename
-
-    return Path(filename)
+    coordination_dir = resolve_coordination_artifact_dir(
+        env,
+        exp_id,
+        method_name,
+        experiment_group,
+        coordination_root=coordination_root,
+    )
+    return coordination_dir / filename
 
 
 def _ensure_calibration_exists(job_name: str, calibration_path: Path) -> bool:
@@ -434,9 +475,7 @@ srun {slurm_args} {python_cmd}
 def _sbatch_submit(script: str, log_dir: Path) -> Optional[str]:
     """Submit an sbatch script, return the job ID string or None on failure."""
     log_dir.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(
-        ["sbatch"], input=script, text=True, capture_output=True
-    )
+    result = subprocess.run(["sbatch"], input=script, text=True, capture_output=True)
     if result.returncode == 0:
         # Output is "Submitted batch job 12345"
         job_id = result.stdout.strip().split()[-1]
@@ -504,7 +543,9 @@ def submit_parallel_bins(
     if not _ensure_calibration_exists(job_name, calibration_path):
         return
 
-    print(f"  Submitting bin array job (0-{num_bins - 1}) using calibration {calibration_path}...")
+    print(
+        f"  Submitting bin array job (0-{num_bins - 1}) using calibration {calibration_path}..."
+    )
     _sbatch_submit(bin_script, log_dir)
 
 
@@ -599,6 +640,14 @@ def main():
         default=None,
         help="Override wandb project name",
     )
+    parser.add_argument(
+        "--coordination-artifact-root",
+        default=None,
+        help=(
+            "Base directory for coordination-method artifacts. "
+            "Defaults to a sibling of the acting-policy root."
+        ),
+    )
     # Override checkpoints if needed
     parser.add_argument("--sim", help="Override sim weak checkpoint path")
     parser.add_argument("--weak", help="Override weak checkpoint path")
@@ -617,6 +666,11 @@ def main():
     checkpoint_base_path = paths["checkpoint_base"]
     seeds_base_path = paths["seeds_base"]
     svdd_base_path = paths["svdd_base"]
+    coordination_root = (
+        Path(args.coordination_artifact_root)
+        if args.coordination_artifact_root is not None
+        else default_coordination_artifact_root(Path(checkpoint_base_path))
+    )
 
     # Get config file path
     config_file = METHOD_CONFIGS[args.method]
@@ -628,6 +682,7 @@ def main():
         return 1
 
     print(f"Conda env: {args.conda_env}")
+    print(f"Coordination artifact root: {coordination_root}")
 
     # Build log directory path: base / wandb_project / prefix / date
     log_base = Path(paths["log_base"])
@@ -730,7 +785,15 @@ def main():
             "ensemble_members": ensemble_members,
             **checkpoints,
         }
-        calibration_path = resolve_calibration_path(job_name, eval_args)
+        calibration_path = resolve_calibration_path(
+            args.env,
+            exp_id,
+            method_name,
+            experiment_group,
+            job_name,
+            eval_args,
+            coordination_root=coordination_root,
+        )
         print(f"Calibration path: {calibration_path}")
 
         if args.sequential:
