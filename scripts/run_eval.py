@@ -27,11 +27,20 @@ from scripts.common import (  # noqa: E402
     get_svdd_policy_name,
     get_svdd_model_path,
 )
+from scripts.prep import (  # noqa: E402
+    build_calibration_command,
+    build_sbatch_script,
+)
 from YRC.core.artifacts import (  # noqa: E402
     default_coordination_artifact_root,
     resolve_calibration_path,
     resolve_coordination_artifact_dir,
 )
+
+# Sentinel signalling the caller should skip this experiment id entirely
+# (e.g. SVDD trained model missing).
+_SKIP_EXP = object()
+_DRY_RUN_CALIB_JOB_ID = "DRY_RUN_CALIB_JOB_ID"
 
 
 # Default conda environment
@@ -58,14 +67,82 @@ EVAL_DEFAULTS = {
 }
 
 
-def _ensure_calibration_exists(job_name: str, calibration_path: Path) -> bool:
+def _maybe_submit_calibration_job(
+    *,
+    method: str,
+    calibration_path: Path,
+    coordination_artifact_dir: Path,
+    experiment_group: str,
+    config_path: str,
+    checkpoints: dict,
+    level_seeds_file: Path,
+    cp_feature: Optional[str],
+    svdd_model_path: Optional[str],
+    ensemble_members: Optional[List[Optional[str]]],
+    conda_env: str,
+    log_dir: Path,
+    qos: str,
+    env: str,
+    exp_id: int,
+    dry_run: bool,
+):
+    """Insert a calibration job before the eval array on cache miss.
+
+    Returns one of:
+    - ``None`` on cache hit (calibration already exists; eval runs without a dep).
+    - A job ID string on successful submission (eval should depend on it).
+    - The ``_SKIP_EXP`` sentinel if this experiment id cannot be run (e.g. SVDD
+      trained model is missing) and the caller should skip it entirely.
+    """
     if calibration_path.exists():
-        return True
-    print(
-        f"  Missing calibration file for {job_name}: {calibration_path}. "
-        "Run calibrate_afhp.py with matching checkpoints first, then retry."
+        print(f"  Calibration cache hit: {calibration_path}")
+        return None
+
+    print(f"  Calibration missing at {calibration_path}")
+
+    if method in SVDD_METHODS:
+        if svdd_model_path is None or not Path(svdd_model_path).exists():
+            print(
+                f"  Error: SVDD trained model missing for exp{exp_id}. "
+                f"Run `python scripts/train_svdd.py --env {env} "
+                f"--method {method} --prefix <prefix> --exp-ids {exp_id}` first."
+            )
+            return _SKIP_EXP
+
+    file_name = "trained.joblib" if method in SVDD_METHODS else None
+
+    calibration_cmd = build_calibration_command(
+        coordination_artifact_dir,
+        experiment_group,
+        config_path,
+        checkpoints,
+        level_seeds_file,
+        feature_type=cp_feature,
+        file_name=file_name,
+        ensemble_members=ensemble_members,
     )
-    return False
+    job_name = f"{coordination_artifact_dir.name}_calib"
+    calibration_script = build_sbatch_script(
+        job_name,
+        calibration_cmd,
+        conda_env,
+        coordination_artifact_dir.parent,
+        log_dir,
+        qos=qos,
+    )
+
+    if dry_run:
+        print(f"=== Calibration job: {job_name} ===")
+        print(calibration_script)
+        return _DRY_RUN_CALIB_JOB_ID
+
+    print("  Submitting calibration job...")
+    job_id = _sbatch_submit(calibration_script, log_dir)
+    if job_id is None:
+        print(f"  Calibration submission failed for exp{exp_id}.")
+        return _SKIP_EXP
+    print(f"  Submitted calibration job {job_id}")
+    return job_id
 
 
 def _build_policy_python_args(script: str, eval_args: dict) -> List[str]:
@@ -94,7 +171,10 @@ def _build_policy_python_args(script: str, eval_args: dict) -> List[str]:
             args.append(f"    {member_path}")
     return args
 
-
+def _dependency_line(dependency_job_id: Optional[str]) -> str:
+    if dependency_job_id is None:
+        return ""
+    return f"#SBATCH --dependency=afterok:{dependency_job_id}"
 def build_bin_array_sbatch_command(
     job_name: str,
     eval_args: dict,
@@ -103,6 +183,7 @@ def build_bin_array_sbatch_command(
     calibration_path: Path,
     num_bins: int,
     qos: str = "default",
+    dependency_job_id: Optional[str] = None,
 ) -> str:
     """Build the sbatch script for the bin evaluation array job."""
     slurm_config = SLURM_CONFIG.copy()
@@ -124,6 +205,7 @@ def build_bin_array_sbatch_command(
 #SBATCH --output={log_dir}/%x_%j_%a.out
 #SBATCH --error={log_dir}/%x_%j_%a.err
 #SBATCH --array=0-{num_bins - 1}
+{_dependency_line(dependency_job_id)}
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
 
 echo "Bin $SLURM_ARRAY_TASK_ID / {num_bins} for {job_name}"
@@ -146,7 +228,6 @@ def _sbatch_submit(script: str, log_dir: Path) -> Optional[str]:
         print(f"  Failed: {result.stderr.strip()}")
         return None
 
-
 def submit_parallel_bins(
     job_name: str,
     eval_args: dict,
@@ -156,8 +237,13 @@ def submit_parallel_bins(
     num_bins: int,
     qos: str = "default",
     dry_run: bool = False,
+    dependency_job_id: Optional[str] = None,
 ) -> None:
-    """Submit a bin array AFHP evaluation job using pre-computed calibration."""
+    """Submit a bin array AFHP evaluation job.
+
+    If ``dependency_job_id`` is provided, the eval array waits for that job
+    (typically a calibrate job inserted on cache miss) via afterok.
+    """
     bin_script = build_bin_array_sbatch_command(
         job_name,
         eval_args,
@@ -166,6 +252,7 @@ def submit_parallel_bins(
         calibration_path,
         num_bins,
         qos=qos,
+        dependency_job_id=dependency_job_id,
     )
 
     if dry_run:
@@ -174,11 +261,14 @@ def submit_parallel_bins(
         print()
         return
 
-    if not _ensure_calibration_exists(job_name, calibration_path):
-        return
-
+    dep_note = (
+        f" (depends on calib job {dependency_job_id})"
+        if dependency_job_id is not None
+        else ""
+    )
     print(
-        f"  Submitting bin array job (0-{num_bins - 1}) using calibration {calibration_path}..."
+        f"  Submitting bin array job (0-{num_bins - 1}) using calibration "
+        f"{calibration_path}{dep_note}..."
     )
     _sbatch_submit(bin_script, log_dir)
 
@@ -369,7 +459,10 @@ def main():
         if args.method in SVDD_METHODS and svdd_model_path is None:
             svdd_policy_name = get_svdd_policy_name(args.env, exp_id, args.method)
             print(
-                f"Warning: exp{exp_id} SVDD model not found at {svdd_base_path}/{svdd_policy_name}/trained.joblib"
+                f"Error: exp{exp_id} SVDD model not found at "
+                f"{svdd_base_path}/{svdd_policy_name}/trained.joblib. "
+                f"Run `python scripts/train_svdd.py --env {args.env} "
+                f"--method {args.method} --prefix {args.prefix} --exp-ids {exp_id}` first."
             )
             missing = True
 
@@ -420,6 +513,32 @@ def main():
         calibration_path = resolve_calibration_path(coordination_artifact_dir)
         print(f"Calibration path: {calibration_path}")
 
+        prep_job_id = _maybe_submit_calibration_job(
+            method=args.method,
+            calibration_path=calibration_path,
+            coordination_artifact_dir=coordination_artifact_dir,
+            experiment_group=experiment_group,
+            config_path=config_path,
+            checkpoints=checkpoints,
+            level_seeds_file=level_seeds_file,
+            cp_feature=cp_feature,
+            svdd_model_path=svdd_model_path,
+            ensemble_members=ensemble_members,
+            conda_env=args.conda_env,
+            log_dir=log_dir,
+            qos=args.qos,
+            env=args.env,
+            exp_id=exp_id,
+            dry_run=args.dry_run,
+        )
+        if prep_job_id is _SKIP_EXP:
+            print(f"Skipping exp{exp_id}.\n")
+            continue
+        # prep_job_id is now None (cache hit), a real job ID, or the dry-run
+        # sentinel; all three are valid for the eval submission's
+        # dependency_job_id kwarg.
+        dependency_job_id = prep_job_id
+
         submit_parallel_bins(
             job_name=job_name,
             eval_args=eval_args,
@@ -429,6 +548,7 @@ def main():
             num_bins=args.num_bins,
             qos=args.qos,
             dry_run=args.dry_run,
+            dependency_job_id=dependency_job_id,
         )
 
     return 0
