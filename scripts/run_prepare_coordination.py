@@ -22,7 +22,8 @@ from YRC.core.artifacts import (  # noqa: E402
     resolve_calibration_path,
     resolve_coordination_artifact_dir,
 )
-from scripts.run_eval import (  # noqa: E402
+from scripts.common import (  # noqa: E402
+    DEFAULT_NUM_ENSEMBLE_MEMBERS,
     ENSEMBLE_METHODS,
     ENVS,
     METHOD_CONFIGS,
@@ -38,8 +39,6 @@ DEFAULT_CONDA_ENV = "ood-stable"
 DEFAULT_GATHER_CONFIG = "configs/procgen_gather.yaml"
 DEFAULT_TRAIN_CONFIG = "configs/procgen_ood.yaml"
 DEFAULT_NUM_ROLLOUTS = 64
-DEFAULT_NUM_ENSEMBLE_MEMBERS = 4
-
 SLURM_CONFIG = {
     "qos": "default",
     "gres": "gpu:1",

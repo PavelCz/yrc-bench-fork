@@ -4,11 +4,30 @@ Script to run evaluation jobs in parallel via SLURM sbatch.
 """
 
 import subprocess
+import sys
 from datetime import date
 from pathlib import Path
 from typing import List, Optional
 
-from YRC.core.artifacts import (
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.common import (  # noqa: E402
+    DEFAULT_NUM_ENSEMBLE_MEMBERS,
+    ENSEMBLE_METHODS,
+    ENVS,
+    METHOD_CONFIGS,
+    METHOD_NAMES,
+    SERVER_PATHS,
+    SVDD_METHODS,
+    get_env_folder,
+    get_checkpoints,
+    get_ensemble_member_paths,
+    get_svdd_policy_name,
+    get_svdd_model_path,
+)
+from YRC.core.artifacts import (  # noqa: E402
     default_coordination_artifact_root,
     resolve_calibration_path,
     resolve_coordination_artifact_dir,
@@ -37,221 +56,6 @@ EVAL_DEFAULTS = {
     "video_filter_mode": "any",
     "num_bins": 20,
 }
-
-# Server-specific paths
-SERVER_PATHS = {
-    "chai": {
-        "checkpoint_base": "/nas/ucb/czempin/data/goal-misgen/policy/icml",
-        "seeds_base": "/nas/ucb/czempin/data/goal-misgen/seeds/icml",
-        "svdd_base": "/nas/ucb/czempin/data/goal-misgen/trained_svdd",
-        "log_base": "/nas/ucb/czempin/data/goal-misgen/slurm-logs",
-    },
-    "snoopy": {
-        "checkpoint_base": "/scr/pavel/data/goal-misgen/policy/icml",
-        "seeds_base": "/scr/pavel/data/goal-misgen/seeds/icml",
-        "svdd_base": "/scr/pavel/data/goal-misgen/trained_svdd",
-        "log_base": "/scr/pavel/data/goal-misgen/slurm-logs",
-    },
-}
-
-# Environment choices
-ENVS = ["maze", "coinrun"]
-
-# Method to config file mapping
-METHOD_CONFIGS = {
-    "max-prob": "max_prob.yaml",
-    "max-logit": "max_logit.yaml",
-    "lb-random": "level_based_random.yaml",
-    "ts-random": "timestep_random.yaml",
-    "svdd-image": "image_svdd.yaml",
-    "svdd-latent": "latent_svdd.yaml",
-    "ensemble": "ensemble_variance.yaml",
-    "ensemble-single": "ensemble_variance_single.yaml",
-    "wait": "wait.yaml",
-}
-
-# Method to run name suffix mapping
-METHOD_NAMES = {
-    "max-prob": "max_prob",
-    "max-logit": "max_logit",
-    "lb-random": "lb_random",
-    "ts-random": "ts_random",
-    "svdd-image": "svdd_image",
-    "svdd-latent": "svdd_latent",
-    "ensemble": "ensemble",
-    "ensemble-single": "ensemble_single",
-    "wait": "wait",
-}
-
-# Methods that require a trained SVDD policy
-SVDD_METHODS = {"svdd-image", "svdd-latent"}
-
-# Methods that require ensemble members
-ENSEMBLE_METHODS = {"ensemble", "ensemble-single"}
-
-# Default number of ensemble members (excluding weak agent which is added automatically)
-DEFAULT_NUM_ENSEMBLE_MEMBERS = 4
-
-
-def get_env_folder(env: str) -> str:
-    """Get the environment folder name."""
-    if env == "coinrun":
-        return "coinrun"
-    else:
-        return f"{env}_afh"
-
-
-def get_svdd_feature_type(method: str) -> str:
-    """Get the SVDD feature type from method name."""
-    if method == "svdd-image":
-        return "image"
-    elif method == "svdd-latent":
-        return "latent"
-    return ""
-
-
-EXPECTED_TIMESTEPS = 200015872
-
-
-def find_newest_timestamp_dir(parent_dir: Path) -> Optional[Path]:
-    """Find the newest timestamp directory in parent_dir.
-
-    Looks for dirs matching format: YYYY-MM-DD__HH-MM-SS__seed_*
-    Returns the newest one based on the timestamp in the name.
-    Prints a warning if multiple exist.
-    """
-    if not parent_dir.exists():
-        return None
-
-    # Find all timestamp directories
-    timestamp_dirs = []
-    for d in parent_dir.iterdir():
-        if d.is_dir() and "__seed_" in d.name:
-            timestamp_dirs.append(d)
-
-    if not timestamp_dirs:
-        return None
-
-    if len(timestamp_dirs) > 1:
-        print(f"Warning: Multiple timestamp dirs in {parent_dir}, using newest:")
-        for d in sorted(timestamp_dirs, key=lambda x: x.name):
-            print(f"  - {d.name}")
-
-    # Sort by name (timestamp format sorts lexicographically)
-    newest = sorted(timestamp_dirs, key=lambda x: x.name)[-1]
-    return newest
-
-
-def find_best_model_checkpoint(ts_dir: Path) -> Optional[Path]:
-    """Find the model checkpoint with highest timesteps.
-
-    Looks for files matching format: model_*.pth
-    Returns the one with highest timesteps number.
-    Prints a warning if highest is not EXPECTED_TIMESTEPS.
-    """
-    if not ts_dir.exists():
-        return None
-
-    model_files = []
-    for f in ts_dir.iterdir():
-        if f.is_file() and f.name.startswith("model_") and f.name.endswith(".pth"):
-            stem = f.stem
-            try:
-                timesteps = int(stem.split("_", 1)[1])
-            except (IndexError, ValueError):
-                continue
-            model_files.append((timesteps, f))
-
-    if not model_files:
-        return None
-
-    # Sort by timesteps and get the highest
-    model_files.sort(key=lambda x: x[0])
-    highest_timesteps, best_model = model_files[-1]
-
-    if highest_timesteps != EXPECTED_TIMESTEPS:
-        print(
-            f"Warning: {ts_dir.name} has max timesteps {highest_timesteps}, expected {EXPECTED_TIMESTEPS}"
-        )
-
-    return best_model
-
-
-def get_checkpoints(env: str, exp_id: int, checkpoint_base_path: str) -> dict:
-    """Get checkpoint paths based on environment and experiment ID."""
-    env_folder = get_env_folder(env)
-    base_path = Path(checkpoint_base_path) / env_folder
-
-    weak_parent = base_path / f"icml2_{env}_exp{exp_id}_0p"
-    strong_parent = base_path / f"icml2_{env}_exp{exp_id}_50p"
-
-    weak_ts_dir = find_newest_timestamp_dir(weak_parent)
-    strong_ts_dir = find_newest_timestamp_dir(strong_parent)
-
-    weak_model = find_best_model_checkpoint(weak_ts_dir) if weak_ts_dir else None
-    strong_model = find_best_model_checkpoint(strong_ts_dir) if strong_ts_dir else None
-
-    weak = str(weak_model) if weak_model else str(weak_parent / "NOT_FOUND")
-    strong = str(strong_model) if strong_model else str(strong_parent / "NOT_FOUND")
-
-    return {"sim": weak, "weak": weak, "strong": strong}
-
-
-def get_svdd_policy_name(env: str, exp_id: int, method: str) -> str:
-    """Get the SVDD policy directory name."""
-    feature_type = get_svdd_feature_type(method)
-    # Format: svdd_{env}_{feature_type}_exp{id}
-    return f"svdd_{env}_{feature_type}_exp{exp_id}"
-
-
-def get_svdd_model_path(
-    env: str, exp_id: int, method: str, svdd_base_path: str
-) -> Optional[str]:
-    """Get the full path to the trained SVDD model file, or None if it doesn't exist."""
-    policy_name = get_svdd_policy_name(env, exp_id, method)
-    model_file = Path(svdd_base_path) / policy_name / "trained.joblib"
-    if model_file.exists():
-        return str(model_file)
-    return None
-
-
-def get_ensemble_member_paths(
-    env: str,
-    exp_id: int,
-    checkpoint_base_path: str,
-    num_members: int = DEFAULT_NUM_ENSEMBLE_MEMBERS,
-) -> List[Optional[str]]:
-    """Get paths to ensemble member checkpoints.
-
-    Ensemble members are stored at:
-    {checkpoint_base}/ensembles/icml2_ensemble_{env}_exp{id}_m{member_id}/...
-
-    Args:
-        env: Environment name (maze, coinrun)
-        exp_id: Experiment ID
-        checkpoint_base_path: Base path for checkpoints
-        num_members: Number of ensemble members to find
-
-    Returns:
-        List of paths to ensemble member checkpoints, or None for missing members
-    """
-    env_folder = get_env_folder(env)
-    base_path = Path(checkpoint_base_path) / env_folder / "ensembles"
-
-    member_paths = []
-    for member_id in range(num_members):
-        member_parent = base_path / f"icml2_ensemble_{env}_exp{exp_id}_m{member_id}"
-        member_ts_dir = find_newest_timestamp_dir(member_parent)
-        member_model = (
-            find_best_model_checkpoint(member_ts_dir) if member_ts_dir else None
-        )
-
-        if member_model:
-            member_paths.append(str(member_model))
-        else:
-            member_paths.append(None)
-
-    return member_paths
 
 
 def _ensure_calibration_exists(job_name: str, calibration_path: Path) -> bool:
