@@ -36,9 +36,10 @@ Train ensemble policies by running the following for `coinrun` and `maze`, for a
 ./scripts/train_ensemble_policies.sh --env heist --experiment 0
 ```
 
-Use `run_gather_results.py` to gather results for the DeepSVDD methods.
-
-Use `run_train.py` to train DeepSVDD policies.
+Use `run_prepare_coordination.py` to prepare coordination artifacts for the
+supported methods. For trainable DeepSVDD methods this submits rollout
+gathering, training, and calibration; for non-trainable methods it submits
+calibration only.
 
 Now evals can be run for all methods:
 
