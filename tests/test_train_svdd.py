@@ -88,9 +88,7 @@ class TestTrainSvddSubmitChain(unittest.TestCase):
                 mock.patch("scripts.train_svdd.Path.exists", return_value=True)
             )
             stack.enter_context(
-                mock.patch(
-                    "scripts.train_svdd.sbatch_submit", side_effect=fake_submit
-                )
+                mock.patch("scripts.train_svdd.sbatch_submit", side_effect=fake_submit)
             )
             ok = train_svdd.submit_svdd_prep_for_exp(
                 env="maze",
