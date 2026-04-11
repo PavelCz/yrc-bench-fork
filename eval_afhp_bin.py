@@ -5,7 +5,7 @@ Evaluates one bin of the AFHP space given a pre-computed calibration state.
 Designed to run as a SLURM array job with a pre-computed calibration artifact.
 
 Typical workflow:
-  # 1. Calibration job (run once after training)
+  # 1. Calibration job (run once per trained policy checkpoint after training)
   python calibrate_afhp.py --calibration_path /shared/calib.npz [...]
 
   # 2. Bin array job (one task per bin, reuses the pre-computed calibration)

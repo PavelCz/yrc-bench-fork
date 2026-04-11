@@ -13,8 +13,8 @@ class TestCalibrationPathNaming(unittest.TestCase):
     def test_uses_checkpoint_parent_and_timestep_suffix(self):
         eval_args = {
             "weak": "/tmp/checkpoints/model_200015872.pth",
-            "sim": "/tmp/checkpoints/model_200015872.pth",
-            "strong": "/tmp/checkpoints/model_200015872.pth",
+            "sim": "/tmp/checkpoints/model_100000.pth",
+            "strong": "/tmp/checkpoints/model_300000.pth",
             "svdd_model_path": None,
         }
 
@@ -38,6 +38,36 @@ class TestCalibrationPathNaming(unittest.TestCase):
         self.assertEqual(
             path,
             Path("/tmp/checkpoints/maze_wait_exp3_calibration.npz"),
+        )
+
+    def test_prefers_svdd_timestep_when_available(self):
+        eval_args = {
+            "weak": "/tmp/checkpoints/model_100000.pth",
+            "sim": "/tmp/checkpoints/model_110000.pth",
+            "strong": "/tmp/checkpoints/model_120000.pth",
+            "svdd_model_path": "/tmp/checkpoints/model_900000.pth",
+        }
+
+        path = resolve_calibration_path("maze_svdd_latent_exp2", eval_args)
+
+        self.assertEqual(
+            path,
+            Path("/tmp/checkpoints/maze_svdd_latent_exp2_calibration_900k.npz"),
+        )
+
+    def test_formats_exact_tens_of_millions_correctly(self):
+        eval_args = {
+            "weak": "/tmp/checkpoints/model_10000000.pth",
+            "sim": "/tmp/checkpoints/model_1000.pth",
+            "strong": "/tmp/checkpoints/model_1000.pth",
+            "svdd_model_path": None,
+        }
+
+        path = resolve_calibration_path("maze_max_prob_exp9", eval_args)
+
+        self.assertEqual(
+            path,
+            Path("/tmp/checkpoints/maze_max_prob_exp9_calibration_10M.npz"),
         )
 
 

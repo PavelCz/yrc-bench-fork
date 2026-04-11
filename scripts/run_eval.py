@@ -87,6 +87,10 @@ ENSEMBLE_METHODS = {"ensemble", "ensemble-single"}
 # Default number of ensemble members (excluding weak agent which is added automatically)
 DEFAULT_NUM_ENSEMBLE_MEMBERS = 4
 
+CHECKPOINT_TIMESTEP_PATTERN = re.compile(r"model_(\d+)\.(?:pth|ckpt)$")
+THOUSAND = 1_000
+MILLION = 1_000_000
+
 
 def get_env_folder(env: str) -> str:
     """Get the environment folder name."""
@@ -253,7 +257,7 @@ def _extract_timestep_from_path(path: Optional[str]) -> Optional[int]:
         return None
 
     name = Path(path).name
-    match = re.search(r"model_(\d+)\.(?:pth|ckpt)$", name)
+    match = CHECKPOINT_TIMESTEP_PATTERN.search(name)
     if match:
         return int(match.group(1))
     return None
@@ -263,15 +267,31 @@ def _format_timestep_suffix(timestep: Optional[int]) -> Optional[str]:
     """Format timestep into a short readable suffix (e.g. 200k, 10M)."""
     if timestep is None:
         return None
-    if timestep >= 1_000_000:
-        return f"{round(timestep / 1_000_000)}M"
-    if timestep >= 1_000:
-        return f"{round(timestep / 1_000)}k"
-    return str(timestep)
+    if timestep >= MILLION:
+        value = timestep / MILLION
+        unit = "M"
+    elif timestep >= THOUSAND:
+        value = timestep / THOUSAND
+        unit = "k"
+    else:
+        return str(timestep)
+
+    if float(value).is_integer():
+        formatted = str(int(value))
+    else:
+        formatted = f"{value:.1f}".rstrip("0").rstrip(".")
+    return f"{formatted}{unit}"
 
 
 def _calibration_timestep_suffix(eval_args: dict) -> Optional[str]:
-    """Pick a representative timestep suffix from relevant policy checkpoints."""
+    """Pick a representative timestep suffix from relevant policy checkpoints.
+
+    Priority order:
+    1) svdd_model_path (coordination policy checkpoint, when method uses it),
+    2) weak policy checkpoint (primary acting policy reference),
+    3) sim policy checkpoint,
+    4) strong policy checkpoint.
+    """
     for path in (
         eval_args.get("svdd_model_path"),
         eval_args.get("weak"),
@@ -287,15 +307,24 @@ def _calibration_timestep_suffix(eval_args: dict) -> Optional[str]:
 def resolve_calibration_path(job_name: str, eval_args: dict) -> Path:
     """Resolve the pre-computed calibration artifact path for an eval job."""
     suffix = _calibration_timestep_suffix(eval_args)
-    filename = f"{job_name}_calibration.npz"
-    if suffix is not None:
-        filename = f"{job_name}_calibration_{suffix}.npz"
+    suffix_part = f"_{suffix}" if suffix is not None else ""
+    filename = f"{job_name}_calibration{suffix_part}.npz"
 
     weak_ckpt = eval_args.get("weak")
     if weak_ckpt:
         return Path(weak_ckpt).parent / filename
 
     return Path(filename)
+
+
+def _ensure_calibration_exists(job_name: str, calibration_path: Path) -> bool:
+    if calibration_path.exists():
+        return True
+    print(
+        f"  Missing calibration file for {job_name}: {calibration_path}. "
+        "Run calibrate_afhp.py with matching checkpoints first, then retry."
+    )
+    return False
 
 
 def _build_policy_python_args(script: str, eval_args: dict) -> List[str]:
@@ -438,11 +467,7 @@ def submit_sequential_eval(
         print()
         return
 
-    if not calibration_path.exists():
-        print(
-            f"  Missing calibration file for {job_name}: {calibration_path}. "
-            "Skipping submission."
-        )
+    if not _ensure_calibration_exists(job_name, calibration_path):
         return
 
     print(f"  Submitting sequential eval job using calibration {calibration_path}...")
@@ -476,11 +501,7 @@ def submit_parallel_bins(
         print()
         return
 
-    if not calibration_path.exists():
-        print(
-            f"  Missing calibration file for {job_name}: {calibration_path}. "
-            "Skipping submission."
-        )
+    if not _ensure_calibration_exists(job_name, calibration_path):
         return
 
     print(f"  Submitting bin array job (0-{num_bins - 1}) using calibration {calibration_path}...")
