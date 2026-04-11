@@ -3,11 +3,16 @@
 Script to run evaluation jobs in parallel via SLURM sbatch.
 """
 
-import re
 import subprocess
 from datetime import date
 from pathlib import Path
 from typing import List, Optional
+
+from YRC.core.artifacts import (
+    default_coordination_artifact_root,
+    resolve_calibration_path,
+    resolve_coordination_artifact_dir,
+)
 
 
 # Default conda environment
@@ -87,10 +92,6 @@ ENSEMBLE_METHODS = {"ensemble", "ensemble-single"}
 # Default number of ensemble members (excluding weak agent which is added automatically)
 DEFAULT_NUM_ENSEMBLE_MEMBERS = 4
 
-CHECKPOINT_TIMESTEP_PATTERN = re.compile(r"model_(\d+)\.(?:pth|ckpt)$")
-THOUSAND = 1_000
-MILLION = 1_000_000
-
 
 def get_env_folder(env: str) -> str:
     """Get the environment folder name."""
@@ -154,10 +155,12 @@ def find_best_model_checkpoint(ts_dir: Path) -> Optional[Path]:
     model_files = []
     for f in ts_dir.iterdir():
         if f.is_file() and f.name.startswith("model_") and f.name.endswith(".pth"):
-            match = re.match(r"model_(\d+)\.pth", f.name)
-            if match:
-                timesteps = int(match.group(1))
-                model_files.append((timesteps, f))
+            stem = f.stem
+            try:
+                timesteps = int(stem.split("_", 1)[1])
+            except (IndexError, ValueError):
+                continue
+            model_files.append((timesteps, f))
 
     if not model_files:
         return None
@@ -249,113 +252,6 @@ def get_ensemble_member_paths(
             member_paths.append(None)
 
     return member_paths
-
-
-def _extract_timestep_from_path(path: Optional[str]) -> Optional[int]:
-    """Extract timestep from checkpoint-like filenames (e.g. model_200000.pth)."""
-    if not path:
-        return None
-
-    name = Path(path).name
-    match = CHECKPOINT_TIMESTEP_PATTERN.search(name)
-    if match:
-        return int(match.group(1))
-    return None
-
-
-def _format_timestep_suffix(timestep: Optional[int]) -> Optional[str]:
-    """Format timestep into a short readable suffix (e.g. 200k, 10M)."""
-    if timestep is None:
-        return None
-    if timestep >= MILLION:
-        value = timestep / MILLION
-        unit = "M"
-    elif timestep >= THOUSAND:
-        value = timestep / THOUSAND
-        unit = "k"
-    else:
-        return str(timestep)
-
-    if float(value).is_integer():
-        formatted = str(int(value))
-    else:
-        formatted = f"{value:.1f}".rstrip("0").rstrip(".")
-    return f"{formatted}{unit}"
-
-
-def _calibration_timestep_suffix(eval_args: dict) -> Optional[str]:
-    """Pick a representative timestep suffix from relevant policy checkpoints.
-
-    Priority order:
-    1) svdd_model_path (coordination policy checkpoint, when method uses it),
-    2) weak policy checkpoint (primary acting policy reference),
-    3) sim policy checkpoint,
-    4) strong policy checkpoint.
-    """
-    for path in (
-        eval_args.get("svdd_model_path"),
-        eval_args.get("weak"),
-        eval_args.get("sim"),
-        eval_args.get("strong"),
-    ):
-        timestep = _extract_timestep_from_path(path)
-        if timestep is not None:
-            return _format_timestep_suffix(timestep)
-    return None
-
-
-def default_coordination_artifact_root(checkpoint_base_path: Path) -> Path:
-    """Derive a coordination-artifact root separate from acting checkpoints.
-
-    Example:
-    ``/scr/.../policy/icml`` -> ``/scr/.../coordination-policies/icml``
-    """
-    return (
-        checkpoint_base_path.parent.parent
-        / "coordination-policies"
-        / (checkpoint_base_path.name)
-    )
-
-
-def resolve_coordination_artifact_dir(
-    env: str,
-    exp_id: int,
-    method_name: str,
-    experiment_group: str,
-    *,
-    coordination_root: Path,
-) -> Path:
-    """Return the coordination-method artifact directory for one eval run.
-
-    `experiment_group` acts as the current run key so repeated runs of the same
-    env/exp/method do not collide.
-    """
-    return coordination_root / env / f"exp{exp_id}" / method_name / experiment_group
-
-
-def resolve_calibration_path(
-    env: str,
-    exp_id: int,
-    method_name: str,
-    experiment_group: str,
-    job_name: str,
-    eval_args: dict,
-    *,
-    coordination_root: Path,
-) -> Path:
-    """Resolve the pre-computed calibration artifact path for an eval job."""
-    suffix = _calibration_timestep_suffix(eval_args)
-    suffix_part = f"_{suffix}" if suffix is not None else ""
-    filename = f"{job_name}_calibration{suffix_part}.npz"
-
-    coordination_dir = resolve_coordination_artifact_dir(
-        env,
-        exp_id,
-        method_name,
-        experiment_group,
-        coordination_root=coordination_root,
-    )
-    return coordination_dir / filename
 
 
 def _ensure_calibration_exists(job_name: str, calibration_path: Path) -> bool:
@@ -785,15 +681,14 @@ def main():
             "ensemble_members": ensemble_members,
             **checkpoints,
         }
-        calibration_path = resolve_calibration_path(
+        coordination_artifact_dir = resolve_coordination_artifact_dir(
             args.env,
             exp_id,
             method_name,
             experiment_group,
-            job_name,
-            eval_args,
             coordination_root=coordination_root,
         )
+        calibration_path = resolve_calibration_path(coordination_artifact_dir)
         print(f"Calibration path: {calibration_path}")
 
         if args.sequential:
