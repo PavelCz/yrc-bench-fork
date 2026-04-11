@@ -31,7 +31,7 @@ def main():
 
     runtime.close_envs()
     calibration_path.parent.mkdir(parents=True, exist_ok=True)
-    save_calibration_state(runtime.policy, calibration_path)
+    save_calibration_state(runtime.policy, calibration_path, config)
     print(f"Calibration state saved to: {calibration_path}")
     print(f"Time taken: {time.time() - start_time:.1f}s")
 

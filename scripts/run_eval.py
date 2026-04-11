@@ -3,7 +3,6 @@
 Script to run evaluation jobs in parallel via SLURM sbatch.
 """
 
-import os
 import re
 import subprocess
 from datetime import date
@@ -248,6 +247,57 @@ def get_ensemble_member_paths(
     return member_paths
 
 
+def _extract_timestep_from_path(path: Optional[str]) -> Optional[int]:
+    """Extract timestep from checkpoint-like filenames (e.g. model_200000.pth)."""
+    if not path:
+        return None
+
+    name = Path(path).name
+    match = re.search(r"model_(\d+)\.(?:pth|ckpt)$", name)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def _format_timestep_suffix(timestep: Optional[int]) -> Optional[str]:
+    """Format timestep into a short readable suffix (e.g. 200k, 10M)."""
+    if timestep is None:
+        return None
+    if timestep >= 1_000_000:
+        return f"{round(timestep / 1_000_000)}M"
+    if timestep >= 1_000:
+        return f"{round(timestep / 1_000)}k"
+    return str(timestep)
+
+
+def _calibration_timestep_suffix(eval_args: dict) -> Optional[str]:
+    """Pick a representative timestep suffix from relevant policy checkpoints."""
+    for path in (
+        eval_args.get("svdd_model_path"),
+        eval_args.get("weak"),
+        eval_args.get("sim"),
+        eval_args.get("strong"),
+    ):
+        timestep = _extract_timestep_from_path(path)
+        if timestep is not None:
+            return _format_timestep_suffix(timestep)
+    return None
+
+
+def resolve_calibration_path(job_name: str, eval_args: dict) -> Path:
+    """Resolve the pre-computed calibration artifact path for an eval job."""
+    suffix = _calibration_timestep_suffix(eval_args)
+    filename = f"{job_name}_calibration.npz"
+    if suffix is not None:
+        filename = f"{job_name}_calibration_{suffix}.npz"
+
+    weak_ckpt = eval_args.get("weak")
+    if weak_ckpt:
+        return Path(weak_ckpt).parent / filename
+
+    return Path(filename)
+
+
 def _build_policy_python_args(script: str, eval_args: dict) -> List[str]:
     """Build the python args shared across all job types (policy loading, env setup)."""
     args = [
@@ -281,7 +331,6 @@ def build_sequential_eval_sbatch_command(
     conda_env: str,
     log_dir: Path,
     calibration_path: Path,
-    dep_job_id: str,
     qos: str = "default",
 ) -> str:
     """Build the sbatch script for a sequential AFHP evaluation job."""
@@ -305,7 +354,6 @@ def build_sequential_eval_sbatch_command(
 #SBATCH --job-name={job_name}_seq
 #SBATCH --output={log_dir}/%x_%j.out
 #SBATCH --error={log_dir}/%x_%j.err
-#SBATCH --dependency=afterok:{dep_job_id}
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
 
 echo "Using conda env: {conda_env}"
@@ -316,38 +364,6 @@ srun {slurm_args} {python_cmd}
     return sbatch_script
 
 
-def build_calibration_sbatch_command(
-    job_name: str,
-    eval_args: dict,
-    conda_env: str,
-    log_dir: Path,
-    calibration_path: Path,
-    qos: str = "default",
-) -> str:
-    """Build the sbatch script for the calibration-only job."""
-    slurm_config = SLURM_CONFIG.copy()
-    slurm_config["qos"] = qos
-    slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
-
-    python_args = _build_policy_python_args("calibrate_afhp.py", eval_args)
-    python_args += [
-        f"--calibration_path {calibration_path}",
-    ]
-    python_cmd = " ".join(python_args)
-
-    return f"""#!/bin/bash
-#SBATCH --job-name={job_name}_calib
-#SBATCH --output={log_dir}/%x_%j.out
-#SBATCH --error={log_dir}/%x_%j.err
-{chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
-
-echo "Calibration job for {job_name}"
-eval "$(conda shell.bash hook)"
-conda activate {conda_env}
-srun {slurm_args} {python_cmd}
-"""
-
-
 def build_bin_array_sbatch_command(
     job_name: str,
     eval_args: dict,
@@ -355,7 +371,6 @@ def build_bin_array_sbatch_command(
     log_dir: Path,
     calibration_path: Path,
     num_bins: int,
-    dep_job_id: str,
     qos: str = "default",
 ) -> str:
     """Build the sbatch script for the bin evaluation array job."""
@@ -378,7 +393,6 @@ def build_bin_array_sbatch_command(
 #SBATCH --output={log_dir}/%x_%j_%a.out
 #SBATCH --error={log_dir}/%x_%j_%a.err
 #SBATCH --array=0-{num_bins - 1}
-#SBATCH --dependency=afterok:{dep_job_id}
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
 
 echo "Bin $SLURM_ARRAY_TASK_ID / {num_bins} for {job_name}"
@@ -409,48 +423,29 @@ def submit_sequential_eval(
     eval_args: dict,
     conda_env: str,
     log_dir: Path,
+    calibration_path: Path,
     qos: str = "default",
     dry_run: bool = False,
 ) -> None:
-    """Submit calibration job + sequential evaluation job with SLURM dependency."""
-    calibration_path = log_dir / f"{job_name}_calibration.npz"
-    calib_script = build_calibration_sbatch_command(
-        job_name, eval_args, conda_env, log_dir, calibration_path, qos
-    )
-    seq_script_template = build_sequential_eval_sbatch_command(
-        job_name,
-        eval_args,
-        conda_env,
-        log_dir,
-        calibration_path,
-        dep_job_id="CALIB_JOB_ID",
-        qos=qos,
+    """Submit a sequential AFHP evaluation job using pre-computed calibration."""
+    seq_script = build_sequential_eval_sbatch_command(
+        job_name, eval_args, conda_env, log_dir, calibration_path, qos=qos
     )
 
     if dry_run:
-        print(f"=== Calibration job: {job_name}_calib ===")
-        print(calib_script)
         print(f"=== Sequential eval job: {job_name}_seq ===")
-        print(seq_script_template.replace("CALIB_JOB_ID", "<calib_job_id>"))
+        print(seq_script)
         print()
         return
 
-    print("  Submitting calibration job...")
-    calib_job_id = _sbatch_submit(calib_script, log_dir)
-    if calib_job_id is None:
-        print(f"  Aborting sequential eval submission for {job_name}.")
+    if not calibration_path.exists():
+        print(
+            f"  Missing calibration file for {job_name}: {calibration_path}. "
+            "Skipping submission."
+        )
         return
 
-    seq_script = build_sequential_eval_sbatch_command(
-        job_name,
-        eval_args,
-        conda_env,
-        log_dir,
-        calibration_path,
-        dep_job_id=calib_job_id,
-        qos=qos,
-    )
-    print(f"  Submitting sequential eval job (depends on {calib_job_id})...")
+    print(f"  Submitting sequential eval job using calibration {calibration_path}...")
     _sbatch_submit(seq_script, log_dir)
 
 
@@ -459,48 +454,36 @@ def submit_parallel_bins(
     eval_args: dict,
     conda_env: str,
     log_dir: Path,
+    calibration_path: Path,
     num_bins: int,
     qos: str = "default",
     dry_run: bool = False,
 ) -> None:
-    """Submit calibration job + bin array job with SLURM dependency.
-
-    The calibration job runs calibrate_afhp.py and saves the policy's
-    calibration state to disk. The bin array job (one task per bin)
-    depends on the calibration job and runs eval_afhp_bin.py for each bin.
-    Per-bin checkpoints are saved to log_dir/{job_name}_bin_N.npz.
-    """
-    calibration_path = log_dir / f"{job_name}_calibration.npz"
-
-    calib_script = build_calibration_sbatch_command(
-        job_name, eval_args, conda_env, log_dir, calibration_path, qos
-    )
-    bin_script_template = build_bin_array_sbatch_command(
-        job_name, eval_args, conda_env, log_dir, calibration_path, num_bins,
-        dep_job_id="CALIB_JOB_ID",  # placeholder replaced below
+    """Submit a bin array AFHP evaluation job using pre-computed calibration."""
+    bin_script = build_bin_array_sbatch_command(
+        job_name,
+        eval_args,
+        conda_env,
+        log_dir,
+        calibration_path,
+        num_bins,
         qos=qos,
     )
 
     if dry_run:
-        print(f"=== Calibration job: {job_name}_calib ===")
-        print(calib_script)
         print(f"=== Bin array job: {job_name}_bin (0-{num_bins - 1}) ===")
-        print(bin_script_template.replace("CALIB_JOB_ID", "<calib_job_id>"))
+        print(bin_script)
         print()
         return
 
-    print(f"  Submitting calibration job...")
-    calib_job_id = _sbatch_submit(calib_script, log_dir)
-    if calib_job_id is None:
-        print(f"  Aborting bin array submission for {job_name}.")
+    if not calibration_path.exists():
+        print(
+            f"  Missing calibration file for {job_name}: {calibration_path}. "
+            "Skipping submission."
+        )
         return
 
-    bin_script = build_bin_array_sbatch_command(
-        job_name, eval_args, conda_env, log_dir, calibration_path, num_bins,
-        dep_job_id=calib_job_id,
-        qos=qos,
-    )
-    print(f"  Submitting bin array job (0-{num_bins - 1}, depends on {calib_job_id})...")
+    print(f"  Submitting bin array job (0-{num_bins - 1}) using calibration {calibration_path}...")
     _sbatch_submit(bin_script, log_dir)
 
 
@@ -585,9 +568,9 @@ def main():
         "--sequential",
         action="store_true",
         help=(
-            "Submit a calibration job followed by a single sequential AFHP eval job. "
-            "By default, a calibration job is submitted first, followed by a "
-            "SLURM array of --num-bins bin jobs that depend on it."
+            "Submit a single sequential AFHP eval job that reuses a pre-computed "
+            "calibration file. By default, submits a SLURM array of --num-bins bin "
+            "jobs using the same calibration file."
         ),
     )
     parser.add_argument(
@@ -726,6 +709,8 @@ def main():
             "ensemble_members": ensemble_members,
             **checkpoints,
         }
+        calibration_path = resolve_calibration_path(job_name, eval_args)
+        print(f"Calibration path: {calibration_path}")
 
         if args.sequential:
             submit_sequential_eval(
@@ -733,6 +718,7 @@ def main():
                 eval_args,
                 args.conda_env,
                 log_dir,
+                calibration_path,
                 args.qos,
                 dry_run=args.dry_run,
             )
@@ -742,6 +728,7 @@ def main():
                 eval_args=eval_args,
                 conda_env=args.conda_env,
                 log_dir=log_dir,
+                calibration_path=calibration_path,
                 num_bins=args.num_bins,
                 qos=args.qos,
                 dry_run=args.dry_run,
