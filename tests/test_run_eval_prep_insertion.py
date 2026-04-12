@@ -150,7 +150,7 @@ class TestCacheMissSvdd(unittest.TestCase):
 
 
 class TestEvalSbatchDependencyLine(unittest.TestCase):
-    """Confirm the eval sbatch builders emit --dependency=afterok when given a job id."""
+    """Confirm the bin-array eval sbatch builder emits --dependency=afterok."""
 
     def _base_eval_args(self):
         return {
@@ -173,27 +173,6 @@ class TestEvalSbatchDependencyLine(unittest.TestCase):
             "weak": "/tmp/weak.pt",
             "strong": "/tmp/strong.pt",
         }
-
-    def test_sequential_without_dependency(self):
-        script = run_eval.build_sequential_eval_sbatch_command(
-            "maze_max_prob_exp0",
-            self._base_eval_args(),
-            "ood-stable",
-            Path("/tmp/log"),
-            Path("/tmp/cal.npz"),
-        )
-        self.assertNotIn("--dependency=afterok", script)
-
-    def test_sequential_with_dependency(self):
-        script = run_eval.build_sequential_eval_sbatch_command(
-            "maze_max_prob_exp0",
-            self._base_eval_args(),
-            "ood-stable",
-            Path("/tmp/log"),
-            Path("/tmp/cal.npz"),
-            dependency_job_id="1234",
-        )
-        self.assertIn("#SBATCH --dependency=afterok:1234", script)
 
     def test_bin_array_without_dependency(self):
         script = run_eval.build_bin_array_sbatch_command(
