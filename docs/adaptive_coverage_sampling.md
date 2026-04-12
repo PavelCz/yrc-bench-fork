@@ -11,7 +11,7 @@ The goal is to efficiently sample enough thresholds to produce a well-covered cu
 ```
 scripts/run_eval.py
   → calibrate_afhp.py
-  → eval_afhp_seq.py / eval_afhp_bin.py
+  → eval_afhp_bin.py
     → YRC/coverage/coverage_search.py  (creates sampler + callbacks)
       → lib/acs/src/acs/sampler.py     (BinarySearchSampler)
         → YRC/core/evaluator.py        (runs episodes per threshold)
@@ -22,7 +22,7 @@ scripts/run_eval.py
 | Parameter | Default | Set In | Meaning |
 |---|---|---|---|
 | `coverage_fraction` | 0.05 | `scripts/run_eval.py` | Max normalized neighbor gap allowed on output axis |
-| `max_total_evals` | 200 | `eval_afhp_seq.py` / `eval_afhp_bin.py` | Hard budget of evaluations |
+| `max_total_evals` | 200 | bin-eval worker path | Hard budget of evaluations |
 | `num_levels` | 5000 | `scripts/run_eval.py` | Episodes per evaluation |
 | `threshold_sampler` | `"step_afhp"` | Config YAML | Which output axis to cover (`"step_afhp"` or `"level_afhp"`) |
 

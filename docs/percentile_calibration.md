@@ -34,7 +34,7 @@ Not all policies support both. Unsupported variants raise `NotImplementedError`.
 
 ## Calibration Data
 
-Calibration happens in `calibrate_afhp.py`, before `eval_afhp_seq.py` or `eval_afhp_bin.py` runs the sampler. The data comes from the fixed calibration environment (`"cal"`), which uses held-out validation seeds from the same ID distribution.
+Calibration happens in `calibrate_afhp.py`, before `eval_afhp_bin.py` runs the sampler. The data comes from the fixed calibration environment (`"cal"`), which uses held-out validation seeds from the same ID distribution.
 
 There are two calibration mechanisms depending on the policy type:
 

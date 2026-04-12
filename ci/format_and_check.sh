@@ -14,7 +14,6 @@ SRC_FILES=(
     "YRC/core/eval_setup.py"
     "YRC/coverage/coverage_search.py"
     "calibrate_afhp.py"
-    "eval_afhp_seq.py"
     "eval_afhp_bin.py"
     "eval_policy.py"
     "YRC/policies/mahalanobis_ae.py"

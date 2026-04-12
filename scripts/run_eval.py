@@ -95,45 +95,6 @@ def _build_policy_python_args(script: str, eval_args: dict) -> List[str]:
     return args
 
 
-def build_sequential_eval_sbatch_command(
-    job_name: str,
-    eval_args: dict,
-    conda_env: str,
-    log_dir: Path,
-    calibration_path: Path,
-    qos: str = "default",
-) -> str:
-    """Build the sbatch script for a sequential AFHP evaluation job."""
-    slurm_config = SLURM_CONFIG.copy()
-    slurm_config["qos"] = qos
-    slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
-
-    python_args = _build_policy_python_args("eval_afhp_seq.py", eval_args)
-    python_args += [
-        f"--calibration_path {calibration_path}",
-        f"-video_episodes_to_collect {eval_args['video_episodes_to_collect']}",
-        f"-video_filter {eval_args['video_filter']}",
-        f"-cp_rolling_average {eval_args['cp_rolling_average']}",
-        f"-video_logging_mode={eval_args['video_logging_mode']}",
-        f"-video_filter_mode={eval_args['video_filter_mode']}",
-        f"-num_bins {eval_args['num_bins']}",
-    ]
-    python_cmd = " ".join(python_args)
-
-    sbatch_script = f"""#!/bin/bash
-#SBATCH --job-name={job_name}_seq
-#SBATCH --output={log_dir}/%x_%j.out
-#SBATCH --error={log_dir}/%x_%j.err
-{chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
-
-echo "Using conda env: {conda_env}"
-eval "$(conda shell.bash hook)"
-conda activate {conda_env}
-srun {slurm_args} {python_cmd}
-"""
-    return sbatch_script
-
-
 def build_bin_array_sbatch_command(
     job_name: str,
     eval_args: dict,
@@ -184,33 +145,6 @@ def _sbatch_submit(script: str, log_dir: Path) -> Optional[str]:
     else:
         print(f"  Failed: {result.stderr.strip()}")
         return None
-
-
-def submit_sequential_eval(
-    job_name: str,
-    eval_args: dict,
-    conda_env: str,
-    log_dir: Path,
-    calibration_path: Path,
-    qos: str = "default",
-    dry_run: bool = False,
-) -> None:
-    """Submit a sequential AFHP evaluation job using pre-computed calibration."""
-    seq_script = build_sequential_eval_sbatch_command(
-        job_name, eval_args, conda_env, log_dir, calibration_path, qos=qos
-    )
-
-    if dry_run:
-        print(f"=== Sequential eval job: {job_name}_seq ===")
-        print(seq_script)
-        print()
-        return
-
-    if not _ensure_calibration_exists(job_name, calibration_path):
-        return
-
-    print(f"  Submitting sequential eval job using calibration {calibration_path}...")
-    _sbatch_submit(seq_script, log_dir)
 
 
 def submit_parallel_bins(
@@ -325,15 +259,6 @@ def main():
         type=int,
         default=EVAL_DEFAULTS["num_bins"],
         help=f"Number of AFHP bins to evaluate (default: {EVAL_DEFAULTS['num_bins']})",
-    )
-    parser.add_argument(
-        "--sequential",
-        action="store_true",
-        help=(
-            "Submit a single sequential AFHP eval job that reuses a pre-computed "
-            "calibration file. By default, submits a SLURM array of --num-bins bin "
-            "jobs using the same calibration file."
-        ),
     )
     parser.add_argument(
         "--wandb-project",
@@ -495,27 +420,16 @@ def main():
         calibration_path = resolve_calibration_path(coordination_artifact_dir)
         print(f"Calibration path: {calibration_path}")
 
-        if args.sequential:
-            submit_sequential_eval(
-                job_name,
-                eval_args,
-                args.conda_env,
-                log_dir,
-                calibration_path,
-                args.qos,
-                dry_run=args.dry_run,
-            )
-        else:
-            submit_parallel_bins(
-                job_name=job_name,
-                eval_args=eval_args,
-                conda_env=args.conda_env,
-                log_dir=log_dir,
-                calibration_path=calibration_path,
-                num_bins=args.num_bins,
-                qos=args.qos,
-                dry_run=args.dry_run,
-            )
+        submit_parallel_bins(
+            job_name=job_name,
+            eval_args=eval_args,
+            conda_env=args.conda_env,
+            log_dir=log_dir,
+            calibration_path=calibration_path,
+            num_bins=args.num_bins,
+            qos=args.qos,
+            dry_run=args.dry_run,
+        )
 
     return 0
 

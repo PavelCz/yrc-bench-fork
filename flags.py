@@ -359,8 +359,7 @@ def make():
         default=None,
         help=(
             "Path to calibration state (.npz). Used as an output by "
-            "calibrate_afhp.py and as an input by eval_afhp_seq.py / "
-            "eval_afhp_bin.py."
+            "calibrate_afhp.py and as an input by eval_afhp_bin.py."
         ),
     )
     parser.add_argument(
