@@ -3,12 +3,44 @@
 Script to run evaluation jobs in parallel via SLURM sbatch.
 """
 
-import os
-import re
 import subprocess
+import sys
 from datetime import date
 from pathlib import Path
 from typing import List, Optional
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.common import (  # noqa: E402
+    DEFAULT_NUM_ENSEMBLE_MEMBERS,
+    ENSEMBLE_METHODS,
+    ENVS,
+    METHOD_CONFIGS,
+    METHOD_NAMES,
+    SERVER_PATHS,
+    SVDD_METHODS,
+    get_env_folder,
+    get_checkpoints,
+    get_ensemble_member_paths,
+    get_svdd_policy_name,
+    get_svdd_model_path,
+)
+from scripts.prep import (  # noqa: E402
+    build_calibration_command,
+    build_sbatch_script,
+)
+from YRC.core.artifacts import (  # noqa: E402
+    default_coordination_artifact_root,
+    resolve_calibration_path,
+    resolve_coordination_artifact_dir,
+)
+
+# Sentinel signalling the caller should skip this experiment id entirely
+# (e.g. SVDD trained model missing).
+_SKIP_EXP = object()
+_DRY_RUN_CALIB_JOB_ID = "DRY_RUN_CALIB_JOB_ID"
 
 
 # Default conda environment
@@ -34,218 +66,83 @@ EVAL_DEFAULTS = {
     "num_bins": 20,
 }
 
-# Server-specific paths
-SERVER_PATHS = {
-    "chai": {
-        "checkpoint_base": "/nas/ucb/czempin/data/goal-misgen/policy/icml",
-        "seeds_base": "/nas/ucb/czempin/data/goal-misgen/seeds/icml",
-        "svdd_base": "/nas/ucb/czempin/data/goal-misgen/trained_svdd",
-        "log_base": "/nas/ucb/czempin/data/goal-misgen/slurm-logs",
-    },
-    "snoopy": {
-        "checkpoint_base": "/scr/pavel/data/goal-misgen/policy/icml",
-        "seeds_base": "/scr/pavel/data/goal-misgen/seeds/icml",
-        "svdd_base": "/scr/pavel/data/goal-misgen/trained_svdd",
-        "log_base": "/scr/pavel/data/goal-misgen/slurm-logs",
-    },
-}
 
-# Environment choices
-ENVS = ["maze", "coinrun"]
-
-# Method to config file mapping
-METHOD_CONFIGS = {
-    "max-prob": "max_prob.yaml",
-    "max-logit": "max_logit.yaml",
-    "lb-random": "level_based_random.yaml",
-    "ts-random": "timestep_random.yaml",
-    "svdd-image": "image_svdd.yaml",
-    "svdd-latent": "latent_svdd.yaml",
-    "ensemble": "ensemble_variance.yaml",
-    "ensemble-single": "ensemble_variance_single.yaml",
-    "wait": "wait.yaml",
-}
-
-# Method to run name suffix mapping
-METHOD_NAMES = {
-    "max-prob": "max_prob",
-    "max-logit": "max_logit",
-    "lb-random": "lb_random",
-    "ts-random": "ts_random",
-    "svdd-image": "svdd_image",
-    "svdd-latent": "svdd_latent",
-    "ensemble": "ensemble",
-    "ensemble-single": "ensemble_single",
-    "wait": "wait",
-}
-
-# Methods that require a trained SVDD policy
-SVDD_METHODS = {"svdd-image", "svdd-latent"}
-
-# Methods that require ensemble members
-ENSEMBLE_METHODS = {"ensemble", "ensemble-single"}
-
-# Default number of ensemble members (excluding weak agent which is added automatically)
-DEFAULT_NUM_ENSEMBLE_MEMBERS = 4
-
-
-def get_env_folder(env: str) -> str:
-    """Get the environment folder name."""
-    if env == "coinrun":
-        return "coinrun"
-    else:
-        return f"{env}_afh"
-
-
-def get_svdd_feature_type(method: str) -> str:
-    """Get the SVDD feature type from method name."""
-    if method == "svdd-image":
-        return "image"
-    elif method == "svdd-latent":
-        return "latent"
-    return ""
-
-
-EXPECTED_TIMESTEPS = 200015872
-
-
-def find_newest_timestamp_dir(parent_dir: Path) -> Optional[Path]:
-    """Find the newest timestamp directory in parent_dir.
-
-    Looks for dirs matching format: YYYY-MM-DD__HH-MM-SS__seed_*
-    Returns the newest one based on the timestamp in the name.
-    Prints a warning if multiple exist.
-    """
-    if not parent_dir.exists():
-        return None
-
-    # Find all timestamp directories
-    timestamp_dirs = []
-    for d in parent_dir.iterdir():
-        if d.is_dir() and "__seed_" in d.name:
-            timestamp_dirs.append(d)
-
-    if not timestamp_dirs:
-        return None
-
-    if len(timestamp_dirs) > 1:
-        print(f"Warning: Multiple timestamp dirs in {parent_dir}, using newest:")
-        for d in sorted(timestamp_dirs, key=lambda x: x.name):
-            print(f"  - {d.name}")
-
-    # Sort by name (timestamp format sorts lexicographically)
-    newest = sorted(timestamp_dirs, key=lambda x: x.name)[-1]
-    return newest
-
-
-def find_best_model_checkpoint(ts_dir: Path) -> Optional[Path]:
-    """Find the model checkpoint with highest timesteps.
-
-    Looks for files matching format: model_*.pth
-    Returns the one with highest timesteps number.
-    Prints a warning if highest is not EXPECTED_TIMESTEPS.
-    """
-    if not ts_dir.exists():
-        return None
-
-    model_files = []
-    for f in ts_dir.iterdir():
-        if f.is_file() and f.name.startswith("model_") and f.name.endswith(".pth"):
-            match = re.match(r"model_(\d+)\.pth", f.name)
-            if match:
-                timesteps = int(match.group(1))
-                model_files.append((timesteps, f))
-
-    if not model_files:
-        return None
-
-    # Sort by timesteps and get the highest
-    model_files.sort(key=lambda x: x[0])
-    highest_timesteps, best_model = model_files[-1]
-
-    if highest_timesteps != EXPECTED_TIMESTEPS:
-        print(
-            f"Warning: {ts_dir.name} has max timesteps {highest_timesteps}, expected {EXPECTED_TIMESTEPS}"
-        )
-
-    return best_model
-
-
-def get_checkpoints(env: str, exp_id: int, checkpoint_base_path: str) -> dict:
-    """Get checkpoint paths based on environment and experiment ID."""
-    env_folder = get_env_folder(env)
-    base_path = Path(checkpoint_base_path) / env_folder
-
-    weak_parent = base_path / f"icml2_{env}_exp{exp_id}_0p"
-    strong_parent = base_path / f"icml2_{env}_exp{exp_id}_50p"
-
-    weak_ts_dir = find_newest_timestamp_dir(weak_parent)
-    strong_ts_dir = find_newest_timestamp_dir(strong_parent)
-
-    weak_model = find_best_model_checkpoint(weak_ts_dir) if weak_ts_dir else None
-    strong_model = find_best_model_checkpoint(strong_ts_dir) if strong_ts_dir else None
-
-    weak = str(weak_model) if weak_model else str(weak_parent / "NOT_FOUND")
-    strong = str(strong_model) if strong_model else str(strong_parent / "NOT_FOUND")
-
-    return {"sim": weak, "weak": weak, "strong": strong}
-
-
-def get_svdd_policy_name(env: str, exp_id: int, method: str) -> str:
-    """Get the SVDD policy directory name."""
-    feature_type = get_svdd_feature_type(method)
-    # Format: svdd_{env}_{feature_type}_exp{id}
-    return f"svdd_{env}_{feature_type}_exp{exp_id}"
-
-
-def get_svdd_model_path(
-    env: str, exp_id: int, method: str, svdd_base_path: str
-) -> Optional[str]:
-    """Get the full path to the trained SVDD model file, or None if it doesn't exist."""
-    policy_name = get_svdd_policy_name(env, exp_id, method)
-    model_file = Path(svdd_base_path) / policy_name / "trained.joblib"
-    if model_file.exists():
-        return str(model_file)
-    return None
-
-
-def get_ensemble_member_paths(
+def _maybe_submit_calibration_job(
+    *,
+    method: str,
+    calibration_path: Path,
+    coordination_artifact_dir: Path,
+    experiment_group: str,
+    config_path: str,
+    checkpoints: dict,
+    level_seeds_file: Path,
+    cp_feature: Optional[str],
+    svdd_model_path: Optional[str],
+    ensemble_members: Optional[List[Optional[str]]],
+    conda_env: str,
+    log_dir: Path,
+    qos: str,
     env: str,
     exp_id: int,
-    checkpoint_base_path: str,
-    num_members: int = DEFAULT_NUM_ENSEMBLE_MEMBERS,
-) -> List[Optional[str]]:
-    """Get paths to ensemble member checkpoints.
+    dry_run: bool,
+):
+    """Insert a calibration job before the eval array on cache miss.
 
-    Ensemble members are stored at:
-    {checkpoint_base}/ensembles/icml2_ensemble_{env}_exp{id}_m{member_id}/...
-
-    Args:
-        env: Environment name (maze, coinrun)
-        exp_id: Experiment ID
-        checkpoint_base_path: Base path for checkpoints
-        num_members: Number of ensemble members to find
-
-    Returns:
-        List of paths to ensemble member checkpoints, or None for missing members
+    Returns one of:
+    - ``None`` on cache hit (calibration already exists; eval runs without a dep).
+    - A job ID string on successful submission (eval should depend on it).
+    - The ``_SKIP_EXP`` sentinel if this experiment id cannot be run (e.g. SVDD
+      trained model is missing) and the caller should skip it entirely.
     """
-    env_folder = get_env_folder(env)
-    base_path = Path(checkpoint_base_path) / env_folder / "ensembles"
+    if calibration_path.exists():
+        print(f"  Calibration cache hit: {calibration_path}")
+        return None
 
-    member_paths = []
-    for member_id in range(num_members):
-        member_parent = base_path / f"icml2_ensemble_{env}_exp{exp_id}_m{member_id}"
-        member_ts_dir = find_newest_timestamp_dir(member_parent)
-        member_model = (
-            find_best_model_checkpoint(member_ts_dir) if member_ts_dir else None
-        )
+    print(f"  Calibration missing at {calibration_path}")
 
-        if member_model:
-            member_paths.append(str(member_model))
-        else:
-            member_paths.append(None)
+    if method in SVDD_METHODS:
+        if svdd_model_path is None or not Path(svdd_model_path).exists():
+            print(
+                f"  Error: SVDD trained model missing for exp{exp_id}. "
+                f"Run `python scripts/train_svdd.py --env {env} "
+                f"--method {method} --prefix <prefix> --exp-ids {exp_id}` first."
+            )
+            return _SKIP_EXP
 
-    return member_paths
+    file_name = "trained.joblib" if method in SVDD_METHODS else None
+
+    calibration_cmd = build_calibration_command(
+        coordination_artifact_dir,
+        experiment_group,
+        config_path,
+        checkpoints,
+        level_seeds_file,
+        feature_type=cp_feature,
+        file_name=file_name,
+        ensemble_members=ensemble_members,
+    )
+    job_name = f"{coordination_artifact_dir.name}_calib"
+    calibration_script = build_sbatch_script(
+        job_name,
+        calibration_cmd,
+        conda_env,
+        coordination_artifact_dir.parent,
+        log_dir,
+        qos=qos,
+    )
+
+    if dry_run:
+        print(f"=== Calibration job: {job_name} ===")
+        print(calibration_script)
+        return _DRY_RUN_CALIB_JOB_ID
+
+    print("  Submitting calibration job...")
+    job_id = _sbatch_submit(calibration_script, log_dir)
+    if job_id is None:
+        print(f"  Calibration submission failed for exp{exp_id}.")
+        return _SKIP_EXP
+    print(f"  Submitted calibration job {job_id}")
+    return job_id
 
 
 def _build_policy_python_args(script: str, eval_args: dict) -> List[str]:
@@ -275,14 +172,20 @@ def _build_policy_python_args(script: str, eval_args: dict) -> List[str]:
     return args
 
 
+def _dependency_line(dependency_job_id: Optional[str]) -> str:
+    if dependency_job_id is None:
+        return ""
+    return f"#SBATCH --dependency=afterok:{dependency_job_id}"
+
+
 def build_sequential_eval_sbatch_command(
     job_name: str,
     eval_args: dict,
     conda_env: str,
     log_dir: Path,
     calibration_path: Path,
-    dep_job_id: str,
     qos: str = "default",
+    dependency_job_id: Optional[str] = None,
 ) -> str:
     """Build the sbatch script for a sequential AFHP evaluation job."""
     slurm_config = SLURM_CONFIG.copy()
@@ -305,7 +208,7 @@ def build_sequential_eval_sbatch_command(
 #SBATCH --job-name={job_name}_seq
 #SBATCH --output={log_dir}/%x_%j.out
 #SBATCH --error={log_dir}/%x_%j.err
-#SBATCH --dependency=afterok:{dep_job_id}
+{_dependency_line(dependency_job_id)}
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
 
 echo "Using conda env: {conda_env}"
@@ -316,38 +219,6 @@ srun {slurm_args} {python_cmd}
     return sbatch_script
 
 
-def build_calibration_sbatch_command(
-    job_name: str,
-    eval_args: dict,
-    conda_env: str,
-    log_dir: Path,
-    calibration_path: Path,
-    qos: str = "default",
-) -> str:
-    """Build the sbatch script for the calibration-only job."""
-    slurm_config = SLURM_CONFIG.copy()
-    slurm_config["qos"] = qos
-    slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
-
-    python_args = _build_policy_python_args("calibrate_afhp.py", eval_args)
-    python_args += [
-        f"--calibration_path {calibration_path}",
-    ]
-    python_cmd = " ".join(python_args)
-
-    return f"""#!/bin/bash
-#SBATCH --job-name={job_name}_calib
-#SBATCH --output={log_dir}/%x_%j.out
-#SBATCH --error={log_dir}/%x_%j.err
-{chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
-
-echo "Calibration job for {job_name}"
-eval "$(conda shell.bash hook)"
-conda activate {conda_env}
-srun {slurm_args} {python_cmd}
-"""
-
-
 def build_bin_array_sbatch_command(
     job_name: str,
     eval_args: dict,
@@ -355,8 +226,8 @@ def build_bin_array_sbatch_command(
     log_dir: Path,
     calibration_path: Path,
     num_bins: int,
-    dep_job_id: str,
     qos: str = "default",
+    dependency_job_id: Optional[str] = None,
 ) -> str:
     """Build the sbatch script for the bin evaluation array job."""
     slurm_config = SLURM_CONFIG.copy()
@@ -378,7 +249,7 @@ def build_bin_array_sbatch_command(
 #SBATCH --output={log_dir}/%x_%j_%a.out
 #SBATCH --error={log_dir}/%x_%j_%a.err
 #SBATCH --array=0-{num_bins - 1}
-#SBATCH --dependency=afterok:{dep_job_id}
+{_dependency_line(dependency_job_id)}
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
 
 echo "Bin $SLURM_ARRAY_TASK_ID / {num_bins} for {job_name}"
@@ -391,9 +262,7 @@ srun {slurm_args} {python_cmd}
 def _sbatch_submit(script: str, log_dir: Path) -> Optional[str]:
     """Submit an sbatch script, return the job ID string or None on failure."""
     log_dir.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(
-        ["sbatch"], input=script, text=True, capture_output=True
-    )
+    result = subprocess.run(["sbatch"], input=script, text=True, capture_output=True)
     if result.returncode == 0:
         # Output is "Submitted batch job 12345"
         job_id = result.stdout.strip().split()[-1]
@@ -409,48 +278,40 @@ def submit_sequential_eval(
     eval_args: dict,
     conda_env: str,
     log_dir: Path,
+    calibration_path: Path,
     qos: str = "default",
     dry_run: bool = False,
+    dependency_job_id: Optional[str] = None,
 ) -> None:
-    """Submit calibration job + sequential evaluation job with SLURM dependency."""
-    calibration_path = log_dir / f"{job_name}_calibration.npz"
-    calib_script = build_calibration_sbatch_command(
-        job_name, eval_args, conda_env, log_dir, calibration_path, qos
-    )
-    seq_script_template = build_sequential_eval_sbatch_command(
-        job_name,
-        eval_args,
-        conda_env,
-        log_dir,
-        calibration_path,
-        dep_job_id="CALIB_JOB_ID",
-        qos=qos,
-    )
+    """Submit a sequential AFHP evaluation job.
 
-    if dry_run:
-        print(f"=== Calibration job: {job_name}_calib ===")
-        print(calib_script)
-        print(f"=== Sequential eval job: {job_name}_seq ===")
-        print(seq_script_template.replace("CALIB_JOB_ID", "<calib_job_id>"))
-        print()
-        return
-
-    print("  Submitting calibration job...")
-    calib_job_id = _sbatch_submit(calib_script, log_dir)
-    if calib_job_id is None:
-        print(f"  Aborting sequential eval submission for {job_name}.")
-        return
-
+    If ``dependency_job_id`` is provided, the eval job waits for that job
+    (typically a calibrate job inserted on cache miss) via afterok.
+    """
     seq_script = build_sequential_eval_sbatch_command(
         job_name,
         eval_args,
         conda_env,
         log_dir,
         calibration_path,
-        dep_job_id=calib_job_id,
         qos=qos,
+        dependency_job_id=dependency_job_id,
     )
-    print(f"  Submitting sequential eval job (depends on {calib_job_id})...")
+
+    if dry_run:
+        print(f"=== Sequential eval job: {job_name}_seq ===")
+        print(seq_script)
+        print()
+        return
+
+    dep_note = (
+        f" (depends on calib job {dependency_job_id})"
+        if dependency_job_id is not None
+        else ""
+    )
+    print(
+        f"  Submitting sequential eval job using calibration {calibration_path}{dep_note}..."
+    )
     _sbatch_submit(seq_script, log_dir)
 
 
@@ -459,48 +320,43 @@ def submit_parallel_bins(
     eval_args: dict,
     conda_env: str,
     log_dir: Path,
+    calibration_path: Path,
     num_bins: int,
     qos: str = "default",
     dry_run: bool = False,
+    dependency_job_id: Optional[str] = None,
 ) -> None:
-    """Submit calibration job + bin array job with SLURM dependency.
+    """Submit a bin array AFHP evaluation job.
 
-    The calibration job runs calibrate_afhp.py and saves the policy's
-    calibration state to disk. The bin array job (one task per bin)
-    depends on the calibration job and runs eval_afhp_bin.py for each bin.
-    Per-bin checkpoints are saved to log_dir/{job_name}_bin_N.npz.
+    If ``dependency_job_id`` is provided, the eval array waits for that job
+    (typically a calibrate job inserted on cache miss) via afterok.
     """
-    calibration_path = log_dir / f"{job_name}_calibration.npz"
-
-    calib_script = build_calibration_sbatch_command(
-        job_name, eval_args, conda_env, log_dir, calibration_path, qos
-    )
-    bin_script_template = build_bin_array_sbatch_command(
-        job_name, eval_args, conda_env, log_dir, calibration_path, num_bins,
-        dep_job_id="CALIB_JOB_ID",  # placeholder replaced below
+    bin_script = build_bin_array_sbatch_command(
+        job_name,
+        eval_args,
+        conda_env,
+        log_dir,
+        calibration_path,
+        num_bins,
         qos=qos,
+        dependency_job_id=dependency_job_id,
     )
 
     if dry_run:
-        print(f"=== Calibration job: {job_name}_calib ===")
-        print(calib_script)
         print(f"=== Bin array job: {job_name}_bin (0-{num_bins - 1}) ===")
-        print(bin_script_template.replace("CALIB_JOB_ID", "<calib_job_id>"))
+        print(bin_script)
         print()
         return
 
-    print(f"  Submitting calibration job...")
-    calib_job_id = _sbatch_submit(calib_script, log_dir)
-    if calib_job_id is None:
-        print(f"  Aborting bin array submission for {job_name}.")
-        return
-
-    bin_script = build_bin_array_sbatch_command(
-        job_name, eval_args, conda_env, log_dir, calibration_path, num_bins,
-        dep_job_id=calib_job_id,
-        qos=qos,
+    dep_note = (
+        f" (depends on calib job {dependency_job_id})"
+        if dependency_job_id is not None
+        else ""
     )
-    print(f"  Submitting bin array job (0-{num_bins - 1}, depends on {calib_job_id})...")
+    print(
+        f"  Submitting bin array job (0-{num_bins - 1}) using calibration "
+        f"{calibration_path}{dep_note}..."
+    )
     _sbatch_submit(bin_script, log_dir)
 
 
@@ -585,15 +441,23 @@ def main():
         "--sequential",
         action="store_true",
         help=(
-            "Submit a calibration job followed by a single sequential AFHP eval job. "
-            "By default, a calibration job is submitted first, followed by a "
-            "SLURM array of --num-bins bin jobs that depend on it."
+            "Submit a single sequential AFHP eval job that reuses a pre-computed "
+            "calibration file. By default, submits a SLURM array of --num-bins bin "
+            "jobs using the same calibration file."
         ),
     )
     parser.add_argument(
         "--wandb-project",
         default=None,
         help="Override wandb project name",
+    )
+    parser.add_argument(
+        "--coordination-artifact-root",
+        default=None,
+        help=(
+            "Base directory for coordination-method artifacts. "
+            "Defaults to a sibling of the acting-policy root."
+        ),
     )
     # Override checkpoints if needed
     parser.add_argument("--sim", help="Override sim weak checkpoint path")
@@ -613,6 +477,11 @@ def main():
     checkpoint_base_path = paths["checkpoint_base"]
     seeds_base_path = paths["seeds_base"]
     svdd_base_path = paths["svdd_base"]
+    coordination_root = (
+        Path(args.coordination_artifact_root)
+        if args.coordination_artifact_root is not None
+        else default_coordination_artifact_root(Path(checkpoint_base_path))
+    )
 
     # Get config file path
     config_file = METHOD_CONFIGS[args.method]
@@ -624,6 +493,7 @@ def main():
         return 1
 
     print(f"Conda env: {args.conda_env}")
+    print(f"Coordination artifact root: {coordination_root}")
 
     # Build log directory path: base / wandb_project / prefix / date
     log_base = Path(paths["log_base"])
@@ -685,7 +555,10 @@ def main():
         if args.method in SVDD_METHODS and svdd_model_path is None:
             svdd_policy_name = get_svdd_policy_name(args.env, exp_id, args.method)
             print(
-                f"Warning: exp{exp_id} SVDD model not found at {svdd_base_path}/{svdd_policy_name}/trained.joblib"
+                f"Error: exp{exp_id} SVDD model not found at "
+                f"{svdd_base_path}/{svdd_policy_name}/trained.joblib. "
+                f"Run `python scripts/train_svdd.py --env {args.env} "
+                f"--method {args.method} --prefix {args.prefix} --exp-ids {exp_id}` first."
             )
             missing = True
 
@@ -726,6 +599,41 @@ def main():
             "ensemble_members": ensemble_members,
             **checkpoints,
         }
+        coordination_artifact_dir = resolve_coordination_artifact_dir(
+            args.env,
+            exp_id,
+            method_name,
+            experiment_group,
+            coordination_root=coordination_root,
+        )
+        calibration_path = resolve_calibration_path(coordination_artifact_dir)
+        print(f"Calibration path: {calibration_path}")
+
+        prep_job_id = _maybe_submit_calibration_job(
+            method=args.method,
+            calibration_path=calibration_path,
+            coordination_artifact_dir=coordination_artifact_dir,
+            experiment_group=experiment_group,
+            config_path=config_path,
+            checkpoints=checkpoints,
+            level_seeds_file=level_seeds_file,
+            cp_feature=cp_feature,
+            svdd_model_path=svdd_model_path,
+            ensemble_members=ensemble_members,
+            conda_env=args.conda_env,
+            log_dir=log_dir,
+            qos=args.qos,
+            env=args.env,
+            exp_id=exp_id,
+            dry_run=args.dry_run,
+        )
+        if prep_job_id is _SKIP_EXP:
+            print(f"Skipping exp{exp_id}.\n")
+            continue
+        # prep_job_id is now None (cache hit), a real job ID, or the dry-run
+        # sentinel; all three are valid for the eval submission's
+        # dependency_job_id kwarg.
+        dependency_job_id = prep_job_id
 
         if args.sequential:
             submit_sequential_eval(
@@ -733,8 +641,10 @@ def main():
                 eval_args,
                 args.conda_env,
                 log_dir,
+                calibration_path,
                 args.qos,
                 dry_run=args.dry_run,
+                dependency_job_id=dependency_job_id,
             )
         else:
             submit_parallel_bins(
@@ -742,9 +652,11 @@ def main():
                 eval_args=eval_args,
                 conda_env=args.conda_env,
                 log_dir=log_dir,
+                calibration_path=calibration_path,
                 num_bins=args.num_bins,
                 qos=args.qos,
                 dry_run=args.dry_run,
+                dependency_job_id=dependency_job_id,
             )
 
     return 0

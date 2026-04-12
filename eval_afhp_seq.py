@@ -25,7 +25,7 @@ def main():
     runtime = build_eval_runtime(config)
 
     print(f"Loading calibration state from: {calibration_path}")
-    load_calibration_state(runtime.policy, calibration_path)
+    load_calibration_state(runtime.policy, calibration_path, config)
 
     num_bins: int = config.evaluation.num_bins
     afhp_metric: str = config.evaluation.afhp_metric

@@ -291,7 +291,10 @@ def make():
     )
 
     parser.add_argument(
-        "-npz_file", "--npz_file", type=str, help="Path to NPZ file with evaluation results"
+        "-npz_file",
+        "--npz_file",
+        type=str,
+        help="Path to NPZ file with evaluation results",
     )
 
     parser.add_argument("-seed", "--general.seed", type=int, help="random seed")
@@ -358,6 +361,16 @@ def make():
             "Path to calibration state (.npz). Used as an output by "
             "calibrate_afhp.py and as an input by eval_afhp_seq.py / "
             "eval_afhp_bin.py."
+        ),
+    )
+    parser.add_argument(
+        "--coordination_artifact_dir",
+        type=str,
+        default=None,
+        help=(
+            "Directory containing artifacts for one coordination-method run. "
+            "When set, calibrate_afhp.py defaults to "
+            "<coordination_artifact_dir>/calibration.npz."
         ),
     )
 

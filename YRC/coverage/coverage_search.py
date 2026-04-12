@@ -10,6 +10,7 @@ Per-bin .npz checkpoint files allow restarting only failed bins.
 """
 
 import copy
+import json
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -334,7 +335,90 @@ def run_parallel_eval(
     return sorted(results, key=lambda r: r["afhp"])
 
 
-def save_calibration_state(policy, path: Path) -> None:
+def _get_config_value(config: Any, path: str) -> Any:
+    value = config
+    for part in path.split("."):
+        value = getattr(value, part, None)
+        if value is None:
+            return None
+    return value
+
+
+def _build_calibration_provenance(config: Any) -> Dict[str, Any]:
+    sim_weak = _get_config_value(config, "agents.sim_weak")
+    weak = _get_config_value(config, "agents.weak")
+    strong = _get_config_value(config, "agents.strong")
+    file_name = _get_config_value(config, "file_name")
+    experiment_dir = _get_config_value(config, "experiment_dir")
+    level_seeds_file = _get_config_value(config, "environment.level_seeds_file")
+    algorithm = _get_config_value(config, "general.algorithm")
+    policy_cls = _get_config_value(config, "coord_policy.cls")
+    metric = _get_config_value(config, "coord_policy.metric")
+    method = _get_config_value(config, "coord_policy.method")
+    ensemble_members = _get_config_value(config, "coord_policy.ensemble_members")
+
+    if ensemble_members is None:
+        ensemble_members = []
+    elif not isinstance(ensemble_members, (list, tuple)):
+        ensemble_members = [ensemble_members]
+
+    checkpoint_path = None
+    if file_name is not None:
+        if experiment_dir is not None:
+            checkpoint_path = str(Path(experiment_dir) / str(file_name))
+        else:
+            checkpoint_path = str(file_name)
+
+    return {
+        "agents.sim_weak": None if sim_weak is None else str(sim_weak),
+        "agents.weak": None if weak is None else str(weak),
+        "agents.strong": None if strong is None else str(strong),
+        "file_name": None if file_name is None else str(file_name),
+        "coord_policy.checkpoint_path": checkpoint_path,
+        "coord_policy.ensemble_members": [str(m) for m in ensemble_members],
+        "environment.level_seeds_file": (
+            None if level_seeds_file is None else str(level_seeds_file)
+        ),
+        "general.algorithm": None if algorithm is None else str(algorithm),
+        "coord_policy.cls": None if policy_cls is None else str(policy_cls),
+        "coord_policy.metric": None if metric is None else str(metric),
+        "coord_policy.method": None if method is None else str(method),
+    }
+
+
+def _validate_calibration_provenance(saved: Dict[str, Any], current: Dict[str, Any]) -> None:
+    mismatches = []
+
+    required_keys = ["agents.sim_weak", "agents.weak", "agents.strong"]
+    for key in required_keys:
+        if saved.get(key) != current.get(key):
+            mismatches.append(key)
+
+    optional_keys = [
+        "file_name",
+        "coord_policy.checkpoint_path",
+        "coord_policy.ensemble_members",
+    ]
+    for key in optional_keys:
+        saved_value = saved.get(key)
+        current_value = current.get(key)
+        if saved_value or current_value:
+            if saved_value != current_value:
+                mismatches.append(key)
+
+    if mismatches:
+        details = "\n".join(
+            f"  - {key}: saved={saved.get(key)!r}, current={current.get(key)!r}"
+            for key in mismatches
+        )
+        raise ValueError(
+            "Calibration provenance mismatch detected. Refusing to load "
+            "potentially stale calibration file.\n"
+            f"{details}"
+        )
+
+
+def save_calibration_state(policy, path: Path, config: Optional[Any] = None) -> None:
     """Save policy calibration state to a .npz file for use by bin workers.
 
     Each policy type stores different calibration data:
@@ -345,6 +429,7 @@ def save_calibration_state(policy, path: Path) -> None:
     Args:
         policy: Calibrated policy whose internal state to save.
         path: Destination path (numpy adds .npz if not present).
+        config: Optional runtime config used to persist provenance metadata.
 
     Raises:
         ValueError: If no calibration state is found on the policy.
@@ -372,10 +457,16 @@ def save_calibration_state(policy, path: Path) -> None:
             "Run calibrate_percentile_mapping() before saving."
         )
 
+    if config is not None:
+        provenance = _build_calibration_provenance(config)
+        state["provenance_json"] = np.array(
+            [json.dumps(provenance, sort_keys=True)], dtype=str
+        )
+
     np.savez(path, **state)
 
 
-def load_calibration_state(policy, path: Path) -> None:
+def load_calibration_state(policy, path: Path, config: Optional[Any] = None) -> None:
     """Load calibration state from a .npz file into a policy.
 
     Injects whichever fields are present in the file into the corresponding
@@ -385,8 +476,19 @@ def load_calibration_state(policy, path: Path) -> None:
     Args:
         policy: Policy object to inject calibration state into.
         path: Path to the .npz file saved by save_calibration_state().
+        config: Optional runtime config used to validate provenance metadata.
     """
     data = np.load(path)
+
+    if config is not None:
+        if "provenance_json" not in data:
+            raise ValueError(
+                "Calibration file is missing provenance metadata "
+                "(key 'provenance_json'). Re-run calibrate_afhp.py."
+            )
+        saved_provenance = json.loads(str(data["provenance_json"][0]))
+        current_provenance = _build_calibration_provenance(config)
+        _validate_calibration_provenance(saved_provenance, current_provenance)
 
     if "train_scores" in data and hasattr(policy, "_train_scores"):
         policy._train_scores = data["train_scores"]

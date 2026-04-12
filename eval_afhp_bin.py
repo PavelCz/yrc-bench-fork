@@ -2,14 +2,13 @@
 Single-bin AFHP evaluation worker for SLURM parallel runs.
 
 Evaluates one bin of the AFHP space given a pre-computed calibration state.
-Designed to run as a SLURM array job alongside a calibration job submitted by
-scripts/run_eval.py.
+Designed to run as a SLURM array job with a pre-computed calibration artifact.
 
 Typical workflow:
-  # 1. Calibration job (run once per experiment)
+  # 1. Calibration job (run once per trained policy checkpoint after training)
   python calibrate_afhp.py --calibration_path /shared/calib.npz [...]
 
-  # 2. Bin array job (one task per bin, depends on calibration job)
+  # 2. Bin array job (one task per bin, reuses the pre-computed calibration)
   python eval_afhp_bin.py --bin_idx $SLURM_ARRAY_TASK_ID \\
       --checkpoint_path /shared/results_bin_$SLURM_ARRAY_TASK_ID.npz \\
       --calibration_path /shared/calib.npz [same policy/config args as step 1]
@@ -65,9 +64,9 @@ def main():
 
     runtime = build_eval_runtime(config)
 
-    # Load calibration state saved by the calibration job
+    # Load calibration state saved during post-training calibration
     print(f"Loading calibration state from: {calibration_path}")
-    load_calibration_state(runtime.policy, calibration_path)
+    load_calibration_state(runtime.policy, calibration_path, config)
 
     # Close initial environments; run_bin creates fresh ones per evaluation
     runtime.close_envs()
