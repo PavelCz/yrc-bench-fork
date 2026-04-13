@@ -92,7 +92,7 @@ class TestCacheMissNonSvdd(unittest.TestCase):
         self.assertEqual(result, "9999")
         self.assertEqual(submit_mock.call_count, 1)
         submitted_script = submit_mock.call_args.args[0]
-        self.assertIn("calibrate_afhp.py", submitted_script)
+        self.assertIn("python -m apps.calibrate_afhp", submitted_script)
 
     def test_dry_run_returns_sentinel_and_does_not_submit(self):
         result, submit_mock = _call(
@@ -115,7 +115,7 @@ class TestCacheMissSvdd(unittest.TestCase):
         )
         self.assertEqual(result, "8888")
         submitted_script = submit_mock.call_args.args[0]
-        self.assertIn("calibrate_afhp.py", submitted_script)
+        self.assertIn("python -m apps.calibrate_afhp", submitted_script)
         # SVDD passes just the basename via -f_n; the worker resolves it
         # against experiment_dir at runtime.
         self.assertIn("-f_n trained.joblib", submitted_script)
@@ -182,6 +182,7 @@ class TestEvalSbatchDependencyLine(unittest.TestCase):
             Path("/tmp/log"),
             Path("/tmp/cal.npz"),
             num_bins=20,
+            slurm=run_eval.SlurmCliArgs(),
         )
         self.assertNotIn("--dependency=afterok", script)
 
@@ -193,6 +194,7 @@ class TestEvalSbatchDependencyLine(unittest.TestCase):
             Path("/tmp/log"),
             Path("/tmp/cal.npz"),
             num_bins=20,
+            slurm=run_eval.SlurmCliArgs(),
             dependency_job_id="5678",
         )
         self.assertIn("#SBATCH --dependency=afterok:5678", script)

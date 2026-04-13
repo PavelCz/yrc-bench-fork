@@ -484,7 +484,7 @@ def load_calibration_state(policy, path: Path, config: Optional[Any] = None) -> 
         if "provenance_json" not in data:
             raise ValueError(
                 "Calibration file is missing provenance metadata "
-                "(key 'provenance_json'). Re-run calibrate_afhp.py."
+                "(key 'provenance_json'). Re-run python -m apps.calibrate_afhp."
             )
         saved_provenance = json.loads(str(data["provenance_json"][0]))
         current_provenance = _build_calibration_provenance(config)

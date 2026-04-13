@@ -1,21 +1,25 @@
-from YRC.core.utils import load_rollouts_from_file
+import time
+from typing import List
+
+import torch
+import wandb
+from pytorch_lightning.loggers import WandbLogger
+
 import flags
 import YRC.core.algorithm as algo_factory
 import YRC.core.configs.utils as config_utils
 import YRC.core.environment as env_factory
 import YRC.core.policy as policy_factory
 from YRC.core import Evaluator
-import wandb
-from pytorch_lightning.loggers import WandbLogger
-from YRC.core.configs.global_configs import get_global_variable
-from pathlib import Path
 from YRC.core.configs import ConfigDict
-from typing import List
-import torch
-import time
+from YRC.core.configs.global_configs import get_global_variable
+from YRC.core.utils import load_rollouts_from_file
+from pathlib import Path
+
 
 # Algorithms that support training without threshold search.
 ALGORITHMS = ["ood", "lightning_ae"]
+
 
 def main():
     total_start = time.time()
@@ -72,7 +76,6 @@ def main():
     print(f"Features processed in {time.time() - start:.2f}s")
 
     if hasattr(policy, "logger"):
-
         save_dir = Path(str(get_global_variable("experiment_dir")))
 
         # Prepare wandb init parameters
@@ -91,7 +94,8 @@ def main():
         exp = wandb.init(**wandb_kwargs)
 
         wandb_logger = WandbLogger(
-            save_dir=save_dir, experiment=exp,
+            save_dir=save_dir,
+            experiment=exp,
         )
         policy.logger = wandb_logger
 

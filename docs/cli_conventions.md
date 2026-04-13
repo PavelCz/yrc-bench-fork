@@ -31,10 +31,10 @@ Config-driven application entrypoints should continue to use `flags.py` and
 Use this pattern for entrypoints that merge CLI overrides into hierarchical YAML
 configs and runtime config objects, such as:
 
-- `train.py`
+- `python -m apps.train`
 - `eval.py`
-- `calibrate_afhp.py`
-- `eval_afhp_bin.py`
+- `python -m apps.calibrate_afhp`
+- `python -m apps.eval_afhp_bin`
 
 Conventions for app entrypoints:
 

@@ -162,7 +162,7 @@ for member in "${MEMBERS[@]}"; do
         --mem=100G \
         --job-name="$exp_name" \
         --output="${LOG_DIR}/${exp_name}_%j.out" \
-        --wrap="cd $TRAIN_DIR && conda run -n $CONDA_ENV python train.py \
+        --wrap="cd $TRAIN_DIR && conda run -n $CONDA_ENV python -m apps.train \
             --level_seeds_file ${LEVEL_SEEDS_PATH} \
             --train_mode random \
             --eval_mode sequential \

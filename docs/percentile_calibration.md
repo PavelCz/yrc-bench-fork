@@ -34,7 +34,7 @@ Not all policies support both. Unsupported variants raise `NotImplementedError`.
 
 ## Calibration Data
 
-Calibration happens in `calibrate_afhp.py`, before `eval_afhp_bin.py` runs the sampler. The data comes from the fixed calibration environment (`"cal"`), which uses held-out validation seeds from the same ID distribution.
+Calibration happens in `python -m apps.calibrate_afhp`, before `python -m apps.eval_afhp_bin` runs the sampler. The data comes from the fixed calibration environment (`"cal"`), which uses held-out validation seeds from the same ID distribution.
 
 There are two calibration mechanisms depending on the policy type:
 
@@ -42,15 +42,15 @@ There are two calibration mechanisms depending on the policy type:
 
 These policies have an explicit score distribution that needs to be collected.
 
-**ThresholdPolicy**: `calibrate_afhp.py` calls `policy.generate_scores(envs["cal"], num_cal)`, which runs one episode per calibration seed in the calibration environment using the weak agent. During each episode, the policy computes its OOD score (e.g., `max_prob`, `max_logit`, `ensemble_variance`) at every timestep. This produces:
+**ThresholdPolicy**: `python -m apps.calibrate_afhp` calls `policy.generate_scores(envs["cal"], num_cal)`, which runs one episode per calibration seed in the calibration environment using the weak agent. During each episode, the policy computes its OOD score (e.g., `max_prob`, `max_logit`, `ensemble_variance`) at every timestep. This produces:
 - `_train_scores`: all per-step scores across all episodes (flat array)
 - `_train_episode_max_scores`: the maximum score within each episode (one value per episode)
 
-**OODPolicy / LightningAEPolicy**: These policies support two sources of scores. During model training (`train.py`), per-step decision scores are collected (`clf.decision_scores_` / `_train_decision_scores`), but these lack episode boundaries. To support `train_percentile_level`, `calibrate_afhp.py` calls `policy.generate_scores()` which runs rollouts in the calibration environment with the trained OOD detector, collecting both per-step scores and per-episode max scores — the same approach as ThresholdPolicy. When rollout-based scores are available, `train_percentile_step` uses them instead of the training-time scores.
+**OODPolicy / LightningAEPolicy**: These policies support two sources of scores. During model training (`python -m apps.train`), per-step decision scores are collected (`clf.decision_scores_` / `_train_decision_scores`), but these lack episode boundaries. To support `train_percentile_level`, `python -m apps.calibrate_afhp` calls `policy.generate_scores()` which runs rollouts in the calibration environment with the trained OOD detector, collecting both per-step scores and per-episode max scores — the same approach as ThresholdPolicy. When rollout-based scores are available, `train_percentile_step` uses them instead of the training-time scores.
 
 ### Episode-length calibration (TimestepRandomPolicy, ExponentialHeuristicPolicy)
 
-These policies don't have OOD scores — their "threshold" is a probability parameter. To calibrate the nonlinear mapping between per-step probability and per-episode help rate, `calibrate_afhp.py` measures the mean episode length:
+These policies don't have OOD scores — their "threshold" is a probability parameter. To calibrate the nonlinear mapping between per-step probability and per-episode help rate, `python -m apps.calibrate_afhp` measures the mean episode length:
 
 1. Set the policy to never ask for help (probability = 0), so only the weak agent acts
 2. Run a full evaluation on the calibration split using `evaluator.eval(policy, cal_envs, ["cal"])`
@@ -64,7 +64,7 @@ Note: using the mean episode length is an approximation. A more accurate approac
 
 ### Episode-length distribution calibration (WaitPolicy)
 
-WaitPolicy asks for help at every timestep `t >= n`, so an episode has help iff its length exceeds `n`. To calibrate `train_percentile_level`, `calibrate_afhp.py` runs the weak agent alone (threshold set very high so it never asks) on the calibration split, and stores the full array of per-episode lengths as `policy._episode_lengths`. Then `train_percentile_level(p)` returns `np.percentile(episode_lengths, p)` — the p-th percentile of episode lengths is exactly the threshold where (100-p)% of episodes are long enough to receive help.
+WaitPolicy asks for help at every timestep `t >= n`, so an episode has help iff its length exceeds `n`. To calibrate `train_percentile_level`, `python -m apps.calibrate_afhp` runs the weak agent alone (threshold set very high so it never asks) on the calibration split, and stores the full array of per-episode lengths as `policy._episode_lengths`. Then `train_percentile_level(p)` returns `np.percentile(episode_lengths, p)` — the p-th percentile of episode lengths is exactly the threshold where (100-p)% of episodes are long enough to receive help.
 
 `train_percentile_step` still uses `max_episode_length` from config (not from data).
 

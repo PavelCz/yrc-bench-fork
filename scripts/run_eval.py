@@ -600,7 +600,7 @@ def build_bin_array_sbatch_command(
 
     # $SLURM_ARRAY_TASK_ID must expand at runtime, not be interpolated by Python
     checkpoint_path = f"{log_dir}/{job_name}_bin_$SLURM_ARRAY_TASK_ID.npz"
-    python_args = _build_policy_python_args("eval_afhp_bin.py", eval_args)
+    python_args = _build_policy_python_args("-m apps.eval_afhp_bin", eval_args)
     python_args += [
         "--bin_idx $SLURM_ARRAY_TASK_ID",
         f"--checkpoint_path {checkpoint_path}",

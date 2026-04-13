@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to run eval_strong_on_help.py jobs in parallel via SLURM sbatch.
+Script to run `python -m apps.eval_strong_on_help` jobs in parallel via SLURM sbatch.
 
 This script finds existing evaluation NPZ files and re-evaluates 
 the strong agent on the seeds where help was requested.
@@ -101,7 +101,7 @@ def main():
 def parse_arguments():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
-        description="Run eval_strong_on_help.py jobs via SLURM to re-evaluate strong agent on help-requested seeds"
+        description="Run python -m apps.eval_strong_on_help jobs via SLURM to re-evaluate strong agent on help-requested seeds"
     )
     parser.add_argument(
         "--dry-run", action="store_true", help="Print commands without submitting"
@@ -564,7 +564,7 @@ def build_sbatch_script(
     slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
     
     # Build the python command
-    python_cmd = f"python eval_strong_on_help.py -c {config_path} -n {job_name} --npz_file {npz_file} -strong {strong_path}"
+    python_cmd = f"python -m apps.eval_strong_on_help -c {config_path} -n {job_name} --npz_file {npz_file} -strong {strong_path}"
     if overwrite:
         python_cmd += " --overwrite"
     

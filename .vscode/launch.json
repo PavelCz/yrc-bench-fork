@@ -17,7 +17,7 @@
             "name": "Gather Rollouts Coinrun",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/gather_rollouts.py",
+            "module": "apps.gather_rollouts",
             "args": [
                 "-c",
                 "configs/procgen_gather.yaml",
@@ -47,7 +47,7 @@
             "name": "Train OOD",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/train.py",
+            "module": "apps.train",
             "args": [
                 "-c",
                 "configs/procgen_ood.yaml",
@@ -90,7 +90,7 @@
             "name": "Train OOD Latent",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/train.py",
+            "module": "apps.train",
             "args": [
                 "-c",
                 "configs/procgen_ood.yaml",
@@ -133,7 +133,7 @@
             "name": "Train base_ae",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/train.py",
+            "module": "apps.train",
             "args": [
                 "-c",
                 "configs/procgen_ae_hard.yaml",
@@ -655,7 +655,7 @@
             "name": "Eval Policy - Weak Agent",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/eval_policy.py",
+            "module": "apps.eval_policy",
             "args": [
                 "-c",
                 "configs/eval/coinrun_bg_timestep_random.yaml",
@@ -691,7 +691,7 @@
             "name": "Eval Policy - Strong Agent",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/eval_policy.py",
+            "module": "apps.eval_policy",
             "args": [
                 "-c",
                 "configs/eval/coinrun_bg_timestep_random.yaml",

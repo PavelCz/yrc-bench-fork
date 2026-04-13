@@ -5,38 +5,38 @@ This script evaluates a single agent policy (e.g., weak or strong SB3 agent) dir
 not a coordination policy.
 
 Usage:
-    python eval_policy.py -c <config_file> --model_file <path_to_model> [options]
+    python -m apps.eval_policy -c <config_file> --model_file <path_to_model> [options]
 
 Examples:
     # Evaluate a specific model
-    python eval_policy.py -c configs/procgen_threshold.yaml \
+    python -m apps.eval_policy -c configs/procgen_threshold.yaml \
         --model_file YRC/checkpoints/procgen/coinrun/weak/model_80019456.pth \
         -num_rollouts 100
-    
+
     # With environment variable
     export COINRUN_BG_EXTRAHARD=/path/to/model.pth
-    python eval_policy.py -c configs/procgen_threshold.yaml \
+    python -m apps.eval_policy -c configs/procgen_threshold.yaml \
         --model_file $COINRUN_BG_EXTRAHARD \
         -num_rollouts 100
-    
+
     # With video recording to disk
-    python eval_policy.py -c configs/procgen_threshold.yaml \
+    python -m apps.eval_policy -c configs/procgen_threshold.yaml \
         --model_file model.pth \
         -num_rollouts 100 \
         -video_logging_mode folder \
         -video_output_folder ./videos \
         -video_episodes_to_collect 10
-    
+
     # With video logging to wandb
-    python eval_policy.py -c configs/procgen_threshold.yaml \
+    python -m apps.eval_policy -c configs/procgen_threshold.yaml \
         --model_file model.pth \
         -num_rollouts 100 \
         -video_logging_mode wandb \
         -video_episodes_to_collect 10 \
         -wandb_project my_project
-    
+
     # With video logging to both disk and wandb
-    python eval_policy.py -c configs/procgen_threshold.yaml \
+    python -m apps.eval_policy -c configs/procgen_threshold.yaml \
         --model_file model.pth \
         -num_rollouts 100 \
         -video_logging_mode both \
@@ -63,21 +63,23 @@ Output:
     - Optionally saves episode videos to disk and/or Weights & Biases
 """
 
+import importlib
+import json
+import logging
+from pathlib import Path
+from typing import Dict, List, Optional
+
+import numpy as np
+import wandb
+from pytorch_lightning.loggers import WandbLogger
+
 import flags
 import YRC.core.configs.utils as config_utils
 from YRC.core.configs.global_configs import get_global_variable
-from pathlib import Path
-import importlib
-import numpy as np
-import json
-import logging
-from typing import List, Dict, Optional
-import wandb
-from pytorch_lightning.loggers import WandbLogger
 from YRC.core.video_utils import (
     VideoProcessor,
-    save_video_to_folder,
     resolve_video_output_folder,
+    save_video_to_folder,
 )
 
 
@@ -105,7 +107,7 @@ def main():
     if not hasattr(args, "model_file") or args.model_file is None:
         raise ValueError(
             "Must provide --model_file argument with path to model checkpoint.\n"
-            "Example: python eval_policy.py -c config.yaml --model_file /path/to/model.pth"
+            "Example: python -m apps.eval_policy -c config.yaml --model_file /path/to/model.pth"
         )
 
     model_file = args.model_file
@@ -282,7 +284,7 @@ def rollout_and_get_returns(
     obs = env.reset()
 
     # Reset episode counter for heuristic policies at the start
-    for i in range(env.num_envs):
+    for _ in range(env.num_envs):
         if hasattr(policy, "reset_episode"):
             policy.reset_episode()
 

@@ -206,6 +206,6 @@ class WaitPolicy(Policy):
         if self._episode_lengths is None:
             raise ValueError(
                 "Episode lengths not calibrated. "
-                "Run calibrate_afhp.py first."
+                "Run python -m apps.calibrate_afhp first."
             )
         return np.percentile(self._episode_lengths, percentile)

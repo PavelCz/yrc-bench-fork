@@ -1,4 +1,3 @@
-from pathlib import Path
 import time
 
 import flags
@@ -7,6 +6,7 @@ from YRC.core.artifacts import resolve_calibration_path
 from YRC.core.eval_calibration import calibrate_percentile_mapping
 from YRC.core.eval_setup import build_eval_runtime
 from YRC.coverage.coverage_search import save_calibration_state
+from pathlib import Path
 
 
 def main():
@@ -17,9 +17,7 @@ def main():
     if args.calibration_path is not None:
         calibration_path = Path(args.calibration_path)
     elif args.coordination_artifact_dir is not None:
-        calibration_path = resolve_calibration_path(
-            Path(args.coordination_artifact_dir)
-        )
+        calibration_path = resolve_calibration_path(Path(args.coordination_artifact_dir))
     else:
         raise ValueError(
             "Either --calibration_path or --coordination_artifact_dir is required"

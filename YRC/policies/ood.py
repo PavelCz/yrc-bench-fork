@@ -26,7 +26,7 @@ class OODPolicy(Policy):
         self.clf_name = None
         self.device = get_global_variable("device")
         self.feature_type = config.coord_policy.feature_type
-        self.logger = None  # Will be set by train.py for wandb logging
+        self.logger = None  # Will be set by python -m apps.train for wandb logging
 
         # Store training scores for percentile computation (used in AFHP eval)
         self._train_scores = None

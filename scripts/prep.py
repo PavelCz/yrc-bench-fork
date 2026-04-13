@@ -120,9 +120,9 @@ def build_calibration_command(
     file_name: Optional[str] = None,
     ensemble_members: Optional[List[Optional[str]]] = None,
 ) -> str:
-    """Build a ``python calibrate_afhp.py ...`` command."""
+    """Build a ``python -m apps.calibrate_afhp ...`` command."""
     args = build_base_python_args(
-        "calibrate_afhp.py",
+        "-m apps.calibrate_afhp",
         config_path,
         coordination_artifact_dir.name,
         experiment_group,
@@ -147,9 +147,9 @@ def build_gather_command(
     num_rollouts: int,
     query_cost: float,
 ) -> str:
-    """Build a ``python gather_rollouts.py ...`` command for SVDD prep."""
+    """Build a ``python -m apps.gather_rollouts ...`` command for SVDD prep."""
     args = [
-        "python gather_rollouts.py",
+        "python -m apps.gather_rollouts",
         "-wandb_mode offline",
         f"-c {gather_config}",
         f"-n {coordination_artifact_dir.name}",
@@ -179,9 +179,9 @@ def build_train_command(
     num_rollouts: int,
     query_cost: float,
 ) -> str:
-    """Build a ``python train.py ...`` command for SVDD prep."""
+    """Build a ``python -m apps.train ...`` command for SVDD prep."""
     args = [
-        "python train.py",
+        "python -m apps.train",
         f"-wandb_group {experiment_group}",
         f"-c {train_config}",
         f"-n {coordination_artifact_dir.name}",

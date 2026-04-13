@@ -58,14 +58,14 @@ conda run -n ood pytype <files>
 
 ### Training
 
-`train.py` is the root training entrypoint for model-based coordination methods that train from rollouts without threshold search. In the current code, that means `general.algorithm` values in:
+`python -m apps.train` is the training entrypoint for model-based coordination methods that train from rollouts without threshold search. In the current code, that means `general.algorithm` values in:
 - `ood`
 - `lightning_ae`
 
 Typical invocation:
 
 ```bash
-python train.py -c configs/procgen_ood.yaml -n RUN_NAME -en ENV_NAME \
+python -m apps.train -c configs/procgen_ood.yaml -n RUN_NAME -en ENV_NAME \
     -sim PATH/TO/SIM_WEAK.pt -weak PATH/TO/WEAK.pt -strong PATH/TO/STRONG.pt \
     -query_cost COST -cp_feature obs
 ```
@@ -84,14 +84,14 @@ There are multiple evaluation entrypoints with different purposes:
 
 ```bash
 # Evaluate an underlying acting policy checkpoint directly
-python eval_policy.py -c configs/procgen_threshold.yaml \
+python -m apps.eval_policy -c configs/procgen_threshold.yaml \
     --model_file YRC/checkpoints/procgen/coinrun/weak/model_80019456.pth
 
 # Calibrate percentile-to-threshold mapping for AFHP evaluation
-python calibrate_afhp.py --coordination_artifact_dir PATH/TO/ARTIFACT_DIR [...]
+python -m apps.calibrate_afhp --coordination_artifact_dir PATH/TO/ARTIFACT_DIR [...]
 
 # Evaluate one AFHP bin after calibration
-python eval_afhp_bin.py --bin_idx 0 \
+python -m apps.eval_afhp_bin --bin_idx 0 \
     --checkpoint_path PATH/TO/bin_0.npz \
     --calibration_path PATH/TO/calibration.npz [...]
 ```
@@ -174,8 +174,8 @@ The project uses hierarchical YAML configs in `configs/`:
 ### Important Implementation Details
 
 1. **AFHP evaluation is bin-based**
-   - `calibrate_afhp.py` saves calibration artifacts
-   - `eval_afhp_bin.py` evaluates one equal-width AFHP bin at a time
+ - `python -m apps.calibrate_afhp` saves calibration artifacts
+ - `python -m apps.eval_afhp_bin` evaluates one equal-width AFHP bin at a time
    - `YRC/coverage/coverage_search.py` starts from the policy's calibrated percentile heuristic, then refines with binary search
    - per-bin `.npz` files make failed-bin restarts cheap
 

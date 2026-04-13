@@ -76,7 +76,7 @@ YRC-Bench is a research framework for learning coordination strategies between n
   Note: This requires numba and other ML dependencies that may fail to install.
 ### Training and Evaluation
   ```bash
-  python train.py -c configs/CONFIG.yaml -n RUN_NAME -en ENV_NAME \
+  python -m apps.train -c configs/CONFIG.yaml -n RUN_NAME -en ENV_NAME \
       -sim PATH/TO/SIM_WEAK.pt -weak PATH/TO/WEAK.pt -strong PATH/TO/STRONG.pt \
       -query_cost COST -cp_feature FEATURE_TYPE
   ```
@@ -90,7 +90,7 @@ YRC-Bench is a research framework for learning coordination strategies between n
 
 - For Cliport environments (oracle-based strong agent):
   ```bash
-  python train.py -c configs/cliport_ood.yaml -n RUN_NAME -en ENV_NAME \
+  python -m apps.train -c configs/cliport_ood.yaml -n RUN_NAME -en ENV_NAME \
       -sim PATH/TO/SIM_WEAK.pt -weak PATH/TO/WEAK.pt \
       -cp_feature FEATURE_TYPE -query_cost COST
   ```
@@ -108,7 +108,7 @@ YRC-Bench is a research framework for learning coordination strategies between n
 
 - Validate training script help:
   ```bash
-  python train.py -h
+  python -m apps.train -h
   ```
   Note: This works with basic dependencies.
 
@@ -166,7 +166,7 @@ YRC-Bench is a research framework for learning coordination strategies between n
 1. Always run `git submodule update --init --recursive` after cloning
 2. Test basic imports: `python -c "import YRC.core.configs"`
 3. Run code quality checks: `./ci/format_and_check.sh`
-4. Validate training script help: `python train.py -h` (works with basic dependencies)
+4. Validate training script help: `python -m apps.train -h` (works with basic dependencies)
 5. Validate evaluation script help: `python eval.py -h` (requires full dependencies)
 6. Document any dependency installation failures clearly
 7. Never cancel long-running operations (submodule init, dependency installs)

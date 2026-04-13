@@ -6,8 +6,8 @@ This script creates reproducible seed sets that can be used with the procgen-afh
 fork's ordered level seeds feature (level_seeds parameter).
 
 Usage:
-    python generate_level_seeds.py --policy-train 10000 --ood-train 5000 --validation 500 --ood-eval 1000 -o seeds.json
-    python generate_level_seeds.py --paper --ood-train 5000 --validation 500 --ood-eval 1000 -o seeds/paper.json
+    python -m apps.generate_level_seeds --policy-train 10000 --ood-train 5000 --validation 500 --ood-eval 1000 -o seeds.json
+    python -m apps.generate_level_seeds --paper --ood-train 5000 --validation 500 --ood-eval 1000 -o seeds/paper.json
 
 The generated seeds are:
 - Deterministic: Same base seed always produces same seed sets
@@ -180,17 +180,17 @@ def main() -> None:
         epilog="""
 Examples:
   # Generate seeds with custom counts
-  python generate_level_seeds.py --policy-train 50000 --ood-train 10000 --validation 500 --ood-eval 5000 -o seeds/custom.json
+  python -m apps.generate_level_seeds --policy-train 50000 --ood-train 10000 --validation 500 --ood-eval 5000 -o seeds/custom.json
 
   # Use a specific base seed for reproducibility
-  python generate_level_seeds.py --policy-train 10000 --ood-train 5000 --validation 500 --ood-eval 1000 --base-seed 42 -o seeds/seed42.json
+  python -m apps.generate_level_seeds --policy-train 10000 --ood-train 5000 --validation 500 --ood-eval 1000 --base-seed 42 -o seeds/seed42.json
 
   # Paper mode: sequential seeds [0, 100000) for policy_train
-  python generate_level_seeds.py --paper --ood-train 5000 --validation 500 --ood-eval 1000 -o seeds/paper.json
+  python -m apps.generate_level_seeds --paper --ood-train 5000 --validation 500 --ood-eval 1000 -o seeds/paper.json
 
 The generated JSON can be loaded and used with procgen:
 
-  from generate_level_seeds import load_seeds
+  from apps.generate_level_seeds import load_seeds
   from procgen import ProcgenGym3Env
 
   seeds = load_seeds("seeds.json")
@@ -285,4 +285,3 @@ The generated JSON can be loaded and used with procgen:
 
 if __name__ == "__main__":
     main()
-

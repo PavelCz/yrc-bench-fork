@@ -6,11 +6,11 @@ Designed to run as a SLURM array job with a pre-computed calibration artifact.
 
 Typical workflow:
   # 1. Calibration job (run once per trained policy checkpoint after training)
-  python calibrate_afhp.py --calibration_path /shared/calib.npz [...]
+  python -m apps.calibrate_afhp --calibration_path /shared/calib.npz [...]
 
   # 2. Bin array job (one task per bin, reuses the pre-computed calibration)
-  python eval_afhp_bin.py --bin_idx $SLURM_ARRAY_TASK_ID \\
-      --checkpoint_path /shared/results_bin_$SLURM_ARRAY_TASK_ID.npz \\
+  python -m apps.eval_afhp_bin --bin_idx $SLURM_ARRAY_TASK_ID \
+      --checkpoint_path /shared/results_bin_$SLURM_ARRAY_TASK_ID.npz \
       --calibration_path /shared/calib.npz [same policy/config args as step 1]
 
 Restart: if --checkpoint_path already exists the job exits immediately, so

@@ -7,8 +7,8 @@ where each policy is trained on a different set of level seeds. The generated
 seeds do not overlap with any seeds in an existing seed file.
 
 Usage:
-    python generate_ensemble_seeds.py -i seeds/0.json -o seeds/ensemble --num-seeds 100000 --num-members 4
-    python generate_ensemble_seeds.py -i seeds/0.json -o seeds/ensemble --num-seeds 100000 --num-members 4 --base-seed 42
+    python -m apps.generate_ensemble_seeds -i seeds/0.json -o seeds/ensemble --num-seeds 100000 --num-members 4
+    python -m apps.generate_ensemble_seeds -i seeds/0.json -o seeds/ensemble --num-seeds 100000 --num-members 4 --base-seed 42
 
 The script will create files:
     seeds/ensemble_0.json
@@ -20,7 +20,7 @@ The script will create files:
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import List, Set
 
 import numpy as np
 
@@ -101,8 +101,8 @@ def save_ensemble_seed_file(
     """
     Save an ensemble member's seeds to a JSON file.
 
-    The file format matches generate_level_seeds.py output, with policy_train
-    containing the ensemble seeds and empty lists for other phases.
+    The file format matches `apps/generate_level_seeds.py` output, with
+    policy_train containing the ensemble seeds and empty lists for other phases.
 
     Args:
         seeds: List of seeds for this ensemble member
@@ -149,14 +149,14 @@ def main() -> None:
         epilog="""
 Examples:
   # Generate 4 ensemble seed files with 100,000 seeds each
-  python generate_ensemble_seeds.py -i seeds/0.json -o seeds/ensemble --num-seeds 100000 --num-members 4
+  python -m apps.generate_ensemble_seeds -i seeds/0.json -o seeds/ensemble --num-seeds 100000 --num-members 4
 
   # Use a specific base seed for reproducibility
-  python generate_ensemble_seeds.py -i seeds/0.json -o seeds/ensemble --num-seeds 100000 --num-members 4 --base-seed 42
+  python -m apps.generate_ensemble_seeds -i seeds/0.json -o seeds/ensemble --num-seeds 100000 --num-members 4 --base-seed 42
 
 The generated JSON files can be loaded and used with procgen:
 
-  from generate_level_seeds import load_seeds
+  from apps.generate_level_seeds import load_seeds
   from procgen import ProcgenGym3Env
 
   seeds = load_seeds("seeds/ensemble_0.json")
