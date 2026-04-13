@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
 """
-Script to run evaluation jobs in parallel via SLURM sbatch.
+Submit AFHP evaluation jobs via SLURM.
+
+High-level flow:
+1. Parse CLI arguments and resolve shared paths/config.
+2. For each requested experiment id, collect and validate inputs.
+3. Ensure calibration exists (or submit a calibration job first).
+4. Submit the AFHP bin array job for that experiment.
 """
 
+import argparse
 import subprocess
 import sys
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -65,6 +73,368 @@ EVAL_DEFAULTS = {
     "video_filter_mode": "any",
     "num_bins": 20,
 }
+
+
+@dataclass(frozen=True)
+class SharedEvalContext:
+    """Invocation-wide settings shared across all experiment ids."""
+
+    checkpoint_base_path: str
+    seeds_base_path: str
+    svdd_base_path: str
+    config_path: str
+    coordination_root: Path
+    log_dir: Path
+
+
+@dataclass(frozen=True)
+class ExperimentPlan:
+    """All resolved inputs needed to submit evaluation for one experiment id."""
+
+    exp_id: int
+    job_name: str
+    experiment_group: str
+    checkpoints: Dict[str, str]
+    level_seeds_file: Path
+    svdd_model_path: Optional[str]
+    cp_feature: Optional[str]
+    ensemble_members: Optional[List[Optional[str]]]
+    coordination_artifact_dir: Path
+    calibration_path: Path
+    eval_args: Dict[str, object]
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the CLI parser for the eval submission entrypoint."""
+    parser = argparse.ArgumentParser(description="Run evaluation jobs via SLURM")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Print commands without submitting"
+    )
+    parser.add_argument(
+        "--conda-env",
+        default=DEFAULT_CONDA_ENV,
+        help=f"Conda environment to use (default: {DEFAULT_CONDA_ENV})",
+    )
+    parser.add_argument(
+        "--server",
+        choices=["chai", "snoopy"],
+        default="chai",
+        help="Server to use for paths (default: chai)",
+    )
+    parser.add_argument(
+        "--qos",
+        choices=["default", "high"],
+        default="default",
+        help="SLURM QOS to use (default: default)",
+    )
+    parser.add_argument(
+        "--env", required=True, choices=ENVS, help="Environment to evaluate"
+    )
+    parser.add_argument(
+        "--method",
+        required=True,
+        choices=list(METHOD_CONFIGS.keys()),
+        help="Evaluation method",
+    )
+    parser.add_argument("--prefix", required=True, help="Experiment group prefix")
+    parser.add_argument(
+        "--exp-ids",
+        type=int,
+        nargs="+",
+        default=[0, 1, 2, 3, 4],
+        help="Experiment IDs to run (default: 0 1 2 3 4)",
+    )
+    parser.add_argument(
+        "--num-levels",
+        type=int,
+        default=EVAL_DEFAULTS["num_levels"],
+        help="Number of levels",
+    )
+    parser.add_argument(
+        "--video-episodes",
+        type=int,
+        default=EVAL_DEFAULTS["video_episodes_to_collect"],
+        help="Video episodes to collect",
+    )
+    parser.add_argument(
+        "--video-filter", default=EVAL_DEFAULTS["video_filter"], help="Video filter"
+    )
+    parser.add_argument(
+        "--cp-rolling-average",
+        default=EVAL_DEFAULTS["cp_rolling_average"],
+        help="Coordination policy rolling average",
+    )
+    parser.add_argument(
+        "--video-logging-mode",
+        default=EVAL_DEFAULTS["video_logging_mode"],
+        help="Video logging mode",
+    )
+    parser.add_argument(
+        "--video-filter-mode",
+        default=EVAL_DEFAULTS["video_filter_mode"],
+        help="Video filter mode",
+    )
+    parser.add_argument(
+        "--num-bins",
+        type=int,
+        default=EVAL_DEFAULTS["num_bins"],
+        help=f"Number of AFHP bins to evaluate (default: {EVAL_DEFAULTS['num_bins']})",
+    )
+    parser.add_argument(
+        "--wandb-project",
+        default=None,
+        help="Override wandb project name",
+    )
+    parser.add_argument(
+        "--coordination-artifact-root",
+        default=None,
+        help=(
+            "Base directory for coordination-method artifacts. "
+            "Defaults to a sibling of the acting-policy root."
+        ),
+    )
+    parser.add_argument("--sim", help="Override sim weak checkpoint path")
+    parser.add_argument("--weak", help="Override weak checkpoint path")
+    parser.add_argument("--strong", help="Override strong checkpoint path")
+    parser.add_argument(
+        "--num-ensemble-members",
+        type=int,
+        default=DEFAULT_NUM_ENSEMBLE_MEMBERS,
+        help=f"Number of ensemble members (default: {DEFAULT_NUM_ENSEMBLE_MEMBERS})",
+    )
+    return parser
+
+
+def resolve_shared_eval_context(
+    args: argparse.Namespace,
+) -> Optional[SharedEvalContext]:
+    """Resolve invocation-wide paths and validate the eval config exists."""
+    paths = SERVER_PATHS[args.server]
+    checkpoint_base_path = paths["checkpoint_base"]
+    seeds_base_path = paths["seeds_base"]
+    svdd_base_path = paths["svdd_base"]
+    coordination_root = (
+        Path(args.coordination_artifact_root)
+        if args.coordination_artifact_root is not None
+        else default_coordination_artifact_root(Path(checkpoint_base_path))
+    )
+    config_file = METHOD_CONFIGS[args.method]
+    config_path = f"configs/eval/{args.env}/{config_file}"
+    if not Path(config_path).exists():
+        print(f"Error: Config file not found: {config_path}")
+        return None
+
+    wandb_project = args.wandb_project or "default"
+    log_dir = (
+        Path(paths["log_base"]) / wandb_project / args.prefix / date.today().isoformat()
+    )
+    return SharedEvalContext(
+        checkpoint_base_path=checkpoint_base_path,
+        seeds_base_path=seeds_base_path,
+        svdd_base_path=svdd_base_path,
+        config_path=config_path,
+        coordination_root=coordination_root,
+        log_dir=log_dir,
+    )
+
+
+def print_submission_overview(
+    args: argparse.Namespace, context: SharedEvalContext
+) -> None:
+    """Print the shared settings for this invocation."""
+    print(f"Conda env: {args.conda_env}")
+    print(f"Coordination artifact root: {context.coordination_root}")
+    print(f"Log dir: {context.log_dir}")
+
+    if args.dry_run:
+        print(f"Server: {args.server}")
+        print(f"Config: {context.config_path}")
+        print(f"Environment: {args.env}")
+        print(f"Method: {args.method}")
+        print(f"Prefix: {args.prefix}")
+        print()
+
+
+def resolve_checkpoints_for_experiment(
+    args: argparse.Namespace, exp_id: int, checkpoint_base_path: str
+) -> Dict[str, str]:
+    """Resolve acting-policy checkpoints, applying any CLI overrides."""
+    checkpoints = get_checkpoints(args.env, exp_id, checkpoint_base_path)
+    if args.sim:
+        checkpoints["sim"] = args.sim
+    if args.weak:
+        checkpoints["weak"] = args.weak
+    if args.strong:
+        checkpoints["strong"] = args.strong
+    return checkpoints
+
+
+def resolve_svdd_settings(
+    args: argparse.Namespace, exp_id: int, svdd_base_path: str
+) -> Tuple[Optional[str], Optional[str]]:
+    """Resolve SVDD-specific model path and feature type."""
+    if args.method not in SVDD_METHODS:
+        return None, None
+
+    svdd_model_path = get_svdd_model_path(args.env, exp_id, args.method, svdd_base_path)
+    cp_feature = "obs" if args.method == "svdd-image" else "hidden"
+    return svdd_model_path, cp_feature
+
+
+def resolve_ensemble_members(
+    args: argparse.Namespace, exp_id: int, checkpoint_base_path: str
+) -> Optional[List[Optional[str]]]:
+    """Resolve ensemble member checkpoints for ensemble methods."""
+    if args.method not in ENSEMBLE_METHODS:
+        return None
+    return get_ensemble_member_paths(
+        args.env, exp_id, checkpoint_base_path, args.num_ensemble_members
+    )
+
+
+def validate_experiment_inputs(
+    args: argparse.Namespace,
+    exp_id: int,
+    *,
+    checkpoints: Dict[str, str],
+    level_seeds_file: Path,
+    svdd_model_path: Optional[str],
+    ensemble_members: Optional[List[Optional[str]]],
+    checkpoint_base_path: str,
+    svdd_base_path: str,
+) -> bool:
+    """Return True when all required inputs for one experiment are present."""
+    missing = False
+
+    for name, path in checkpoints.items():
+        if not Path(path).exists():
+            print(f"Warning: exp{exp_id} {name} checkpoint not found: {path}")
+            missing = True
+
+    if not level_seeds_file.exists():
+        print(f"Warning: exp{exp_id} level seeds file not found: {level_seeds_file}")
+        missing = True
+
+    if args.method in SVDD_METHODS and svdd_model_path is None:
+        svdd_policy_name = get_svdd_policy_name(args.env, exp_id, args.method)
+        print(
+            f"Error: exp{exp_id} SVDD model not found at "
+            f"{svdd_base_path}/{svdd_policy_name}/trained.joblib. "
+            f"Run `python scripts/train_svdd.py --env {args.env} "
+            f"--method {args.method} --prefix {args.prefix} --exp-ids {exp_id}` first."
+        )
+        missing = True
+
+    if args.method in ENSEMBLE_METHODS and ensemble_members:
+        env_folder = get_env_folder(args.env)
+        for i, member_path in enumerate(ensemble_members):
+            if member_path is None:
+                print(
+                    f"Warning: exp{exp_id} ensemble member m{i} not found at "
+                    f"{checkpoint_base_path}/{env_folder}/ensembles/"
+                    f"icml2_ensemble_{args.env}_exp{exp_id}_m{i}/"
+                )
+                missing = True
+
+    return not missing
+
+
+def build_eval_args(
+    args: argparse.Namespace,
+    context: SharedEvalContext,
+    *,
+    job_name: str,
+    experiment_group: str,
+    checkpoints: Dict[str, str],
+    level_seeds_file: Path,
+    svdd_model_path: Optional[str],
+    cp_feature: Optional[str],
+    ensemble_members: Optional[List[Optional[str]]],
+) -> Dict[str, object]:
+    """Build the argument bundle passed to downstream job builders."""
+    return {
+        "config": context.config_path,
+        "name": job_name,
+        "experiment_group": experiment_group,
+        "num_levels": args.num_levels,
+        "video_episodes_to_collect": args.video_episodes,
+        "video_filter": args.video_filter,
+        "cp_rolling_average": args.cp_rolling_average,
+        "video_logging_mode": args.video_logging_mode,
+        "video_filter_mode": args.video_filter_mode,
+        "num_bins": args.num_bins,
+        "wandb_project": args.wandb_project,
+        "level_seeds_file": str(level_seeds_file),
+        "svdd_model_path": svdd_model_path,
+        "cp_feature": cp_feature,
+        "ensemble_members": ensemble_members,
+        **checkpoints,
+    }
+
+
+def plan_experiment_submission(
+    args: argparse.Namespace, context: SharedEvalContext, exp_id: int
+) -> Optional[ExperimentPlan]:
+    """Resolve and validate everything needed to submit one experiment id."""
+    checkpoints = resolve_checkpoints_for_experiment(
+        args, exp_id, context.checkpoint_base_path
+    )
+    level_seeds_file = Path(context.seeds_base_path) / f"{exp_id}.json"
+    svdd_model_path, cp_feature = resolve_svdd_settings(
+        args, exp_id, context.svdd_base_path
+    )
+    ensemble_members = resolve_ensemble_members(
+        args, exp_id, context.checkpoint_base_path
+    )
+
+    if not validate_experiment_inputs(
+        args,
+        exp_id,
+        checkpoints=checkpoints,
+        level_seeds_file=level_seeds_file,
+        svdd_model_path=svdd_model_path,
+        ensemble_members=ensemble_members,
+        checkpoint_base_path=context.checkpoint_base_path,
+        svdd_base_path=context.svdd_base_path,
+    ):
+        print(f"Skipping exp{exp_id} due to missing files\n")
+        return None
+
+    method_name = METHOD_NAMES[args.method]
+    job_name = f"{args.env}_{method_name}_exp{exp_id}"
+    experiment_group = f"{args.prefix}_{args.env}_exp{exp_id}"
+    coordination_artifact_dir = resolve_coordination_artifact_dir(
+        args.env,
+        exp_id,
+        method_name,
+        experiment_group,
+        coordination_root=context.coordination_root,
+    )
+    calibration_path = resolve_calibration_path(coordination_artifact_dir)
+    eval_args = build_eval_args(
+        args,
+        context,
+        job_name=job_name,
+        experiment_group=experiment_group,
+        checkpoints=checkpoints,
+        level_seeds_file=level_seeds_file,
+        svdd_model_path=svdd_model_path,
+        cp_feature=cp_feature,
+        ensemble_members=ensemble_members,
+    )
+    return ExperimentPlan(
+        exp_id=exp_id,
+        job_name=job_name,
+        experiment_group=experiment_group,
+        checkpoints=checkpoints,
+        level_seeds_file=level_seeds_file,
+        svdd_model_path=svdd_model_path,
+        cp_feature=cp_feature,
+        ensemble_members=ensemble_members,
+        coordination_artifact_dir=coordination_artifact_dir,
+        calibration_path=calibration_path,
+        eval_args=eval_args,
+    )
 
 
 def _maybe_submit_calibration_job(
@@ -171,10 +541,13 @@ def _build_policy_python_args(script: str, eval_args: dict) -> List[str]:
             args.append(f"    {member_path}")
     return args
 
+
 def _dependency_line(dependency_job_id: Optional[str]) -> str:
     if dependency_job_id is None:
         return ""
     return f"#SBATCH --dependency=afterok:{dependency_job_id}"
+
+
 def build_bin_array_sbatch_command(
     job_name: str,
     eval_args: dict,
@@ -228,52 +601,7 @@ def _sbatch_submit(script: str, log_dir: Path) -> Optional[str]:
         print(f"  Failed: {result.stderr.strip()}")
         return None
 
-<<<<<<< HEAD
-=======
 
-def submit_sequential_eval(
-    job_name: str,
-    eval_args: dict,
-    conda_env: str,
-    log_dir: Path,
-    calibration_path: Path,
-    qos: str = "default",
-    dry_run: bool = False,
-    dependency_job_id: Optional[str] = None,
-) -> None:
-    """Submit a sequential AFHP evaluation job.
-
-    If ``dependency_job_id`` is provided, the eval job waits for that job
-    (typically a calibrate job inserted on cache miss) via afterok.
-    """
-    seq_script = build_sequential_eval_sbatch_command(
-        job_name,
-        eval_args,
-        conda_env,
-        log_dir,
-        calibration_path,
-        qos=qos,
-        dependency_job_id=dependency_job_id,
-    )
-
-    if dry_run:
-        print(f"=== Sequential eval job: {job_name}_seq ===")
-        print(seq_script)
-        print()
-        return
-
-    dep_note = (
-        f" (depends on calib job {dependency_job_id})"
-        if dependency_job_id is not None
-        else ""
-    )
-    print(
-        f"  Submitting sequential eval job using calibration {calibration_path}{dep_note}..."
-    )
-    _sbatch_submit(seq_script, log_dir)
-
-
->>>>>>> origin/large-refactor
 def submit_parallel_bins(
     job_name: str,
     eval_args: dict,
@@ -319,284 +647,65 @@ def submit_parallel_bins(
     _sbatch_submit(bin_script, log_dir)
 
 
+def submit_experiment_plan(
+    args: argparse.Namespace, context: SharedEvalContext, plan: ExperimentPlan
+) -> None:
+    """Submit calibration if needed, then submit the AFHP bin array job."""
+    print(f"Calibration path: {plan.calibration_path}")
+    dependency_job_id = _maybe_submit_calibration_job(
+        method=args.method,
+        calibration_path=plan.calibration_path,
+        coordination_artifact_dir=plan.coordination_artifact_dir,
+        experiment_group=plan.experiment_group,
+        config_path=context.config_path,
+        checkpoints=plan.checkpoints,
+        level_seeds_file=plan.level_seeds_file,
+        cp_feature=plan.cp_feature,
+        svdd_model_path=plan.svdd_model_path,
+        ensemble_members=plan.ensemble_members,
+        conda_env=args.conda_env,
+        log_dir=context.log_dir,
+        qos=args.qos,
+        env=args.env,
+        exp_id=plan.exp_id,
+        dry_run=args.dry_run,
+    )
+    if dependency_job_id is _SKIP_EXP:
+        print(f"Skipping exp{plan.exp_id}.\n")
+        return
+
+    submit_parallel_bins(
+        job_name=plan.job_name,
+        eval_args=plan.eval_args,
+        conda_env=args.conda_env,
+        log_dir=context.log_dir,
+        calibration_path=plan.calibration_path,
+        num_bins=args.num_bins,
+        qos=args.qos,
+        dry_run=args.dry_run,
+        dependency_job_id=dependency_job_id,
+    )
+
+
+def run_requested_evaluations(
+    args: argparse.Namespace, context: SharedEvalContext
+) -> None:
+    """Plan and submit all requested experiment ids."""
+    for exp_id in args.exp_ids:
+        plan = plan_experiment_submission(args, context, exp_id)
+        if plan is None:
+            continue
+        submit_experiment_plan(args, context, plan)
+
+
 def main():
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Run evaluation jobs via SLURM")
-    parser.add_argument(
-        "--dry-run", action="store_true", help="Print commands without submitting"
-    )
-    parser.add_argument(
-        "--conda-env",
-        default=DEFAULT_CONDA_ENV,
-        help=f"Conda environment to use (default: {DEFAULT_CONDA_ENV})",
-    )
-    parser.add_argument(
-        "--server",
-        choices=["chai", "snoopy"],
-        default="chai",
-        help="Server to use for paths (default: chai)",
-    )
-    parser.add_argument(
-        "--qos",
-        choices=["default", "high"],
-        default="default",
-        help="SLURM QOS to use (default: default)",
-    )
-    parser.add_argument(
-        "--env", required=True, choices=ENVS, help="Environment to evaluate"
-    )
-    parser.add_argument(
-        "--method",
-        required=True,
-        choices=list(METHOD_CONFIGS.keys()),
-        help="Evaluation method",
-    )
-    parser.add_argument("--prefix", required=True, help="Experiment group prefix")
-    parser.add_argument(
-        "--exp-ids",
-        type=int,
-        nargs="+",
-        default=[0, 1, 2, 3, 4],
-        help="Experiment IDs to run (default: 0 1 2 3 4)",
-    )
-    parser.add_argument(
-        "--num-levels",
-        type=int,
-        default=EVAL_DEFAULTS["num_levels"],
-        help="Number of levels",
-    )
-    parser.add_argument(
-        "--video-episodes",
-        type=int,
-        default=EVAL_DEFAULTS["video_episodes_to_collect"],
-        help="Video episodes to collect",
-    )
-    parser.add_argument(
-        "--video-filter", default=EVAL_DEFAULTS["video_filter"], help="Video filter"
-    )
-    parser.add_argument(
-        "--cp-rolling-average",
-        default=EVAL_DEFAULTS["cp_rolling_average"],
-        help="Coordination policy rolling average",
-    )
-    parser.add_argument(
-        "--video-logging-mode",
-        default=EVAL_DEFAULTS["video_logging_mode"],
-        help="Video logging mode",
-    )
-    parser.add_argument(
-        "--video-filter-mode",
-        default=EVAL_DEFAULTS["video_filter_mode"],
-        help="Video filter mode",
-    )
-    parser.add_argument(
-        "--num-bins",
-        type=int,
-        default=EVAL_DEFAULTS["num_bins"],
-        help=f"Number of AFHP bins to evaluate (default: {EVAL_DEFAULTS['num_bins']})",
-    )
-    parser.add_argument(
-        "--wandb-project",
-        default=None,
-        help="Override wandb project name",
-    )
-    parser.add_argument(
-        "--coordination-artifact-root",
-        default=None,
-        help=(
-            "Base directory for coordination-method artifacts. "
-            "Defaults to a sibling of the acting-policy root."
-        ),
-    )
-    # Override checkpoints if needed
-    parser.add_argument("--sim", help="Override sim weak checkpoint path")
-    parser.add_argument("--weak", help="Override weak checkpoint path")
-    parser.add_argument("--strong", help="Override strong checkpoint path")
-    # Ensemble-specific arguments
-    parser.add_argument(
-        "--num-ensemble-members",
-        type=int,
-        default=DEFAULT_NUM_ENSEMBLE_MEMBERS,
-        help=f"Number of ensemble members (default: {DEFAULT_NUM_ENSEMBLE_MEMBERS})",
-    )
-    args = parser.parse_args()
-
-    # Get server-specific paths
-    paths = SERVER_PATHS[args.server]
-    checkpoint_base_path = paths["checkpoint_base"]
-    seeds_base_path = paths["seeds_base"]
-    svdd_base_path = paths["svdd_base"]
-    coordination_root = (
-        Path(args.coordination_artifact_root)
-        if args.coordination_artifact_root is not None
-        else default_coordination_artifact_root(Path(checkpoint_base_path))
-    )
-
-    # Get config file path
-    config_file = METHOD_CONFIGS[args.method]
-    config_path = f"configs/eval/{args.env}/{config_file}"
-
-    # Validate config file exists
-    if not Path(config_path).exists():
-        print(f"Error: Config file not found: {config_path}")
+    args = build_parser().parse_args()
+    context = resolve_shared_eval_context(args)
+    if context is None:
         return 1
 
-    print(f"Conda env: {args.conda_env}")
-    print(f"Coordination artifact root: {coordination_root}")
-
-    # Build log directory path: base / wandb_project / prefix / date
-    log_base = Path(paths["log_base"])
-    wandb_project = args.wandb_project or "default"
-    log_dir = log_base / wandb_project / args.prefix / date.today().isoformat()
-    print(f"Log dir: {log_dir}")
-
-    if args.dry_run:
-        print(f"Server: {args.server}")
-        print(f"Config: {config_path}")
-        print(f"Environment: {args.env}")
-        print(f"Method: {args.method}")
-        print(f"Prefix: {args.prefix}")
-        print()
-
-    # Loop over experiment IDs
-    for exp_id in args.exp_ids:
-        # Get checkpoints for this experiment
-        checkpoints = get_checkpoints(args.env, exp_id, checkpoint_base_path)
-        if args.sim:
-            checkpoints["sim"] = args.sim
-        if args.weak:
-            checkpoints["weak"] = args.weak
-        if args.strong:
-            checkpoints["strong"] = args.strong
-
-        # Get level seeds file path
-        level_seeds_file = Path(seeds_base_path) / f"{exp_id}.json"
-
-        # Get SVDD-specific settings if needed
-        svdd_model_path = None
-        cp_feature = None
-        if args.method in SVDD_METHODS:
-            svdd_model_path = get_svdd_model_path(
-                args.env, exp_id, args.method, svdd_base_path
-            )
-            cp_feature = "obs" if args.method == "svdd-image" else "hidden"
-
-        # Get ensemble-specific settings if needed
-        ensemble_members = None
-        if args.method in ENSEMBLE_METHODS:
-            ensemble_members = get_ensemble_member_paths(
-                args.env, exp_id, checkpoint_base_path, args.num_ensemble_members
-            )
-
-        # Validate checkpoints and seeds file exist
-        missing = False
-        for name, path in checkpoints.items():
-            if not Path(path).exists():
-                print(f"Warning: exp{exp_id} {name} checkpoint not found: {path}")
-                missing = True
-
-        if not level_seeds_file.exists():
-            print(
-                f"Warning: exp{exp_id} level seeds file not found: {level_seeds_file}"
-            )
-            missing = True
-
-        if args.method in SVDD_METHODS and svdd_model_path is None:
-            svdd_policy_name = get_svdd_policy_name(args.env, exp_id, args.method)
-            print(
-                f"Error: exp{exp_id} SVDD model not found at "
-                f"{svdd_base_path}/{svdd_policy_name}/trained.joblib. "
-                f"Run `python scripts/train_svdd.py --env {args.env} "
-                f"--method {args.method} --prefix {args.prefix} --exp-ids {exp_id}` first."
-            )
-            missing = True
-
-        if args.method in ENSEMBLE_METHODS and ensemble_members:
-            for i, member_path in enumerate(ensemble_members):
-                if member_path is None:
-                    env_folder = get_env_folder(args.env)
-                    print(
-                        f"Warning: exp{exp_id} ensemble member m{i} not found at "
-                        f"{checkpoint_base_path}/{env_folder}/ensembles/icml2_ensemble_{args.env}_exp{exp_id}_m{i}/"
-                    )
-                    missing = True
-
-        if missing:
-            print(f"Skipping exp{exp_id} due to missing files\n")
-            continue
-
-        # Build job name and experiment group
-        method_name = METHOD_NAMES[args.method]
-        job_name = f"{args.env}_{method_name}_exp{exp_id}"
-        experiment_group = f"{args.prefix}_{args.env}_exp{exp_id}"
-
-        eval_args = {
-            "config": config_path,
-            "name": job_name,
-            "experiment_group": experiment_group,
-            "num_levels": args.num_levels,
-            "video_episodes_to_collect": args.video_episodes,
-            "video_filter": args.video_filter,
-            "cp_rolling_average": args.cp_rolling_average,
-            "video_logging_mode": args.video_logging_mode,
-            "video_filter_mode": args.video_filter_mode,
-            "num_bins": args.num_bins,
-            "wandb_project": args.wandb_project,
-            "level_seeds_file": str(level_seeds_file),
-            "svdd_model_path": svdd_model_path,
-            "cp_feature": cp_feature,
-            "ensemble_members": ensemble_members,
-            **checkpoints,
-        }
-        coordination_artifact_dir = resolve_coordination_artifact_dir(
-            args.env,
-            exp_id,
-            method_name,
-            experiment_group,
-            coordination_root=coordination_root,
-        )
-        calibration_path = resolve_calibration_path(coordination_artifact_dir)
-        print(f"Calibration path: {calibration_path}")
-
-        prep_job_id = _maybe_submit_calibration_job(
-            method=args.method,
-            calibration_path=calibration_path,
-            coordination_artifact_dir=coordination_artifact_dir,
-            experiment_group=experiment_group,
-            config_path=config_path,
-            checkpoints=checkpoints,
-            level_seeds_file=level_seeds_file,
-            cp_feature=cp_feature,
-            svdd_model_path=svdd_model_path,
-            ensemble_members=ensemble_members,
-            conda_env=args.conda_env,
-            log_dir=log_dir,
-            qos=args.qos,
-            env=args.env,
-            exp_id=exp_id,
-            dry_run=args.dry_run,
-        )
-        if prep_job_id is _SKIP_EXP:
-            print(f"Skipping exp{exp_id}.\n")
-            continue
-        # prep_job_id is now None (cache hit), a real job ID, or the dry-run
-        # sentinel; all three are valid for the eval submission's
-        # dependency_job_id kwarg.
-        dependency_job_id = prep_job_id
-
-        submit_parallel_bins(
-            job_name=job_name,
-            eval_args=eval_args,
-            conda_env=args.conda_env,
-            log_dir=log_dir,
-            calibration_path=calibration_path,
-            num_bins=args.num_bins,
-            qos=args.qos,
-            dry_run=args.dry_run,
-            dependency_job_id=dependency_job_id,
-        )
-
+    print_submission_overview(args, context)
+    run_requested_evaluations(args, context)
     return 0
 
 
