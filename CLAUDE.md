@@ -1,88 +1,121 @@
-# CLAUDE.md
+# Agent Instructions
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file is shared via symlink as `CLAUDE.md` and `Agents.md`.
+It provides guidance to coding agents working in this repository.
 
 ## Project Overview
 
-This is a fork of YRC-Bench (Yield and Request Control Benchmark) focused exclusively on **Procgen environments**. The framework is for learning coordination strategies between novice (weak) and expert (strong) policies in reinforcement learning. The core problem is determining when to yield control from a weak agent to a strong agent, optimizing the trade-off between performance and query cost.
+This repository is a fork of YRC-Bench used for the "Getting by Goal Misgeneralization with a Little Help From an Expert" experiments.
+The current fork is centered on **Procgen**, especially the paper workflows for `coinrun` and `maze`.
 
-**Note:** While the codebase contains code for MiniGrid and Cliport environments from the original benchmark, this fork only uses Procgen. Focus on `YRC/envs/procgen/`, `configs/procgen_*.yaml`, and `YRC/checkpoints/procgen/` when working with this codebase.
+MiniGrid and Cliport code from upstream still exists, but most active work in this fork is around:
+- `YRC/envs/procgen/`
+- `configs/procgen_*.yaml`
+- `configs/eval/coinrun/` and `configs/eval/maze/`
+- `scripts/run_eval.py`, `scripts/train_svdd.py`, and `scripts/common.py`
+- `docs/percentile_calibration.md` and `docs/bin_threshold_search.md`
 
 ## Reflective Memories
 
-- Remember, that when you implement some algorithm I suggested or you came up with, that you will be biased towards thinking this alg is efficient or well-suited. However, this might not be true and it is hard to know how much you have thought about this. When writing conclusions or documentation, refrain from using language that subjectively assigns value to parts of the code or algorithms concept. Only use these, if we have some proof that these types of judements are correct.
+- When writing conclusions or documentation, avoid language that assigns subjective value to an algorithm or design unless the repo contains evidence for that claim.
 
 ## Development Environment
 
 There are two conda environments:
-- **`ood`**: For development and testing
-- **`ood-stable`**: For running final experiments (frozen dependencies)
+- **`ood`**: development, debugging, linting, and local tests
+- **`ood-stable`**: paper-style runs and SLURM job scripts
 
 ```bash
-# Development (using conda run, recommended)
+# Development
 conda run -n ood <command>
 
 # Or activate the environment first
 conda activate ood
 
-# Final experiments
+# Paper / batch jobs
 conda run -n ood-stable <command>
 ```
 
 ## Key Commands
 
 ### Code Quality
+
+Prefer direct per-file checks on the files you touched:
+
 ```bash
-# Format code
 conda run -n ood ruff format <files>
-
-# Lint code
 conda run -n ood ruff check <files>
-
-# Type check
 conda run -n ood pytype <files>
-
-# Run all checks on specific files
-conda run -n ood ci/format_and_check.sh
 ```
 
+`ci/format_and_check.sh` exists, but its hard-coded file list includes some legacy `analyzing/` paths. Inspect it before relying on it as the canonical check command.
+
 ### Training
+
+`train.py` is the root training entrypoint for model-based coordination methods that train from rollouts without threshold search. In the current code, that means `general.algorithm` values in:
+- `ood`
+- `lightning_ae`
+
+Typical invocation:
+
 ```bash
-# Train a coordination policy (Procgen)
 python train.py -c configs/procgen_ood.yaml -n RUN_NAME -en ENV_NAME \
     -sim PATH/TO/SIM_WEAK.pt -weak PATH/TO/WEAK.pt -strong PATH/TO/STRONG.pt \
-    -query_cost COST -cp_feature FEATURE_TYPE
+    -query_cost COST -cp_feature obs
+```
+
+Paper-specific automation lives in:
+
+```bash
+python scripts/train_svdd.py --env coinrun --method svdd-latent --exp-ids 0 1 2 3
+./scripts/train_policies.sh --env coinrun --experiment 0
+./scripts/train_ensemble_policies.sh --env coinrun --experiment 0
 ```
 
 ### Evaluation
-```bash
-# Evaluate a trained model
-python eval.py -c configs/CONFIG.yaml -n RUN_NAME -en ENV_NAME \
-    -sim PATH/TO/SIM_WEAK.pt -weak PATH/TO/WEAK.pt -strong PATH/TO/STRONG.pt \
-    -query_cost COST -f_n CHECKPOINT_NAME -seed SEED
 
-# Evaluate thresholds systematically
-python eval_thresholds.py --config CONFIG.yaml --eval.threshold_bins 20
+There are multiple evaluation entrypoints with different purposes:
+
+```bash
+# Evaluate an underlying acting policy checkpoint directly
+python eval_policy.py -c configs/procgen_threshold.yaml \
+    --model_file YRC/checkpoints/procgen/coinrun/weak/model_80019456.pth
+
+# Calibrate percentile-to-threshold mapping for AFHP evaluation
+python calibrate_afhp.py --coordination_artifact_dir PATH/TO/ARTIFACT_DIR [...]
+
+# Evaluate one AFHP bin after calibration
+python eval_afhp_bin.py --bin_idx 0 \
+    --checkpoint_path PATH/TO/bin_0.npz \
+    --calibration_path PATH/TO/calibration.npz [...]
 ```
 
+`scripts/run_eval.py` is the SLURM wrapper that assembles calibration and AFHP bin jobs for the paper workflows.
+
 ### Analysis
+
+The active analysis scripts for this fork are module-style entrypoints under `analyzing/`:
+
 ```bash
-# Parse raw results
-python analyzing/parse.py
+python -m analyzing.icml_plot ...
+python -m analyzing.plot_ood_rate ...
+python -m analyzing.episode_length_dist ...
+python -m analyzing.plot_policy_training_curves ...
+```
 
-# Aggregate results
-python analyzing/aggregate.py
+The original YRC-Bench aggregation scripts are kept under `analyzing/yrc_bench/`:
 
-# Generate plots
-python analyzing/fig*.py
+```bash
+python analyzing/yrc_bench/parse.py
+python analyzing/yrc_bench/aggregate.py
+python analyzing/yrc_bench/fig*.py
 ```
 
 ### Installation
-```bash
-# Install main requirements
-pip install -r requirements.txt
 
-# Install environment libraries (e.g., Procgen)
+```bash
+pip install -r requirements.txt
+pip install -r requirements_minigrid.txt  # only if you need MiniGrid
 pip install -e lib/LIBRARY_NAME
 ```
 
@@ -90,83 +123,90 @@ pip install -e lib/LIBRARY_NAME
 
 ### Core Components
 
-1. **YRC/algorithms/**: Coordination algorithms
-   - `ood.py`: Out-of-distribution detection methods (Deep SVDD, Mahalanobis AE)
-   - `lightning_ae.py`: Lightning-based autoencoder for OOD detection
-   - `rl.py`: Reinforcement learning-based coordination (PPO)
-   - `threshold.py`: Threshold-based methods using confidence metrics
-   - `random.py`: Baseline strategies (random, always weak/strong)
+1. **`YRC/algorithms/`**: coordination algorithm implementations
+   - `ood.py`: DeepSVDD-style OOD training
+   - `lightning_ae.py`: Lightning autoencoder training
+   - `rl.py`: PPO-based coordination
+   - `threshold.py`: confidence-threshold methods
+   - `random.py`: random and always baselines
 
-2. **YRC/core/**: Essential infrastructure
-   - `evaluator.py`: Unified evaluation framework with adaptive threshold sampling
-   - `config.py`: Configuration management system
-   - `dataset.py`: Rollout data handling
-   - `rollout_helper.py`: Utility for collecting rollouts
-   - `algorithm.py`: Base algorithm interface
-   - `environment.py`: Environment factory and wrappers
-   - `policy.py`: Policy factory and interfaces
+2. **`YRC/core/`**: shared runtime and evaluation infrastructure
+   - `algorithm.py`: base algorithm interface
+   - `dataset.py`: rollout dataset handling
+   - `environment.py`: environment factory
+   - `policy.py`: policy factory and interfaces
+   - `evaluator.py`: rollout/evaluation loop
+   - `eval_setup.py`: shared runtime for AFHP evaluation entrypoints
+   - `eval_calibration.py`: percentile calibration
+   - `artifacts.py`: coordination artifact path helpers
+   - `configs/`: config loading and global config helpers
 
-3. **YRC/envs/**: Environment wrappers
-   - `procgen/`: Procgen environments with models, policies, and wrappers (primary focus of this fork)
+3. **`YRC/coverage/`**: AFHP coverage search
+   - `coverage_search.py`: bin-based threshold search with restartable checkpoints
 
-4. **YRC/policies/**: Policy implementations
+4. **`YRC/envs/`**: benchmark-specific wrappers and acting policy loaders
+   - `procgen/`: primary focus in this fork
+   - `minigrid/` and `cliport/`: upstream code still present
+
+5. **`YRC/policies/`**: coordination policies
    - `base.py`: `TimestepRandomPolicy`, `LevelBasedRandomPolicy`, `AlwaysPolicy`
    - `heuristic.py`: `ExponentialHeuristicPolicy`, `WaitPolicy`
-   - `threshold.py`: `ThresholdPolicy` (confidence-based: `max_prob`, `max_logit`, `ensemble_variance`)
-   - `ood.py`: `OODPolicy` (Deep SVDD, AutoEncoder)
-   - `lightning_ae.py`: `LightningAEPolicy` (PyTorch Lightning autoencoders)
-   - `rl.py`: RL-based coordination policies
+   - `threshold.py`: `ThresholdPolicy`
+   - `ood.py`: `OODPolicy`
+   - `lightning_ae.py`: `LightningAEPolicy`
+   - `mahalanobis_ae.py`: Mahalanobis detector support
+   - `rl.py`: RL coordination policies
 
 ### Configuration System
 
 The project uses hierarchical YAML configs in `configs/`:
-- `common.yaml`: Common parameters shared across experiments
-- `procgen_*.yaml`: Procgen-specific configs (primary configs for this fork)
-- Algorithm-specific parameters embedded in each config
-- Checkpoint paths for pre-trained acting policies go in `YRC/checkpoints/procgen/`
-
-### Key Design Patterns
-
-1. **Factory Pattern**: Environment and policy factories for modular instantiation
-2. **Configuration-Driven**: All experiments driven by YAML configs with command-line overrides
-3. **Unified Evaluation**: Single evaluator handles all coordination methods
-4. **Adaptive Sampling**: Sophisticated threshold evaluation algorithm
+- `common.yaml`: shared defaults
+- `procgen_*.yaml`: top-level Procgen configs
+- `configs/eval/{coinrun,maze}/`: paper evaluation configs by method
+- command-line overrides from `flags.py`
 
 ### Important Implementation Details
 
-1. **Threshold Evaluation**: The evaluator uses a 2D adaptive sampling algorithm that ensures good coverage across both AFHP (ask-for-help percentage) and return axes:
-   - Phase 1: Evaluates boundaries (always/never ask for help)
-   - Phase 2: Samples critical percentiles (5, 10, 25, 50, 75, 90, 95)
-   - Phase 3: Uses Delaunay triangulation to identify and fill coverage gaps
-   - Phase 4: Refines return axis to ensure smooth curves
-   - Maintains backward compatibility with legacy format
+1. **AFHP evaluation is bin-based**
+   - `calibrate_afhp.py` saves calibration artifacts
+   - `eval_afhp_bin.py` evaluates one equal-width AFHP bin at a time
+   - `YRC/coverage/coverage_search.py` starts from the policy's calibrated percentile heuristic, then refines with binary search
+   - per-bin `.npz` files make failed-bin restarts cheap
 
-2. **AFHP Metrics and Percentile Calibration**: Two AFHP metrics exist: **step_afhp** (fraction of timesteps) and **level_afhp** (fraction of episodes with any help). All policies implement `train_percentile_step(p)` and `train_percentile_level(p)` to map percentiles to thresholds calibrated for each metric. Calibration runs in `calibrate_afhp.py` before `eval_afhp_bin.py`. See `docs/percentile_calibration.md` for the full support matrix, per-policy formulas, and calibration data sources.
+2. **Percentile calibration is central**
+   - two AFHP metrics exist: `step_afhp` and `level_afhp`
+   - policies implement `train_percentile_step()` and/or `train_percentile_level()`
+   - see `docs/percentile_calibration.md` for the support matrix and formulas
 
-3. **Feature Types**: Coordination policies can use:
-   - Raw observations (`obs`)
-   - Weak agent's hidden features (`feature`)
-   - Weak agent's action distributions (`action`)
-   - Combinations (e.g., `obs+feature`, `obs+action`, `feature+action`, `obs+feature+action`)
+3. **Feature type names in code**
+   - `obs`
+   - `hidden`
+   - `dist`
+   - `hidden_obs`
+   - `hidden_dist`
+   - `obs_dist`
+   - `obs_hidden_dist`
 
-4. **Memory Management**: Recent work focuses on efficient handling of large rollout datasets, especially for OOD detection methods that require storing and processing many samples.
+4. **Threshold metrics in code**
+   - `max_logit`
+   - `max_prob`
+   - `margin`
+   - `neg_entropy`
+   - `neg_energy`
+   - `ensemble_variance`
 
-5. **Experiment Tracking**: All experiments are tracked with Weights & Biases (wandb) for reproducibility. The tracking includes:
-   - Training metrics and curves
-   - Evaluation videos with score bars
-   - Hyperparameters and configurations
-   - Model checkpoints
+5. **Paper automation is environment-limited**
+   - `scripts/common.py` currently only enumerates `coinrun` and `maze`
+   - method names such as `max-prob`, `max-logit`, `ts-random`, `svdd-image`, `svdd-latent`, `ensemble`, `ensemble-single`, and `wait` are defined there
 
-6. **Checkpoint Management**: Three types of checkpoints are saved during training:
-   - `best_val_sim.ckpt`: Best validation performance on simulated weak agent
-   - `best_val_true.ckpt`: Best validation performance on true weak agent
-   - `last.ckpt`: Most recent checkpoint
-
-7. **Acting Policy Requirements**: Pre-trained acting policies (sim weak, weak, strong) must be provided for most environments. These should be placed in `YRC/checkpoints/{environment}/` following the existing structure.
+6. **Checkpoint expectations**
+   - acting policy checkpoints are loaded via `-sim`, `-weak`, and `-strong`
+   - coordination model checkpoints are loaded from `config.experiment_dir / config.file_name`
+   - AFHP calibration artifacts are typically stored as `calibration.npz` under a coordination artifact directory
 
 ## Python Best Practices
 
-- Use Pathlib to interact with paths instead of the os package
-- Follow the code style enforced by ruff (format and check)
-- Add type hints where possible and run pytype for verification
-- Use the existing factory patterns when adding new components
+- Use `pathlib.Path` for filesystem work
+- Follow `ruff` formatting and linting
+- Add type hints where practical
+- Prefer updating docs when changing evaluation workflow, calibration behavior, or script entrypoints
