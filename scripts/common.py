@@ -1,21 +1,59 @@
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, Iterable, List, Optional
 
-# Server-specific paths
-SERVER_PATHS = {
-    "chai": {
-        "checkpoint_base": "/nas/ucb/czempin/data/goal-misgen/policy/icml",
-        "seeds_base": "/nas/ucb/czempin/data/goal-misgen/seeds/icml",
-        "svdd_base": "/nas/ucb/czempin/data/goal-misgen/trained_svdd",
-        "log_base": "/nas/ucb/czempin/data/goal-misgen/slurm-logs",
-    },
-    "snoopy": {
-        "checkpoint_base": "/scr/pavel/data/goal-misgen/policy/icml",
-        "seeds_base": "/scr/pavel/data/goal-misgen/seeds/icml",
-        "svdd_base": "/scr/pavel/data/goal-misgen/trained_svdd",
-        "log_base": "/scr/pavel/data/goal-misgen/slurm-logs",
-    },
-}
+import yaml
+
+ROOT = Path(__file__).resolve().parent.parent
+SERVER_PATHS_CONFIG = ROOT / "configs" / "infrastructure" / "server_paths.yaml"
+
+
+def load_server_paths_group(
+    group_name: str, *, required_keys: Iterable[str]
+) -> Dict[str, Dict[str, str]]:
+    """Load one named server-path group from the shared infrastructure YAML."""
+    with SERVER_PATHS_CONFIG.open() as f:
+        data = yaml.safe_load(f)
+
+    if not isinstance(data, dict):
+        raise ValueError(f"Invalid server config: expected mapping in {SERVER_PATHS_CONFIG}")
+
+    group = data.get(group_name)
+    if not isinstance(group, dict):
+        raise ValueError(
+            f"Invalid server config: missing mapping for group {group_name!r} "
+            f"in {SERVER_PATHS_CONFIG}"
+        )
+
+    required_keys = tuple(required_keys)
+    loaded_group: Dict[str, Dict[str, str]] = {}
+    for server_name, paths in group.items():
+        if not isinstance(paths, dict):
+            raise ValueError(
+                f"Invalid server config: expected mapping for server "
+                f"{server_name!r} in group {group_name!r}"
+            )
+
+        missing_keys = [key for key in required_keys if key not in paths]
+        if missing_keys:
+            raise ValueError(
+                f"Invalid server config: server {server_name!r} in group "
+                f"{group_name!r} is missing keys {missing_keys}"
+            )
+
+        loaded_group[server_name] = {key: str(value) for key, value in paths.items()}
+
+    return loaded_group
+
+
+SERVER_PATHS = load_server_paths_group(
+    "paper_workflows",
+    required_keys=("checkpoint_base", "seeds_base", "svdd_base", "log_base"),
+)
+
+STRONG_REVAL_SERVER_PATHS = load_server_paths_group(
+    "strong_reval",
+    required_keys=("checkpoint_base", "evals_base"),
+)
 
 # Environment choices
 ENVS = ["maze", "coinrun"]

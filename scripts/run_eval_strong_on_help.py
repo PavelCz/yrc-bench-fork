@@ -9,9 +9,16 @@ the strong agent on the seeds where help was requested.
 import argparse
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import List, Optional, Tuple
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.common import STRONG_REVAL_SERVER_PATHS  # noqa: E402
 
 
 # ==============================================================================
@@ -26,17 +33,6 @@ SLURM_CONFIG = {
     "time": "1-00:00:00",  # Shorter time since we're only re-evaluating
     "mem": "50G",
     "cpus-per-task": "16",
-}
-
-SERVER_PATHS = {
-    "server1": {
-        "checkpoint_base": "/data/goal-misgen/policy/icml",
-        "evals_base": "/data/goal-misgen/experiments/evals",
-    },
-    "server2": {
-        "checkpoint_base": "/data2/goal-misgen/policy/icml",
-        "evals_base": "/data2/goal-misgen/experiments/evals",
-    },
 }
 
 ENVS = ["maze", "coinrun"]
@@ -68,7 +64,7 @@ def main():
     wandb_run = initialize_wandb(args) if args.use_wandb else None
     
     # Get paths based on server configuration
-    paths = SERVER_PATHS[args.server]
+    paths = STRONG_REVAL_SERVER_PATHS[args.server]
     checkpoint_base_path = paths["checkpoint_base"]
     evals_base = args.evals_base or paths["evals_base"]
     
@@ -117,7 +113,7 @@ def parse_arguments():
     )
     parser.add_argument(
         "--server",
-        choices=list(SERVER_PATHS.keys()),
+        choices=list(STRONG_REVAL_SERVER_PATHS.keys()),
         default="server1",
         help="Server to use for paths (default: server1)",
     )
@@ -240,7 +236,7 @@ def display_configuration(args, evals_base):
 def display_summary(args, npz_files, stats):
     """Display final summary of job submissions."""
     print(f"\n{'='*60}")
-    print(f"SUMMARY:")
+    print("SUMMARY:")
     print(f"  Total NPZ files found: {len(npz_files)}")
     print(f"  Jobs {'would be ' if args.dry_run else ''}submitted: {stats['submitted']}")
     print(f"  Skipped: {stats['skipped']}")
