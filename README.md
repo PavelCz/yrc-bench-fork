@@ -12,8 +12,8 @@ To set up the project, follow the installation steps from the original readme be
 
 ## Reproducing the paper
 
-`scripts` includes convencience scripts to reproduce the experiments for this paper.
-The scripts run on Slurm.
+`scripts` includes convencience scripts to run parallel jobs through SLURM.
+It also allows reproducing the experiments in the paper.
 They assume a directory structure that can be defined in the respective script file.
 The results in the paper were collected with experiments ids 0,1,2,3 (= 4 independent seeds).
 
