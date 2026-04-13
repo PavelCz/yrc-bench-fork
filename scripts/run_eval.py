@@ -228,6 +228,52 @@ def _sbatch_submit(script: str, log_dir: Path) -> Optional[str]:
         print(f"  Failed: {result.stderr.strip()}")
         return None
 
+<<<<<<< HEAD
+=======
+
+def submit_sequential_eval(
+    job_name: str,
+    eval_args: dict,
+    conda_env: str,
+    log_dir: Path,
+    calibration_path: Path,
+    qos: str = "default",
+    dry_run: bool = False,
+    dependency_job_id: Optional[str] = None,
+) -> None:
+    """Submit a sequential AFHP evaluation job.
+
+    If ``dependency_job_id`` is provided, the eval job waits for that job
+    (typically a calibrate job inserted on cache miss) via afterok.
+    """
+    seq_script = build_sequential_eval_sbatch_command(
+        job_name,
+        eval_args,
+        conda_env,
+        log_dir,
+        calibration_path,
+        qos=qos,
+        dependency_job_id=dependency_job_id,
+    )
+
+    if dry_run:
+        print(f"=== Sequential eval job: {job_name}_seq ===")
+        print(seq_script)
+        print()
+        return
+
+    dep_note = (
+        f" (depends on calib job {dependency_job_id})"
+        if dependency_job_id is not None
+        else ""
+    )
+    print(
+        f"  Submitting sequential eval job using calibration {calibration_path}{dep_note}..."
+    )
+    _sbatch_submit(seq_script, log_dir)
+
+
+>>>>>>> origin/large-refactor
 def submit_parallel_bins(
     job_name: str,
     eval_args: dict,
