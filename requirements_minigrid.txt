@@ -60,7 +60,8 @@ threadpoolctl==3.5.0
 torch==2.4.1
 torch-ac==1.4.0
 triton==3.0.0
-typing-extensions==4.12.2
+typing-extensions==4.13.2
+tyro==1.0.12
 urllib3==2.2.3
 wandb==0.17.3
 zipp==3.20.2

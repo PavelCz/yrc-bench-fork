@@ -193,7 +193,8 @@ traitlets==4.3.3
 transformers==4.3.2
 transforms3d==0.3.1
 # triton==2.1.0
-typing-extensions==4.11.0
+typing-extensions==4.13.2
+tyro==1.0.12
 tzdata==2024.1
 u-msgpack-python==2.8.0
 unidiff==0.5.5

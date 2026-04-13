@@ -9,13 +9,14 @@ High-level flow:
 4. Submit the AFHP bin array job for that experiment.
 """
 
-import argparse
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
+
+import tyro
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
@@ -104,109 +105,35 @@ class ExperimentPlan:
     eval_args: Dict[str, object]
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build the CLI parser for the eval submission entrypoint."""
-    parser = argparse.ArgumentParser(description="Run evaluation jobs via SLURM")
-    parser.add_argument(
-        "--dry-run", action="store_true", help="Print commands without submitting"
-    )
-    parser.add_argument(
-        "--conda-env",
-        default=DEFAULT_CONDA_ENV,
-        help=f"Conda environment to use (default: {DEFAULT_CONDA_ENV})",
-    )
-    parser.add_argument(
-        "--server",
-        choices=["chai", "snoopy"],
-        default="chai",
-        help="Server to use for paths (default: chai)",
-    )
-    parser.add_argument(
-        "--qos",
-        choices=["default", "high"],
-        default="default",
-        help="SLURM QOS to use (default: default)",
-    )
-    parser.add_argument(
-        "--env", required=True, choices=ENVS, help="Environment to evaluate"
-    )
-    parser.add_argument(
-        "--method",
-        required=True,
-        choices=list(METHOD_CONFIGS.keys()),
-        help="Evaluation method",
-    )
-    parser.add_argument("--prefix", required=True, help="Experiment group prefix")
-    parser.add_argument(
-        "--exp-ids",
-        type=int,
-        nargs="+",
-        default=[0, 1, 2, 3, 4],
-        help="Experiment IDs to run (default: 0 1 2 3 4)",
-    )
-    parser.add_argument(
-        "--num-levels",
-        type=int,
-        default=EVAL_DEFAULTS["num_levels"],
-        help="Number of levels",
-    )
-    parser.add_argument(
-        "--video-episodes",
-        type=int,
-        default=EVAL_DEFAULTS["video_episodes_to_collect"],
-        help="Video episodes to collect",
-    )
-    parser.add_argument(
-        "--video-filter", default=EVAL_DEFAULTS["video_filter"], help="Video filter"
-    )
-    parser.add_argument(
-        "--cp-rolling-average",
-        default=EVAL_DEFAULTS["cp_rolling_average"],
-        help="Coordination policy rolling average",
-    )
-    parser.add_argument(
-        "--video-logging-mode",
-        default=EVAL_DEFAULTS["video_logging_mode"],
-        help="Video logging mode",
-    )
-    parser.add_argument(
-        "--video-filter-mode",
-        default=EVAL_DEFAULTS["video_filter_mode"],
-        help="Video filter mode",
-    )
-    parser.add_argument(
-        "--num-bins",
-        type=int,
-        default=EVAL_DEFAULTS["num_bins"],
-        help=f"Number of AFHP bins to evaluate (default: {EVAL_DEFAULTS['num_bins']})",
-    )
-    parser.add_argument(
-        "--wandb-project",
-        default=None,
-        help="Override wandb project name",
-    )
-    parser.add_argument(
-        "--coordination-artifact-root",
-        default=None,
-        help=(
-            "Base directory for coordination-method artifacts. "
-            "Defaults to a sibling of the acting-policy root."
-        ),
-    )
-    parser.add_argument("--sim", help="Override sim weak checkpoint path")
-    parser.add_argument("--weak", help="Override weak checkpoint path")
-    parser.add_argument("--strong", help="Override strong checkpoint path")
-    parser.add_argument(
-        "--num-ensemble-members",
-        type=int,
-        default=DEFAULT_NUM_ENSEMBLE_MEMBERS,
-        help=f"Number of ensemble members (default: {DEFAULT_NUM_ENSEMBLE_MEMBERS})",
-    )
-    return parser
+@dataclass(frozen=True)
+class RunEvalCliArgs:
+    """CLI arguments for `scripts/run_eval.py`."""
+
+    env: str
+    method: str
+    prefix: str
+    dry_run: bool = False
+    conda_env: str = DEFAULT_CONDA_ENV
+    server: str = "chai"
+    qos: str = "default"
+    exp_ids: List[int] = field(default_factory=lambda: [0, 1, 2, 3, 4])
+    num_levels: int = EVAL_DEFAULTS["num_levels"]
+    video_episodes: int = EVAL_DEFAULTS["video_episodes_to_collect"]
+    video_filter: str = EVAL_DEFAULTS["video_filter"]
+    cp_rolling_average: str = EVAL_DEFAULTS["cp_rolling_average"]
+    video_logging_mode: str = EVAL_DEFAULTS["video_logging_mode"]
+    video_filter_mode: str = EVAL_DEFAULTS["video_filter_mode"]
+    num_bins: int = EVAL_DEFAULTS["num_bins"]
+    wandb_project: Optional[str] = None
+    coordination_artifact_root: Optional[Path] = None
+    sim: Optional[str] = None
+    weak: Optional[str] = None
+    strong: Optional[str] = None
+    num_ensemble_members: int = DEFAULT_NUM_ENSEMBLE_MEMBERS
 
 
 def main():
-    args = build_parser().parse_args()
+    args = parse_args()
     context = resolve_shared_eval_context(args)
     if context is None:
         return 1
@@ -216,9 +143,31 @@ def main():
     return 0
 
 
-def run_requested_evaluations(
-    args: argparse.Namespace, context: SharedEvalContext
-) -> None:
+def parse_args() -> RunEvalCliArgs:
+    """Parse and validate the Tyro CLI for this script."""
+    args = tyro.cli(RunEvalCliArgs)
+    validate_cli_args(args)
+    return args
+
+
+def validate_cli_args(args: RunEvalCliArgs) -> None:
+    """Validate CLI values against shared repo constants."""
+    _validate_choice("server", args.server, SERVER_PATHS.keys())
+    _validate_choice("qos", args.qos, ("default", "high"))
+    _validate_choice("env", args.env, ENVS)
+    _validate_choice("method", args.method, METHOD_CONFIGS.keys())
+    _validate_choice("video_filter_mode", args.video_filter_mode, ("any", "all"))
+    if args.num_ensemble_members < 1:
+        raise SystemExit("Error: --num-ensemble-members must be >= 1.")
+
+
+def _validate_choice(name: str, value: str, allowed: Iterable[str]) -> None:
+    allowed_values = sorted(allowed)
+    if value not in allowed_values:
+        raise SystemExit(f"Error: invalid {name} {value!r}. Allowed: {allowed_values}")
+
+
+def run_requested_evaluations(args: RunEvalCliArgs, context: SharedEvalContext) -> None:
     """Plan and submit all requested experiment ids."""
     for exp_id in args.exp_ids:
         plan = plan_experiment_submission(args, context, exp_id)
@@ -228,7 +177,7 @@ def run_requested_evaluations(
 
 
 def plan_experiment_submission(
-    args: argparse.Namespace, context: SharedEvalContext, exp_id: int
+    args: RunEvalCliArgs, context: SharedEvalContext, exp_id: int
 ) -> Optional[ExperimentPlan]:
     """Resolve and validate everything needed to submit one experiment id."""
     checkpoints = resolve_checkpoints_for_experiment(
@@ -293,7 +242,7 @@ def plan_experiment_submission(
 
 
 def submit_experiment_plan(
-    args: argparse.Namespace, context: SharedEvalContext, plan: ExperimentPlan
+    args: RunEvalCliArgs, context: SharedEvalContext, plan: ExperimentPlan
 ) -> None:
     """Submit calibration if needed, then submit the AFHP bin array job."""
     print(f"Calibration path: {plan.calibration_path}")
@@ -333,7 +282,7 @@ def submit_experiment_plan(
 
 
 def resolve_shared_eval_context(
-    args: argparse.Namespace,
+    args: RunEvalCliArgs,
 ) -> Optional[SharedEvalContext]:
     """Resolve invocation-wide paths and validate the eval config exists."""
     paths = SERVER_PATHS[args.server]
@@ -365,9 +314,7 @@ def resolve_shared_eval_context(
     )
 
 
-def print_submission_overview(
-    args: argparse.Namespace, context: SharedEvalContext
-) -> None:
+def print_submission_overview(args: RunEvalCliArgs, context: SharedEvalContext) -> None:
     """Print the shared settings for this invocation."""
     print(f"Conda env: {args.conda_env}")
     print(f"Coordination artifact root: {context.coordination_root}")
@@ -383,7 +330,7 @@ def print_submission_overview(
 
 
 def resolve_checkpoints_for_experiment(
-    args: argparse.Namespace, exp_id: int, checkpoint_base_path: str
+    args: RunEvalCliArgs, exp_id: int, checkpoint_base_path: str
 ) -> Dict[str, str]:
     """Resolve acting-policy checkpoints, applying any CLI overrides."""
     checkpoints = get_checkpoints(args.env, exp_id, checkpoint_base_path)
@@ -397,7 +344,7 @@ def resolve_checkpoints_for_experiment(
 
 
 def resolve_svdd_settings(
-    args: argparse.Namespace, exp_id: int, svdd_base_path: str
+    args: RunEvalCliArgs, exp_id: int, svdd_base_path: str
 ) -> Tuple[Optional[str], Optional[str]]:
     """Resolve SVDD-specific model path and feature type."""
     if args.method not in SVDD_METHODS:
@@ -409,7 +356,7 @@ def resolve_svdd_settings(
 
 
 def resolve_ensemble_members(
-    args: argparse.Namespace, exp_id: int, checkpoint_base_path: str
+    args: RunEvalCliArgs, exp_id: int, checkpoint_base_path: str
 ) -> Optional[List[Optional[str]]]:
     """Resolve ensemble member checkpoints for ensemble methods."""
     if args.method not in ENSEMBLE_METHODS:
@@ -420,7 +367,7 @@ def resolve_ensemble_members(
 
 
 def validate_experiment_inputs(
-    args: argparse.Namespace,
+    args: RunEvalCliArgs,
     exp_id: int,
     *,
     checkpoints: Dict[str, str],
@@ -467,7 +414,7 @@ def validate_experiment_inputs(
 
 
 def build_eval_args(
-    args: argparse.Namespace,
+    args: RunEvalCliArgs,
     context: SharedEvalContext,
     *,
     job_name: str,

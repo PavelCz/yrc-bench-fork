@@ -36,6 +36,12 @@ conda activate ood
 conda run -n ood-stable <command>
 ```
 
+## CLI Conventions
+
+- Use `tyro` for standalone script CLIs under `scripts/` and `analyzing/`.
+- Keep config-driven app entrypoints on `flags.py` / `jsonargparse`.
+- See `docs/cli_conventions.md` for the repo convention and migration rule.
+
 ## Key Commands
 
 ### Code Quality
