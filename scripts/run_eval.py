@@ -14,7 +14,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Literal, Optional, Tuple
 
 import tyro
 
@@ -25,7 +25,6 @@ if str(ROOT) not in sys.path:
 from scripts.common import (  # noqa: E402
     DEFAULT_NUM_ENSEMBLE_MEMBERS,
     ENSEMBLE_METHODS,
-    ENVS,
     METHOD_CONFIGS,
     METHOD_NAMES,
     SERVER_PATHS,
@@ -75,6 +74,10 @@ EVAL_DEFAULTS = {
     "num_bins": 20,
 }
 
+EnvName = Literal["maze", "coinrun"]
+QosName = Literal["default", "high"]
+VideoFilterMode = Literal["any", "all"]
+
 
 @dataclass(frozen=True)
 class SharedEvalContext:
@@ -109,20 +112,20 @@ class ExperimentPlan:
 class RunEvalCliArgs:
     """CLI arguments for `scripts/run_eval.py`."""
 
-    env: str
+    env: EnvName
     method: str
     prefix: str
     dry_run: bool = False
     conda_env: str = DEFAULT_CONDA_ENV
     server: str = "chai"
-    qos: str = "default"
+    qos: QosName = "default"
     exp_ids: List[int] = field(default_factory=lambda: [0, 1, 2, 3, 4])
     num_levels: int = EVAL_DEFAULTS["num_levels"]
     video_episodes: int = EVAL_DEFAULTS["video_episodes_to_collect"]
     video_filter: str = EVAL_DEFAULTS["video_filter"]
     cp_rolling_average: str = EVAL_DEFAULTS["cp_rolling_average"]
     video_logging_mode: str = EVAL_DEFAULTS["video_logging_mode"]
-    video_filter_mode: str = EVAL_DEFAULTS["video_filter_mode"]
+    video_filter_mode: VideoFilterMode = EVAL_DEFAULTS["video_filter_mode"]
     num_bins: int = EVAL_DEFAULTS["num_bins"]
     wandb_project: Optional[str] = None
     coordination_artifact_root: Optional[Path] = None
@@ -153,10 +156,7 @@ def parse_args() -> RunEvalCliArgs:
 def validate_cli_args(args: RunEvalCliArgs) -> None:
     """Validate CLI values against shared repo constants."""
     _validate_choice("server", args.server, SERVER_PATHS.keys())
-    _validate_choice("qos", args.qos, ("default", "high"))
-    _validate_choice("env", args.env, ENVS)
     _validate_choice("method", args.method, METHOD_CONFIGS.keys())
-    _validate_choice("video_filter_mode", args.video_filter_mode, ("any", "all"))
     if args.num_ensemble_members < 1:
         raise SystemExit("Error: --num-ensemble-members must be >= 1.")
 
