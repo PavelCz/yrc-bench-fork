@@ -205,6 +205,133 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def main():
+    args = build_parser().parse_args()
+    context = resolve_shared_eval_context(args)
+    if context is None:
+        return 1
+
+    print_submission_overview(args, context)
+    run_requested_evaluations(args, context)
+    return 0
+
+
+def run_requested_evaluations(
+    args: argparse.Namespace, context: SharedEvalContext
+) -> None:
+    """Plan and submit all requested experiment ids."""
+    for exp_id in args.exp_ids:
+        plan = plan_experiment_submission(args, context, exp_id)
+        if plan is None:
+            continue
+        submit_experiment_plan(args, context, plan)
+
+
+def plan_experiment_submission(
+    args: argparse.Namespace, context: SharedEvalContext, exp_id: int
+) -> Optional[ExperimentPlan]:
+    """Resolve and validate everything needed to submit one experiment id."""
+    checkpoints = resolve_checkpoints_for_experiment(
+        args, exp_id, context.checkpoint_base_path
+    )
+    level_seeds_file = Path(context.seeds_base_path) / f"{exp_id}.json"
+    svdd_model_path, cp_feature = resolve_svdd_settings(
+        args, exp_id, context.svdd_base_path
+    )
+    ensemble_members = resolve_ensemble_members(
+        args, exp_id, context.checkpoint_base_path
+    )
+
+    if not validate_experiment_inputs(
+        args,
+        exp_id,
+        checkpoints=checkpoints,
+        level_seeds_file=level_seeds_file,
+        svdd_model_path=svdd_model_path,
+        ensemble_members=ensemble_members,
+        checkpoint_base_path=context.checkpoint_base_path,
+        svdd_base_path=context.svdd_base_path,
+    ):
+        print(f"Skipping exp{exp_id} due to missing files\n")
+        return None
+
+    method_name = METHOD_NAMES[args.method]
+    job_name = f"{args.env}_{method_name}_exp{exp_id}"
+    experiment_group = f"{args.prefix}_{args.env}_exp{exp_id}"
+    coordination_artifact_dir = resolve_coordination_artifact_dir(
+        args.env,
+        exp_id,
+        method_name,
+        experiment_group,
+        coordination_root=context.coordination_root,
+    )
+    calibration_path = resolve_calibration_path(coordination_artifact_dir)
+    eval_args = build_eval_args(
+        args,
+        context,
+        job_name=job_name,
+        experiment_group=experiment_group,
+        checkpoints=checkpoints,
+        level_seeds_file=level_seeds_file,
+        svdd_model_path=svdd_model_path,
+        cp_feature=cp_feature,
+        ensemble_members=ensemble_members,
+    )
+    return ExperimentPlan(
+        exp_id=exp_id,
+        job_name=job_name,
+        experiment_group=experiment_group,
+        checkpoints=checkpoints,
+        level_seeds_file=level_seeds_file,
+        svdd_model_path=svdd_model_path,
+        cp_feature=cp_feature,
+        ensemble_members=ensemble_members,
+        coordination_artifact_dir=coordination_artifact_dir,
+        calibration_path=calibration_path,
+        eval_args=eval_args,
+    )
+
+
+def submit_experiment_plan(
+    args: argparse.Namespace, context: SharedEvalContext, plan: ExperimentPlan
+) -> None:
+    """Submit calibration if needed, then submit the AFHP bin array job."""
+    print(f"Calibration path: {plan.calibration_path}")
+    dependency_job_id = _maybe_submit_calibration_job(
+        method=args.method,
+        calibration_path=plan.calibration_path,
+        coordination_artifact_dir=plan.coordination_artifact_dir,
+        experiment_group=plan.experiment_group,
+        config_path=context.config_path,
+        checkpoints=plan.checkpoints,
+        level_seeds_file=plan.level_seeds_file,
+        cp_feature=plan.cp_feature,
+        svdd_model_path=plan.svdd_model_path,
+        ensemble_members=plan.ensemble_members,
+        conda_env=args.conda_env,
+        log_dir=context.log_dir,
+        qos=args.qos,
+        env=args.env,
+        exp_id=plan.exp_id,
+        dry_run=args.dry_run,
+    )
+    if dependency_job_id is _SKIP_EXP:
+        print(f"Skipping exp{plan.exp_id}.\n")
+        return
+
+    submit_parallel_bins(
+        job_name=plan.job_name,
+        eval_args=plan.eval_args,
+        conda_env=args.conda_env,
+        log_dir=context.log_dir,
+        calibration_path=plan.calibration_path,
+        num_bins=args.num_bins,
+        qos=args.qos,
+        dry_run=args.dry_run,
+        dependency_job_id=dependency_job_id,
+    )
+
+
 def resolve_shared_eval_context(
     args: argparse.Namespace,
 ) -> Optional[SharedEvalContext]:
@@ -372,71 +499,6 @@ def build_eval_args(
     }
 
 
-def plan_experiment_submission(
-    args: argparse.Namespace, context: SharedEvalContext, exp_id: int
-) -> Optional[ExperimentPlan]:
-    """Resolve and validate everything needed to submit one experiment id."""
-    checkpoints = resolve_checkpoints_for_experiment(
-        args, exp_id, context.checkpoint_base_path
-    )
-    level_seeds_file = Path(context.seeds_base_path) / f"{exp_id}.json"
-    svdd_model_path, cp_feature = resolve_svdd_settings(
-        args, exp_id, context.svdd_base_path
-    )
-    ensemble_members = resolve_ensemble_members(
-        args, exp_id, context.checkpoint_base_path
-    )
-
-    if not validate_experiment_inputs(
-        args,
-        exp_id,
-        checkpoints=checkpoints,
-        level_seeds_file=level_seeds_file,
-        svdd_model_path=svdd_model_path,
-        ensemble_members=ensemble_members,
-        checkpoint_base_path=context.checkpoint_base_path,
-        svdd_base_path=context.svdd_base_path,
-    ):
-        print(f"Skipping exp{exp_id} due to missing files\n")
-        return None
-
-    method_name = METHOD_NAMES[args.method]
-    job_name = f"{args.env}_{method_name}_exp{exp_id}"
-    experiment_group = f"{args.prefix}_{args.env}_exp{exp_id}"
-    coordination_artifact_dir = resolve_coordination_artifact_dir(
-        args.env,
-        exp_id,
-        method_name,
-        experiment_group,
-        coordination_root=context.coordination_root,
-    )
-    calibration_path = resolve_calibration_path(coordination_artifact_dir)
-    eval_args = build_eval_args(
-        args,
-        context,
-        job_name=job_name,
-        experiment_group=experiment_group,
-        checkpoints=checkpoints,
-        level_seeds_file=level_seeds_file,
-        svdd_model_path=svdd_model_path,
-        cp_feature=cp_feature,
-        ensemble_members=ensemble_members,
-    )
-    return ExperimentPlan(
-        exp_id=exp_id,
-        job_name=job_name,
-        experiment_group=experiment_group,
-        checkpoints=checkpoints,
-        level_seeds_file=level_seeds_file,
-        svdd_model_path=svdd_model_path,
-        cp_feature=cp_feature,
-        ensemble_members=ensemble_members,
-        coordination_artifact_dir=coordination_artifact_dir,
-        calibration_path=calibration_path,
-        eval_args=eval_args,
-    )
-
-
 def _maybe_submit_calibration_job(
     *,
     method: str,
@@ -515,93 +577,6 @@ def _maybe_submit_calibration_job(
     return job_id
 
 
-def _build_policy_python_args(script: str, eval_args: dict) -> List[str]:
-    """Build the python args shared across all job types (policy loading, env setup)."""
-    args = [
-        f"python {script}",
-        f"-c {eval_args['config']}",
-        f"-n {eval_args['name']}",
-        "-defer_to_oracle",
-        f"-experiment_group {eval_args['experiment_group']}",
-        f"-num_levels={eval_args['num_levels']}",
-        f"-sim {eval_args['sim']}",
-        f"-weak {eval_args['weak']}",
-        f"-strong {eval_args['strong']}",
-        f"-level_seeds_file {eval_args['level_seeds_file']}",
-    ]
-    if eval_args.get("wandb_project"):
-        args.append(f"-wandb_project {eval_args['wandb_project']}")
-    if eval_args.get("cp_feature"):
-        args.append(f"-cp_feature {eval_args['cp_feature']}")
-    if eval_args.get("svdd_model_path"):
-        args.append(f"-f_n {eval_args['svdd_model_path']}")
-    if eval_args.get("ensemble_members"):
-        args.append("-cp_ensemble_members")
-        for member_path in eval_args["ensemble_members"]:
-            args.append(f"    {member_path}")
-    return args
-
-
-def _dependency_line(dependency_job_id: Optional[str]) -> str:
-    if dependency_job_id is None:
-        return ""
-    return f"#SBATCH --dependency=afterok:{dependency_job_id}"
-
-
-def build_bin_array_sbatch_command(
-    job_name: str,
-    eval_args: dict,
-    conda_env: str,
-    log_dir: Path,
-    calibration_path: Path,
-    num_bins: int,
-    qos: str = "default",
-    dependency_job_id: Optional[str] = None,
-) -> str:
-    """Build the sbatch script for the bin evaluation array job."""
-    slurm_config = SLURM_CONFIG.copy()
-    slurm_config["qos"] = qos
-    slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
-
-    # $SLURM_ARRAY_TASK_ID must expand at runtime, not be interpolated by Python
-    checkpoint_path = f"{log_dir}/{job_name}_bin_$SLURM_ARRAY_TASK_ID.npz"
-    python_args = _build_policy_python_args("eval_afhp_bin.py", eval_args)
-    python_args += [
-        "--bin_idx $SLURM_ARRAY_TASK_ID",
-        f"--checkpoint_path {checkpoint_path}",
-        f"--calibration_path {calibration_path}",
-    ]
-    python_cmd = " ".join(python_args)
-
-    return f"""#!/bin/bash
-#SBATCH --job-name={job_name}_bin
-#SBATCH --output={log_dir}/%x_%j_%a.out
-#SBATCH --error={log_dir}/%x_%j_%a.err
-#SBATCH --array=0-{num_bins - 1}
-{_dependency_line(dependency_job_id)}
-{chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
-
-echo "Bin $SLURM_ARRAY_TASK_ID / {num_bins} for {job_name}"
-eval "$(conda shell.bash hook)"
-conda activate {conda_env}
-srun {slurm_args} {python_cmd}
-"""
-
-
-def _sbatch_submit(script: str, log_dir: Path) -> Optional[str]:
-    """Submit an sbatch script, return the job ID string or None on failure."""
-    log_dir.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(["sbatch"], input=script, text=True, capture_output=True)
-    if result.returncode == 0:
-        # Output is "Submitted batch job 12345"
-        job_id = result.stdout.strip().split()[-1]
-        print(f"  Submitted: {result.stdout.strip()}")
-        return job_id
-    else:
-        print(f"  Failed: {result.stderr.strip()}")
-        return None
-
-
 def submit_parallel_bins(
     job_name: str,
     eval_args: dict,
@@ -647,66 +622,90 @@ def submit_parallel_bins(
     _sbatch_submit(bin_script, log_dir)
 
 
-def submit_experiment_plan(
-    args: argparse.Namespace, context: SharedEvalContext, plan: ExperimentPlan
-) -> None:
-    """Submit calibration if needed, then submit the AFHP bin array job."""
-    print(f"Calibration path: {plan.calibration_path}")
-    dependency_job_id = _maybe_submit_calibration_job(
-        method=args.method,
-        calibration_path=plan.calibration_path,
-        coordination_artifact_dir=plan.coordination_artifact_dir,
-        experiment_group=plan.experiment_group,
-        config_path=context.config_path,
-        checkpoints=plan.checkpoints,
-        level_seeds_file=plan.level_seeds_file,
-        cp_feature=plan.cp_feature,
-        svdd_model_path=plan.svdd_model_path,
-        ensemble_members=plan.ensemble_members,
-        conda_env=args.conda_env,
-        log_dir=context.log_dir,
-        qos=args.qos,
-        env=args.env,
-        exp_id=plan.exp_id,
-        dry_run=args.dry_run,
-    )
-    if dependency_job_id is _SKIP_EXP:
-        print(f"Skipping exp{plan.exp_id}.\n")
-        return
+def build_bin_array_sbatch_command(
+    job_name: str,
+    eval_args: dict,
+    conda_env: str,
+    log_dir: Path,
+    calibration_path: Path,
+    num_bins: int,
+    qos: str = "default",
+    dependency_job_id: Optional[str] = None,
+) -> str:
+    """Build the sbatch script for the bin evaluation array job."""
+    slurm_config = SLURM_CONFIG.copy()
+    slurm_config["qos"] = qos
+    slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
 
-    submit_parallel_bins(
-        job_name=plan.job_name,
-        eval_args=plan.eval_args,
-        conda_env=args.conda_env,
-        log_dir=context.log_dir,
-        calibration_path=plan.calibration_path,
-        num_bins=args.num_bins,
-        qos=args.qos,
-        dry_run=args.dry_run,
-        dependency_job_id=dependency_job_id,
-    )
+    # $SLURM_ARRAY_TASK_ID must expand at runtime, not be interpolated by Python
+    checkpoint_path = f"{log_dir}/{job_name}_bin_$SLURM_ARRAY_TASK_ID.npz"
+    python_args = _build_policy_python_args("eval_afhp_bin.py", eval_args)
+    python_args += [
+        "--bin_idx $SLURM_ARRAY_TASK_ID",
+        f"--checkpoint_path {checkpoint_path}",
+        f"--calibration_path {calibration_path}",
+    ]
+    python_cmd = " ".join(python_args)
 
+    return f"""#!/bin/bash
+#SBATCH --job-name={job_name}_bin
+#SBATCH --output={log_dir}/%x_%j_%a.out
+#SBATCH --error={log_dir}/%x_%j_%a.err
+#SBATCH --array=0-{num_bins - 1}
+{_dependency_line(dependency_job_id)}
+{chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
 
-def run_requested_evaluations(
-    args: argparse.Namespace, context: SharedEvalContext
-) -> None:
-    """Plan and submit all requested experiment ids."""
-    for exp_id in args.exp_ids:
-        plan = plan_experiment_submission(args, context, exp_id)
-        if plan is None:
-            continue
-        submit_experiment_plan(args, context, plan)
+echo "Bin $SLURM_ARRAY_TASK_ID / {num_bins} for {job_name}"
+eval "$(conda shell.bash hook)"
+conda activate {conda_env}
+srun {slurm_args} {python_cmd}
+"""
 
 
-def main():
-    args = build_parser().parse_args()
-    context = resolve_shared_eval_context(args)
-    if context is None:
-        return 1
+def _build_policy_python_args(script: str, eval_args: dict) -> List[str]:
+    """Build the python args shared across all job types (policy loading, env setup)."""
+    args = [
+        f"python {script}",
+        f"-c {eval_args['config']}",
+        f"-n {eval_args['name']}",
+        "-defer_to_oracle",
+        f"-experiment_group {eval_args['experiment_group']}",
+        f"-num_levels={eval_args['num_levels']}",
+        f"-sim {eval_args['sim']}",
+        f"-weak {eval_args['weak']}",
+        f"-strong {eval_args['strong']}",
+        f"-level_seeds_file {eval_args['level_seeds_file']}",
+    ]
+    if eval_args.get("wandb_project"):
+        args.append(f"-wandb_project {eval_args['wandb_project']}")
+    if eval_args.get("cp_feature"):
+        args.append(f"-cp_feature {eval_args['cp_feature']}")
+    if eval_args.get("svdd_model_path"):
+        args.append(f"-f_n {eval_args['svdd_model_path']}")
+    if eval_args.get("ensemble_members"):
+        args.append("-cp_ensemble_members")
+        for member_path in eval_args["ensemble_members"]:
+            args.append(f"    {member_path}")
+    return args
 
-    print_submission_overview(args, context)
-    run_requested_evaluations(args, context)
-    return 0
+
+def _dependency_line(dependency_job_id: Optional[str]) -> str:
+    if dependency_job_id is None:
+        return ""
+    return f"#SBATCH --dependency=afterok:{dependency_job_id}"
+
+
+def _sbatch_submit(script: str, log_dir: Path) -> Optional[str]:
+    """Submit an sbatch script, return the job ID string or None on failure."""
+    log_dir.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(["sbatch"], input=script, text=True, capture_output=True)
+    if result.returncode == 0:
+        # Output is "Submitted batch job 12345"
+        job_id = result.stdout.strip().split()[-1]
+        print(f"  Submitted: {result.stdout.strip()}")
+        return job_id
+    print(f"  Failed: {result.stderr.strip()}")
+    return None
 
 
 if __name__ == "__main__":
