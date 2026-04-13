@@ -36,6 +36,8 @@ Train ensemble policies by running the following for `coinrun` and `maze`, for a
 ./scripts/train_ensemble_policies.sh --env heist --experiment 0
 ```
 
+Before starting with these next steps, make sure that appropriate paths are set in `configs/infrastructure/server_paths.yaml` for the server you are using.
+
 Train SVDD coordination models (only required for the `svdd-latent` and
 `svdd-image` methods) with `scripts/train_svdd.py`. This submits a
 `gather_rollouts -> train` chain via SLURM:
