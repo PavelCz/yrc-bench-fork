@@ -54,26 +54,6 @@ _DRY_RUN_CALIB_JOB_ID = "DRY_RUN_CALIB_JOB_ID"
 # Default conda environment
 DEFAULT_CONDA_ENV = "ood-stable"
 
-# SLURM configuration
-SLURM_CONFIG = {
-    "qos": "default",
-    "gres": "gpu:1",
-    "time": "3-00:00:00",
-    "mem": "100G",
-    "cpus-per-task": "30",
-}
-
-# Default evaluation configuration
-EVAL_DEFAULTS = {
-    "video_episodes_to_collect": 16,
-    "num_levels": 5000,
-    "video_filter": "all",
-    "cp_rolling_average": "none",
-    "video_logging_mode": "folder",
-    "video_filter_mode": "any",
-    "num_bins": 20,
-}
-
 EnvName = Literal["maze", "coinrun"]
 QosName = Literal["default", "high"]
 VideoFilterMode = Literal["any", "all"]
@@ -109,30 +89,62 @@ class ExperimentPlan:
 
 
 @dataclass(frozen=True)
+class RuntimeCliArgs:
+    """Invocation-level CLI options that apply to all submitted jobs."""
+
+    dry_run: bool = False
+    conda_env: str = DEFAULT_CONDA_ENV
+    server: str = "chai"
+    exp_ids: List[int] = field(default_factory=lambda: [0, 1, 2, 3, 4])
+    wandb_project: Optional[str] = None
+    coordination_artifact_root: Optional[Path] = None
+
+
+@dataclass(frozen=True)
+class EvalCliArgs:
+    """Evaluation-specific knobs forwarded to the AFHP jobs."""
+
+    num_levels: int = 5000
+    video_episodes_to_collect: int = 16
+    video_filter: str = "all"
+    cp_rolling_average: str = "none"
+    video_logging_mode: str = "folder"
+    video_filter_mode: VideoFilterMode = "any"
+    num_bins: int = 20
+
+
+@dataclass(frozen=True)
+class SlurmCliArgs:
+    """SLURM settings for the AFHP bin-array job."""
+
+    qos: QosName = "default"
+    gres: str = "gpu:1"
+    time: str = "3-00:00:00"
+    mem: str = "100G"
+    cpus_per_task: int = 30
+
+
+@dataclass(frozen=True)
+class CheckpointOverrideCliArgs:
+    """Optional path overrides for acting and ensemble checkpoints."""
+
+    sim: Optional[str] = None
+    weak: Optional[str] = None
+    strong: Optional[str] = None
+    num_ensemble_members: int = DEFAULT_NUM_ENSEMBLE_MEMBERS
+
+
+@dataclass(frozen=True)
 class RunEvalCliArgs:
     """CLI arguments for `scripts/run_eval.py`."""
 
     env: EnvName
     method: str
     prefix: str
-    dry_run: bool = False
-    conda_env: str = DEFAULT_CONDA_ENV
-    server: str = "chai"
-    qos: QosName = "default"
-    exp_ids: List[int] = field(default_factory=lambda: [0, 1, 2, 3, 4])
-    num_levels: int = EVAL_DEFAULTS["num_levels"]
-    video_episodes: int = EVAL_DEFAULTS["video_episodes_to_collect"]
-    video_filter: str = EVAL_DEFAULTS["video_filter"]
-    cp_rolling_average: str = EVAL_DEFAULTS["cp_rolling_average"]
-    video_logging_mode: str = EVAL_DEFAULTS["video_logging_mode"]
-    video_filter_mode: VideoFilterMode = EVAL_DEFAULTS["video_filter_mode"]
-    num_bins: int = EVAL_DEFAULTS["num_bins"]
-    wandb_project: Optional[str] = None
-    coordination_artifact_root: Optional[Path] = None
-    sim: Optional[str] = None
-    weak: Optional[str] = None
-    strong: Optional[str] = None
-    num_ensemble_members: int = DEFAULT_NUM_ENSEMBLE_MEMBERS
+    runtime: RuntimeCliArgs = field(default_factory=RuntimeCliArgs)
+    eval: EvalCliArgs = field(default_factory=EvalCliArgs)
+    slurm: SlurmCliArgs = field(default_factory=SlurmCliArgs)
+    overrides: CheckpointOverrideCliArgs = field(default_factory=CheckpointOverrideCliArgs)
 
 
 def main():
@@ -155,9 +167,9 @@ def parse_args() -> RunEvalCliArgs:
 
 def validate_cli_args(args: RunEvalCliArgs) -> None:
     """Validate CLI values against shared repo constants."""
-    _validate_choice("server", args.server, SERVER_PATHS.keys())
+    _validate_choice("server", args.runtime.server, SERVER_PATHS.keys())
     _validate_choice("method", args.method, METHOD_CONFIGS.keys())
-    if args.num_ensemble_members < 1:
+    if args.overrides.num_ensemble_members < 1:
         raise SystemExit("Error: --num-ensemble-members must be >= 1.")
 
 
@@ -169,7 +181,7 @@ def _validate_choice(name: str, value: str, allowed: Iterable[str]) -> None:
 
 def run_requested_evaluations(args: RunEvalCliArgs, context: SharedEvalContext) -> None:
     """Plan and submit all requested experiment ids."""
-    for exp_id in args.exp_ids:
+    for exp_id in args.runtime.exp_ids:
         plan = plan_experiment_submission(args, context, exp_id)
         if plan is None:
             continue
@@ -257,12 +269,12 @@ def submit_experiment_plan(
         cp_feature=plan.cp_feature,
         svdd_model_path=plan.svdd_model_path,
         ensemble_members=plan.ensemble_members,
-        conda_env=args.conda_env,
+        conda_env=args.runtime.conda_env,
         log_dir=context.log_dir,
-        qos=args.qos,
+        qos=args.slurm.qos,
         env=args.env,
         exp_id=plan.exp_id,
-        dry_run=args.dry_run,
+        dry_run=args.runtime.dry_run,
     )
     if dependency_job_id is _SKIP_EXP:
         print(f"Skipping exp{plan.exp_id}.\n")
@@ -271,12 +283,12 @@ def submit_experiment_plan(
     submit_parallel_bins(
         job_name=plan.job_name,
         eval_args=plan.eval_args,
-        conda_env=args.conda_env,
+        conda_env=args.runtime.conda_env,
         log_dir=context.log_dir,
         calibration_path=plan.calibration_path,
-        num_bins=args.num_bins,
-        qos=args.qos,
-        dry_run=args.dry_run,
+        num_bins=args.eval.num_bins,
+        slurm=args.slurm,
+        dry_run=args.runtime.dry_run,
         dependency_job_id=dependency_job_id,
     )
 
@@ -285,13 +297,13 @@ def resolve_shared_eval_context(
     args: RunEvalCliArgs,
 ) -> Optional[SharedEvalContext]:
     """Resolve invocation-wide paths and validate the eval config exists."""
-    paths = SERVER_PATHS[args.server]
+    paths = SERVER_PATHS[args.runtime.server]
     checkpoint_base_path = paths["checkpoint_base"]
     seeds_base_path = paths["seeds_base"]
     svdd_base_path = paths["svdd_base"]
     coordination_root = (
-        Path(args.coordination_artifact_root)
-        if args.coordination_artifact_root is not None
+        Path(args.runtime.coordination_artifact_root)
+        if args.runtime.coordination_artifact_root is not None
         else default_coordination_artifact_root(Path(checkpoint_base_path))
     )
     config_file = METHOD_CONFIGS[args.method]
@@ -300,7 +312,7 @@ def resolve_shared_eval_context(
         print(f"Error: Config file not found: {config_path}")
         return None
 
-    wandb_project = args.wandb_project or "default"
+    wandb_project = args.runtime.wandb_project or "default"
     log_dir = (
         Path(paths["log_base"]) / wandb_project / args.prefix / date.today().isoformat()
     )
@@ -316,12 +328,12 @@ def resolve_shared_eval_context(
 
 def print_submission_overview(args: RunEvalCliArgs, context: SharedEvalContext) -> None:
     """Print the shared settings for this invocation."""
-    print(f"Conda env: {args.conda_env}")
+    print(f"Conda env: {args.runtime.conda_env}")
     print(f"Coordination artifact root: {context.coordination_root}")
     print(f"Log dir: {context.log_dir}")
 
-    if args.dry_run:
-        print(f"Server: {args.server}")
+    if args.runtime.dry_run:
+        print(f"Server: {args.runtime.server}")
         print(f"Config: {context.config_path}")
         print(f"Environment: {args.env}")
         print(f"Method: {args.method}")
@@ -334,12 +346,12 @@ def resolve_checkpoints_for_experiment(
 ) -> Dict[str, str]:
     """Resolve acting-policy checkpoints, applying any CLI overrides."""
     checkpoints = get_checkpoints(args.env, exp_id, checkpoint_base_path)
-    if args.sim:
-        checkpoints["sim"] = args.sim
-    if args.weak:
-        checkpoints["weak"] = args.weak
-    if args.strong:
-        checkpoints["strong"] = args.strong
+    if args.overrides.sim:
+        checkpoints["sim"] = args.overrides.sim
+    if args.overrides.weak:
+        checkpoints["weak"] = args.overrides.weak
+    if args.overrides.strong:
+        checkpoints["strong"] = args.overrides.strong
     return checkpoints
 
 
@@ -362,7 +374,10 @@ def resolve_ensemble_members(
     if args.method not in ENSEMBLE_METHODS:
         return None
     return get_ensemble_member_paths(
-        args.env, exp_id, checkpoint_base_path, args.num_ensemble_members
+        args.env,
+        exp_id,
+        checkpoint_base_path,
+        args.overrides.num_ensemble_members,
     )
 
 
@@ -430,14 +445,14 @@ def build_eval_args(
         "config": context.config_path,
         "name": job_name,
         "experiment_group": experiment_group,
-        "num_levels": args.num_levels,
-        "video_episodes_to_collect": args.video_episodes,
-        "video_filter": args.video_filter,
-        "cp_rolling_average": args.cp_rolling_average,
-        "video_logging_mode": args.video_logging_mode,
-        "video_filter_mode": args.video_filter_mode,
-        "num_bins": args.num_bins,
-        "wandb_project": args.wandb_project,
+        "num_levels": args.eval.num_levels,
+        "video_episodes_to_collect": args.eval.video_episodes_to_collect,
+        "video_filter": args.eval.video_filter,
+        "cp_rolling_average": args.eval.cp_rolling_average,
+        "video_logging_mode": args.eval.video_logging_mode,
+        "video_filter_mode": args.eval.video_filter_mode,
+        "num_bins": args.eval.num_bins,
+        "wandb_project": args.runtime.wandb_project,
         "level_seeds_file": str(level_seeds_file),
         "svdd_model_path": svdd_model_path,
         "cp_feature": cp_feature,
@@ -531,7 +546,7 @@ def submit_parallel_bins(
     log_dir: Path,
     calibration_path: Path,
     num_bins: int,
-    qos: str = "default",
+    slurm: SlurmCliArgs,
     dry_run: bool = False,
     dependency_job_id: Optional[str] = None,
 ) -> None:
@@ -547,7 +562,7 @@ def submit_parallel_bins(
         log_dir,
         calibration_path,
         num_bins,
-        qos=qos,
+        slurm=slurm,
         dependency_job_id=dependency_job_id,
     )
 
@@ -576,12 +591,11 @@ def build_bin_array_sbatch_command(
     log_dir: Path,
     calibration_path: Path,
     num_bins: int,
-    qos: str = "default",
+    slurm: SlurmCliArgs,
     dependency_job_id: Optional[str] = None,
 ) -> str:
     """Build the sbatch script for the bin evaluation array job."""
-    slurm_config = SLURM_CONFIG.copy()
-    slurm_config["qos"] = qos
+    slurm_config = _slurm_config_map(slurm)
     slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
 
     # $SLURM_ARRAY_TASK_ID must expand at runtime, not be interpolated by Python
@@ -634,6 +648,17 @@ def _build_policy_python_args(script: str, eval_args: dict) -> List[str]:
         for member_path in eval_args["ensemble_members"]:
             args.append(f"    {member_path}")
     return args
+
+
+def _slurm_config_map(slurm: SlurmCliArgs) -> Dict[str, str]:
+    """Convert typed SLURM settings into sbatch/srun flag names."""
+    return {
+        "qos": slurm.qos,
+        "gres": slurm.gres,
+        "time": slurm.time,
+        "mem": slurm.mem,
+        "cpus-per-task": str(slurm.cpus_per_task),
+    }
 
 
 def _dependency_line(dependency_job_id: Optional[str]) -> str:
