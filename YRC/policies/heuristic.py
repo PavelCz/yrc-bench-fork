@@ -20,6 +20,7 @@ class ExponentialHeuristicPolicy(Policy):
         self.non_ood_starting_prob = 0.5
         self.device = get_global_variable("device")
         self.timestep = 0
+        self._mean_episode_length = None
         
     def reset_episode(self, env_idx: int = None):
         """Reset the timestep counter at the start of a new episode.
@@ -74,8 +75,33 @@ class ExponentialHeuristicPolicy(Policy):
         ckpt = torch.load(load_path)
         self.non_ood_starting_prob = ckpt["prob"]
 
-    def train_percentile(self, percentile: float) -> float:
-        """Take a percentile and return the threshold for that percentile."""
+    def train_percentile_step(self, percentile: float) -> float:
+        raise NotImplementedError(
+            "ExponentialHeuristicPolicy does not support step_afhp calibration."
+        )
+
+    def train_percentile_level(self, percentile: float) -> float:
+        """Map percentile to ood_starting_prob calibrated for level_afhp.
+
+        At timestep t, P(no help) = (1 - ood_starting_prob)^t.
+        Over an episode of length L:
+            P(no help in episode) = product_{t=0}^{L-1} (1 - ood_starting_prob)^t
+                                  = (1 - ood_starting_prob)^{L(L-1)/2}
+
+        Inverting: ood_starting_prob = 1 - (percentile/100)^{2/(L(L-1))}
+
+        Falls back to linear mapping if mean episode length is not calibrated.
+        """
+        if self._mean_episode_length is not None:
+            p = percentile / 100.0
+            p = max(0.0, min(1.0, p))
+            if p <= 0.0:
+                return 1.0  # always ask
+            if p >= 1.0:
+                return 0.0  # never ask
+            L = self._mean_episode_length
+            exponent = 2.0 / (L * (L - 1))
+            return 1.0 - p**exponent
         return (100 - percentile) * 0.01
 
 
@@ -92,6 +118,7 @@ class WaitPolicy(Policy):
         self.num_envs = env.num_envs
         self.timesteps = np.zeros(self.num_envs, dtype=np.int32)
         self.threshold = 0  # Number of timesteps to wait before asking
+        self._episode_lengths = None
 
         # Get max episode length from config for threshold sampling
         max_steps = getattr(config.environment.common, "max_steps", None)
@@ -151,9 +178,8 @@ class WaitPolicy(Policy):
         ckpt = torch.load(load_path)
         self.threshold = ckpt["threshold"]
 
-    def train_percentile(self, percentile: float) -> float:
-        """
-        Take a percentile and return the threshold for that percentile.
+    def train_percentile_step(self, percentile: float) -> float:
+        """Map percentile to a wait-timestep threshold for step_afhp.
 
         Note: percentile_to_threshold already inverts the target AFHP before
         calling this. So if we want 10% AFHP, this receives percentile=90.
@@ -167,3 +193,19 @@ class WaitPolicy(Policy):
         # threshold = episode_length * percentile / 100
         threshold = int(self.max_episode_length * percentile / 100)
         return threshold
+
+    def train_percentile_level(self, percentile: float) -> float:
+        """Map percentile to a wait-timestep threshold for level_afhp.
+
+        An episode has help iff its length > threshold. So the threshold
+        at the p-th percentile of episode lengths is where (100-p)% of
+        episodes are long enough to receive help, i.e., level_afhp = (100-p)%.
+
+        Requires calibration: _episode_lengths must be set from training data.
+        """
+        if self._episode_lengths is None:
+            raise ValueError(
+                "Episode lengths not calibrated. "
+                "Run calibration in eval_afhp.py first."
+            )
+        return np.percentile(self._episode_lengths, percentile)

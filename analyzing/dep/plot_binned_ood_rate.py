@@ -225,14 +225,14 @@ def plot_barplot_single(
     ood_rates: np.ndarray,
     selected_run: str,
     checkpoint_idx: int,
-    ood_percentage: float,
+    level_afhp: float,
     bins: int,
     success_only: bool = False,
 ):
     """Plot OOD rate as a barplot for a single run."""
     filter_msg = " (success only)" if success_only else ""
     print(f"\nPlotting OOD rate at checkpoint {checkpoint_idx}{filter_msg}")
-    print(f"  OOD prediction percentage: {ood_percentage:.2f}%")
+    print(f"  Level AFHP: {level_afhp:.2f}%")
     print(f"  Number of bins: {bins}")
     print(f"  Mean OOD rate: {np.mean(ood_rates):.2%}")
 
@@ -256,7 +256,7 @@ def plot_barplot_single(
     plt.title(
         f"OOD Rate by Timestep{title_suffix}\n"
         f"Run: {selected_run}, Checkpoint: {checkpoint_idx}, "
-        f"OOD%: {ood_percentage:.1f}%"
+        f"Level AFHP: {level_afhp:.1f}%"
     )
     plt.grid(axis="y", alpha=0.3)
     plt.tight_layout()
@@ -384,7 +384,7 @@ def plot_single_run(
     if result is None:
         return
 
-    bin_centers, ood_rates, checkpoint_idx, ood_percentage = result
+    bin_centers, ood_rates, checkpoint_idx, level_afhp = result
 
     # Plot barplot
     plot_barplot_single(
@@ -392,7 +392,7 @@ def plot_single_run(
         ood_rates,
         f"{selected_method}_exp{selected_exp}",
         checkpoint_idx,
-        ood_percentage,
+        level_afhp,
         bins,
         success_only,
     )
@@ -475,12 +475,12 @@ def plot_compare_runs(
         if result is None:
             continue
 
-        bin_centers, ood_rates, checkpoint_idx, ood_percentage = result
+        bin_centers, ood_rates, checkpoint_idx, level_afhp = result
 
         # Store data and label
         all_bin_centers.append(bin_centers)
         all_ood_rates.append(ood_rates)
-        label = f"{method} exp{selected_exp} (OOD: {ood_percentage:.1f}%)"
+        label = f"{method} exp{selected_exp} (Level AFHP: {level_afhp:.1f}%)"
         all_labels.append(label)
 
         print(f"  Selected checkpoint {checkpoint_idx}")
@@ -509,21 +509,21 @@ def select_and_load_checkpoint_data(
         bins: Number of bins for OOD rate calculation
         success_only: If True, only include episodes with reward > 0
     Returns:
-        Tuple of (bin_centers, ood_rates, checkpoint_idx, ood_percentage) or None if error/no data
+        Tuple of (bin_centers, ood_rates, checkpoint_idx, level_afhp) or None if error/no data
     """
     print(f"\nLoading data from: {data_path}")
 
     # Load the evaluation data
     eval_data = np.load(data_path, allow_pickle=True)
 
-    # Display ood_pred_percentage for each checkpoint
-    print("\nCheckpoints with OOD prediction percentages:")
-    ood_percentages = []
+    # Display level_afhp for each checkpoint
+    print("\nCheckpoints with level AFHP percentages:")
+    level_afhps = []
 
     for idx, element in enumerate(eval_data["meta"]):
         level_ood_pred = element["summary"]["test"]["level_ood_pred"]
         percentage = sum(level_ood_pred) / len(level_ood_pred) * 100
-        ood_percentages.append(percentage)
+        level_afhps.append(percentage)
 
         # Also show AFHP and performance if available
         afhp = eval_data["afhps"][idx] if idx < len(eval_data["afhps"]) else "N/A"
@@ -533,19 +533,19 @@ def select_and_load_checkpoint_data(
             else "N/A"
         )
 
-        print(f"  [{idx}] OOD%: {percentage:.2f}%, AFHP: {afhp}, Performance: {perf}")
+        print(f"  [{idx}] Level AFHP: {percentage:.2f}%, AFHP: {afhp}, Performance: {perf}")
 
     # Let user select a checkpoint
     while True:
         try:
             selection = input(
-                f"\nSelect a checkpoint for '{run_name}' (0-{len(ood_percentages) - 1}): "
+                f"\nSelect a checkpoint for '{run_name}' (0-{len(level_afhps) - 1}): "
             )
             checkpoint_idx = int(selection)
-            if 0 <= checkpoint_idx < len(ood_percentages):
+            if 0 <= checkpoint_idx < len(level_afhps):
                 break
             else:
-                print(f"Please enter a number between 0 and {len(ood_percentages) - 1}")
+                print(f"Please enter a number between 0 and {len(level_afhps) - 1}")
         except ValueError:
             print("Please enter a valid number")
 
@@ -563,7 +563,7 @@ def select_and_load_checkpoint_data(
         print(f"No data available for OOD rate at checkpoint {checkpoint_idx}")
         return None
 
-    return bin_centers, ood_rates, checkpoint_idx, ood_percentages[checkpoint_idx]
+    return bin_centers, ood_rates, checkpoint_idx, level_afhps[checkpoint_idx]
 
 
 def plot_binned_ood_rate_main():

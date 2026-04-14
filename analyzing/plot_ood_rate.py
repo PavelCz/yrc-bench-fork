@@ -636,7 +636,7 @@ def select_and_load_checkpoint_data(
         success_only: If True, only include episodes with reward > 0
         target_afhp: If provided, automatically select checkpoint closest to this AFHP
     Returns:
-        Tuple of (ood_rates, checkpoint_idx, ood_percentage) or None if error/no data
+        Tuple of (ood_rates, checkpoint_idx, level_afhp) or None if error/no data
     """
     print(f"\nLoading data from: {data_path}")
 
@@ -644,17 +644,17 @@ def select_and_load_checkpoint_data(
     eval_data = np.load(data_path, allow_pickle=True)
 
     # Collect checkpoint data
-    ood_percentages = []
+    level_afhps = []
     afhps = []
 
     for idx, element in enumerate(eval_data["meta"]):
         level_ood_pred = element["summary"]["test"]["level_ood_pred"]
         percentage = sum(level_ood_pred) / len(level_ood_pred) * 100
-        ood_percentages.append(percentage)
-        
-        # Get AFHP value - prefer to use ood_percentages which are more accurate
+        level_afhps.append(percentage)
+
+        # Get AFHP value - prefer to use level_afhps which are more accurate
         # The afhps array sometimes contains incorrect values
-        afhps.append(percentage)  # Use OOD percentage as AFHP
+        afhps.append(percentage)  # Use level AFHP as AFHP
 
     # Select checkpoint based on target AFHP or user input
     if target_afhp is not None:
@@ -663,44 +663,44 @@ def select_and_load_checkpoint_data(
         if not valid_indices:
             print(f"No valid AFHP values found in {run_name}")
             return None
-            
+
         # Find closest AFHP
         closest_idx = min(valid_indices, key=lambda i: abs(afhps[i] - target_afhp))
         checkpoint_idx = closest_idx
-        
+
         actual_afhp = afhps[checkpoint_idx]
         perf = (
             eval_data["performances"][checkpoint_idx]
             if checkpoint_idx < len(eval_data["performances"])
             else "N/A"
         )
-        
+
         print(f"  Selected checkpoint {checkpoint_idx}: AFHP={actual_afhp:.2f}% (target={target_afhp:.2f}%), Performance={perf}")
     else:
         # Manual selection - display all checkpoints
-        print("\nCheckpoints with OOD prediction percentages:")
-        
-        for idx, (ood_pct, afhp) in enumerate(zip(ood_percentages, afhps)):
+        print("\nCheckpoints with level AFHP percentages:")
+
+        for idx, (level_afhp_pct, afhp) in enumerate(zip(level_afhps, afhps)):
             perf = (
                 eval_data["performances"][idx]
                 if idx < len(eval_data["performances"])
                 else "N/A"
             )
-            
+
             afhp_str = f"{afhp:.2f}" if afhp is not None else "N/A"
-            print(f"  [{idx}] OOD%: {ood_pct:.2f}%, AFHP: {afhp_str}, Performance: {perf}")
+            print(f"  [{idx}] Level AFHP: {level_afhp_pct:.2f}%, AFHP: {afhp_str}, Performance: {perf}")
 
         # Let user select a checkpoint
         while True:
             try:
                 selection = input(
-                    f"\nSelect a checkpoint for '{run_name}' (0-{len(ood_percentages) - 1}): "
+                    f"\nSelect a checkpoint for '{run_name}' (0-{len(level_afhps) - 1}): "
                 )
                 checkpoint_idx = int(selection)
-                if 0 <= checkpoint_idx < len(ood_percentages):
+                if 0 <= checkpoint_idx < len(level_afhps):
                     break
                 else:
-                    print(f"Please enter a number between 0 and {len(ood_percentages) - 1}")
+                    print(f"Please enter a number between 0 and {len(level_afhps) - 1}")
             except ValueError:
                 print("Please enter a valid number")
 
@@ -715,7 +715,7 @@ def select_and_load_checkpoint_data(
     if len(ood_rates) == 0:
         print(f"No data available for OOD rate at checkpoint {checkpoint_idx}")
         return None
-    return ood_rates, checkpoint_idx, ood_percentages[checkpoint_idx]
+    return ood_rates, checkpoint_idx, level_afhps[checkpoint_idx]
 
 
 def plot_compare_runs(
@@ -837,7 +837,7 @@ def plot_compare_runs(
                 )
                 
                 if result is not None:
-                    ood_rates, checkpoint_idx, ood_percentage = result
+                    ood_rates, checkpoint_idx, level_afhp = result
                     method_ood_rates_by_exp.append(ood_rates)
             
             if len(method_ood_rates_by_exp) > 0:
@@ -874,14 +874,14 @@ def plot_compare_runs(
             if result is None:
                 continue
 
-            ood_rates, checkpoint_idx, ood_percentage = result
+            ood_rates, checkpoint_idx, level_afhp = result
 
             # Store data and label
             all_ood_rates.append(ood_rates)
             # Use shared format_label function
             base_label = format_label(method, paper_mode, n_experiments=None)
             if not paper_mode:
-                label = f"{base_label} (OOD: {ood_percentage:.1f}%)"
+                label = f"{base_label} (Level AFHP: {level_afhp:.1f}%)"
             else:
                 label = base_label
             all_labels.append(label)
@@ -978,7 +978,7 @@ def plot_single_run(
     if result is None:
         return
 
-    ood_rates, checkpoint_idx, ood_percentage = result
+    ood_rates, checkpoint_idx, level_afhp = result
 
     # Plot single run
     all_ood_rates = [ood_rates]
@@ -986,7 +986,7 @@ def plot_single_run(
     if paper_mode:
         label = format_label(selected_method, paper_mode, n_experiments=None)
     else:
-        label = f"{selected_method}_exp{selected_exp} (OOD: {ood_percentage:.1f}%)"
+        label = f"{selected_method}_exp{selected_exp} (Level AFHP: {level_afhp:.1f}%)"
     all_labels = [label]
     
     plot_barplot_compare(all_ood_rates, all_labels, success_only, smooth_window, num_bins, save_path, paper_mode, max_ood_rate, max_timesteps)

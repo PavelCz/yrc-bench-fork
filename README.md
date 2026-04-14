@@ -58,14 +58,15 @@ The methods are `ts-random`, `max-prob`, `max-logit`, `ensemble-single`, `svdd-l
 
 To analyze the results and generate plots, use the following scripts in the `analyzing` directory:
 
-To generate the main AFHP curves (AFHP is called ood_pred_percentage. There is also afhp, which is an older definition of AFHP, not the one we use in the paper):
+To generate the main AFHP curves (level_afhp is the per-episode AFHP metric. There is also step_afhp, which is an older per-timestep definition of AFHP, not the one we use in the paper):
 
 ```
 python -m analyzing.icml_plot \
   --eval_dir path/to/evals \
   --prefix icml \
   --env coinrun \
-  --x_data_key ood_pred_percentage \    --y_data_key performance \
+  --x_data_key level_afhp \
+  --y_data_key performance \
   --method_order "ts_random,max_prob,max_logit,ensemble_single,svdd_latent,svdd_image" \
   --paper
 ```

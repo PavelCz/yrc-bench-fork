@@ -470,5 +470,29 @@ class LightningAEPolicy(OODPolicy):
 
         return self
 
-    def train_percentile(self, percentile: float) -> float:
+    def _compute_scores(self, obs):
+        """Override parent to use Lightning AE's reconstruction error scoring."""
+        observation = self._prepare_observation(obs)
+        return cast(np.ndarray, self._compute_decision_scores(observation))
+
+    def train_percentile_step(self, percentile: float) -> float:
+        """Return threshold for a target step_afhp percentile.
+
+        Uses rollout-based per-step scores if available (from generate_scores()),
+        otherwise falls back to decision scores from AE training.
+        """
+        if self._train_scores is not None:
+            return np.percentile(self._train_scores, percentile)
         return np.percentile(self._train_decision_scores, percentile)
+
+    def train_percentile_level(self, percentile: float) -> float:
+        """Return threshold for a target level_afhp percentile.
+
+        Uses per-episode max scores from generate_scores() rollouts.
+        """
+        if self._train_episode_max_scores is None:
+            raise ValueError(
+                "Episode-level training scores not available. "
+                "Call generate_scores() first."
+            )
+        return np.percentile(self._train_episode_max_scores, percentile)

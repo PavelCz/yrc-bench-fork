@@ -91,6 +91,7 @@ class TimestepRandomPolicy(Policy):
     def __init__(self, config, env):
         self.prob = 0.5
         self.device = get_global_variable("device")
+        self._mean_episode_length = None
 
     def act(self, obs, greedy=False, return_scores_and_recons=False):
         benchmark = get_global_variable("benchmark")
@@ -126,8 +127,29 @@ class TimestepRandomPolicy(Policy):
         ckpt = torch.load(load_path)
         self.prob = ckpt["prob"]
 
-    def train_percentile(self, percentile: float) -> float:
-        """Take a percentile and return the threshold for that percentile."""
+    def train_percentile_step(self, percentile: float) -> float:
+        """Map percentile to per-step ask-for-help probability (linear)."""
+        return (100 - percentile) * 0.01
+
+    def train_percentile_level(self, percentile: float) -> float:
+        """Map percentile to ask-for-help probability calibrated for level_afhp.
+
+        If mean episode length has been calibrated, uses the formula:
+            prob = 1 - (percentile / 100) ^ (1 / L)
+        to account for the nonlinear mapping between per-step probability
+        and per-episode OOD percentage.
+
+        Otherwise falls back to linear mapping.
+        """
+        if self._mean_episode_length is not None:
+            p = percentile / 100.0
+            # Clamp to avoid domain errors
+            p = max(0.0, min(1.0, p))
+            if p <= 0.0:
+                return 1.0  # always ask
+            if p >= 1.0:
+                return 0.0  # never ask
+            return 1.0 - p ** (1.0 / self._mean_episode_length)
         return (100 - percentile) * 0.01
 
 
@@ -170,6 +192,11 @@ class LevelBasedRandomPolicy(Policy):
         ckpt = torch.load(load_path)
         self.prob = ckpt["prob"]
 
-    def train_percentile(self, percentile: float) -> float:
+    def train_percentile_step(self, percentile: float) -> float:
+        raise NotImplementedError(
+            "LevelBasedRandomPolicy does not support step_afhp calibration."
+        )
+
+    def train_percentile_level(self, percentile: float) -> float:
         """Take a percentile and return the threshold for that percentile."""
         return (100 - percentile) * 0.01

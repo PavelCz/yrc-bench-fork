@@ -110,11 +110,11 @@ pip install -e lib/LIBRARY_NAME
    - `procgen/`: Procgen environments with models, policies, and wrappers (primary focus of this fork)
 
 4. **YRC/policies/**: Policy implementations
-   - `base.py`: Base policy interface
-   - `ood.py`: OOD detection policies
-   - `lightning_ae.py`: Lightning-based autoencoder policies
-   - `mahalanobis_ae.py`: Mahalanobis distance-based policies
-   - `threshold.py`: Threshold-based coordination policies
+   - `base.py`: `TimestepRandomPolicy`, `LevelBasedRandomPolicy`, `AlwaysPolicy`
+   - `heuristic.py`: `ExponentialHeuristicPolicy`, `WaitPolicy`
+   - `threshold.py`: `ThresholdPolicy` (confidence-based: `max_prob`, `max_logit`, `ensemble_variance`)
+   - `ood.py`: `OODPolicy` (Deep SVDD, AutoEncoder)
+   - `lightning_ae.py`: `LightningAEPolicy` (PyTorch Lightning autoencoders)
    - `rl.py`: RL-based coordination policies
 
 ### Configuration System
@@ -141,26 +141,28 @@ The project uses hierarchical YAML configs in `configs/`:
    - Phase 4: Refines return axis to ensure smooth curves
    - Maintains backward compatibility with legacy format
 
-2. **Feature Types**: Coordination policies can use:
+2. **AFHP Metrics and Percentile Calibration**: Two AFHP metrics exist: **step_afhp** (fraction of timesteps) and **level_afhp** (fraction of episodes with any help). All policies implement `train_percentile_step(p)` and `train_percentile_level(p)` to map percentiles to thresholds calibrated for each metric. Calibration runs in `calibrate_percentile_mapping()` in `eval_afhp.py` before the sampler starts. See `docs/percentile_calibration.md` for the full support matrix, per-policy formulas, and calibration data sources.
+
+3. **Feature Types**: Coordination policies can use:
    - Raw observations (`obs`)
    - Weak agent's hidden features (`feature`)
    - Weak agent's action distributions (`action`)
    - Combinations (e.g., `obs+feature`, `obs+action`, `feature+action`, `obs+feature+action`)
 
-3. **Memory Management**: Recent work focuses on efficient handling of large rollout datasets, especially for OOD detection methods that require storing and processing many samples.
+4. **Memory Management**: Recent work focuses on efficient handling of large rollout datasets, especially for OOD detection methods that require storing and processing many samples.
 
-4. **Experiment Tracking**: All experiments are tracked with Weights & Biases (wandb) for reproducibility. The tracking includes:
+5. **Experiment Tracking**: All experiments are tracked with Weights & Biases (wandb) for reproducibility. The tracking includes:
    - Training metrics and curves
    - Evaluation videos with score bars
    - Hyperparameters and configurations
    - Model checkpoints
 
-5. **Checkpoint Management**: Three types of checkpoints are saved during training:
+6. **Checkpoint Management**: Three types of checkpoints are saved during training:
    - `best_val_sim.ckpt`: Best validation performance on simulated weak agent
    - `best_val_true.ckpt`: Best validation performance on true weak agent
    - `last.ckpt`: Most recent checkpoint
 
-6. **Acting Policy Requirements**: Pre-trained acting policies (sim weak, weak, strong) must be provided for most environments. These should be placed in `YRC/checkpoints/{environment}/` following the existing structure.
+7. **Acting Policy Requirements**: Pre-trained acting policies (sim weak, weak, strong) must be provided for most environments. These should be placed in `YRC/checkpoints/{environment}/` following the existing structure.
 
 ## Python Best Practices
 

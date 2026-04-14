@@ -13,8 +13,8 @@ from YRC.core.configs.global_configs import get_global_variable
 
 from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
 
-from YRC.coverage.coverage_search import create_afhp_threshold_sampler
-from YRC.coverage.coverage_search import create_ood_percentage_threshold_sampler
+from YRC.coverage.coverage_search import create_step_afhp_threshold_sampler
+from YRC.coverage.coverage_search import create_level_afhp_threshold_sampler
 
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger
@@ -50,6 +50,85 @@ def load_level_seeds(config) -> Optional[List[int]]:
     return level_seeds
 
 
+def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs):
+    """Calibrate the policy's train_percentile_step/level methods using training data.
+
+    Different policy types need different calibration:
+
+    - ThresholdPolicy / OODPolicy: Runs rollouts to collect per-step OOD scores and
+      per-episode max scores. These are stored in policy._train_scores and
+      policy._train_episode_max_scores for use by train_percentile_step/level.
+
+    - TimestepRandomPolicy / ExponentialHeuristicPolicy: Runs the weak agent alone
+      (no help requests) on training levels to measure mean episode length. This is
+      needed because the mapping from per-step probability to per-episode help rate
+      is nonlinear (see docs/percentile_calibration.md).
+
+    - WaitPolicy: Runs the weak agent alone to collect the full distribution of
+      episode lengths. train_percentile_level uses empirical percentiles of this
+      distribution, since an episode has help iff its length exceeds the wait
+      threshold.
+
+    Args:
+        policy: The coordination policy to calibrate.
+        config: Experiment configuration.
+        evaluator: Evaluator instance for running episodes.
+        envs: Pre-created environments (used for score generation rollouts).
+        make_envs: Factory that creates fresh environments for calibration runs.
+    """
+    from YRC.policies.threshold import ThresholdPolicy
+    from YRC.policies.ood import OODPolicy
+    from YRC.policies.base import TimestepRandomPolicy
+    from YRC.policies.heuristic import ExponentialHeuristicPolicy, WaitPolicy
+
+    # Score-based calibration: collect OOD score distributions via rollouts
+    if isinstance(policy, ThresholdPolicy):
+        metric = config.coord_policy.metric
+        if metric in ("max_prob", "max_logit", "ensemble_variance"):
+            num_rollouts = getattr(config.algorithm, "num_rollouts", 256)
+            print(
+                f"Generating {num_rollouts} training scores for threshold "
+                f"policy with {metric} metric..."
+            )
+            policy.generate_scores(envs["train"], num_rollouts)
+
+    if isinstance(policy, OODPolicy) and not isinstance(policy, ThresholdPolicy):
+        num_rollouts = getattr(config.algorithm, "num_rollouts", 256)
+        print(
+            f"Generating {num_rollouts} training scores for "
+            f"{type(policy).__name__}..."
+        )
+        policy.generate_scores(envs["train"], num_rollouts)
+
+    # Episode-length calibration: run weak agent alone on training levels
+    if isinstance(policy, (TimestepRandomPolicy, ExponentialHeuristicPolicy, WaitPolicy)):
+        print(f"Calibrating {type(policy).__name__}: measuring episode lengths...")
+        if isinstance(policy, TimestepRandomPolicy):
+            old_prob = policy.prob
+            policy.prob = 0.0  # weak agent only
+        elif isinstance(policy, ExponentialHeuristicPolicy):
+            old_prob = 1 - policy.non_ood_starting_prob
+            policy.non_ood_starting_prob = 1.0  # weak agent only (ood_starting_prob=0)
+        elif isinstance(policy, WaitPolicy):
+            old_threshold = policy.threshold
+            policy.threshold = 10000  # weak agent only (never ask)
+        cal_envs = make_envs()
+        cal_summary = evaluator.eval(policy, cal_envs, ["train"], close_envs=True)
+        mean_ep_length = cal_summary["train"]["episode_length_mean"]
+        if isinstance(policy, TimestepRandomPolicy):
+            policy._mean_episode_length = mean_ep_length
+            policy.prob = old_prob
+        elif isinstance(policy, ExponentialHeuristicPolicy):
+            policy._mean_episode_length = mean_ep_length
+            policy.non_ood_starting_prob = 1 - old_prob
+        elif isinstance(policy, WaitPolicy):
+            policy._episode_lengths = np.array(
+                cal_summary["train"]["episode_lengths"]
+            )
+            policy.threshold = old_threshold
+        print(f"Mean episode length (weak only): {mean_ep_length:.1f}")
+
+
 def main():
     args = flags.make()
     args.eval_mode = True
@@ -82,22 +161,9 @@ def main():
         if isinstance(policy, MahalanobisAEPolicy):
             policy.initialize_mahalanobis_detector(config)
 
-    # For threshold policy with metrics that require training score distribution (like max_logit),
-    # we need to generate scores before running AFHP evaluation
-    from YRC.policies.threshold import ThresholdPolicy
-
-    if isinstance(policy, ThresholdPolicy):
-        metric = config.coord_policy.metric
-        # Generate training score distribution for percentile computation
-        if metric in ("max_prob", "max_logit", "ensemble_variance"):
-            # Use algorithm.num_rollouts if available, otherwise use a default
-            num_rollouts = getattr(config.algorithm, "num_rollouts", 256)
-            print(
-                f"Generating {num_rollouts} training scores for threshold policy with {metric} metric..."
-            )
-            policy.generate_scores(envs["train"], num_rollouts)
-
     evaluator = Evaluator(config, config.environment)
+
+    calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs)
 
     coverage_fraction = config.evaluation.coverage_fraction
     threshold_sampler: str = config.evaluation.threshold_sampler
@@ -137,8 +203,8 @@ def main():
     for split_name in envs:
         envs[split_name].close()
 
-    if threshold_sampler == "afhp":
-        sampler = create_afhp_threshold_sampler(
+    if threshold_sampler == "step_afhp":
+        sampler = create_step_afhp_threshold_sampler(
             policy=policy,
             evaluator=evaluator,
             envs_factory=make_envs,
@@ -148,8 +214,8 @@ def main():
             logger=wandb_logger,
             wandb_run=exp,
         )
-    elif threshold_sampler == "ood_percentage":
-        sampler = create_ood_percentage_threshold_sampler(
+    elif threshold_sampler == "level_afhp":
+        sampler = create_level_afhp_threshold_sampler(
             policy=policy,
             evaluator=evaluator,
             envs_factory=make_envs,

@@ -13,7 +13,7 @@ wandb:
 evaluation:
     test_episodes: 1024
     coverage_fraction: 0.05
-    threshold_sampler: 'ood_percentage'
+    threshold_sampler: 'level_afhp'
 
 # Inherit all settings from common.yaml
 environment: 
