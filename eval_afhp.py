@@ -10,6 +10,7 @@ import YRC.core.environment as env_factory
 import YRC.core.policy as policy_factory
 from YRC.core import Evaluator
 from YRC.core.configs.global_configs import get_global_variable
+from YRC.core.eval_script_utils import init_eval_wandb_run, save_npz_results
 
 from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
 
@@ -18,7 +19,6 @@ from YRC.coverage.coverage_search import create_level_afhp_threshold_sampler
 
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger
-import wandb
 from acs.types import CurvePoint
 
 
@@ -231,20 +231,12 @@ def main():
     # Initialize wandb logger
     save_dir = Path(str(get_global_variable("experiment_dir")))
 
-    # Prepare wandb init parameters
-    wandb_kwargs = {
-        "name": config.exp_name,
-        "project": config.wandb.project,
-        "group": config.wandb.group,
-        "mode": config.wandb.mode,
-        "job_type": "train",
-        "config": config,
-    }
-
-    if config.wandb.entity is not None:
-        wandb_kwargs["entity"] = config.wandb.entity
-
-    exp = wandb.init(**wandb_kwargs)
+    exp = init_eval_wandb_run(
+        config,
+        name=config.exp_name,
+        job_type="train",
+        run_config=config,
+    )
 
     wandb_logger = WandbLogger(
         save_dir=save_dir,
@@ -317,7 +309,7 @@ def main():
     results_file_path = log_file_path.with_name(
         log_file_path.name.replace(".log", f"_{split}.npz")
     )
-    np.savez(
+    save_npz_results(
         results_file_path,
         afhps=np.array([pt.afhp for pt in sorted_points]),
         performances=np.array([pt.performance for pt in sorted_points]),
