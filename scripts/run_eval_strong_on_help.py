@@ -45,6 +45,7 @@ METHOD_CONFIGS = {
     "max_prob": "max_prob.yaml",
     "max_logit": "max_logit.yaml",
     "lb_random": "level_based_random.yaml",
+    "oracle_lb_random": "oracle_level_based_random.yaml",
     "ts_random": "timestep_random.yaml",
     "svdd_image": "image_svdd.yaml",
     "svdd_latent": "latent_svdd.yaml",

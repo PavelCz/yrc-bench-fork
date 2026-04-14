@@ -13,6 +13,9 @@ coord_policy:
     level_based_random:
         cls: LevelBasedRandomPolicy
         baseline: False
+    oracle_level_based_random:
+        cls: OracleLevelBasedRandomPolicy
+        baseline: False
     heuristic:
         cls: ExponentialHeuristicPolicy
         baseline: False
@@ -148,6 +151,8 @@ algorithm:
     timestep_random:
         cls: RandomAlgorithm
     level_based_random:
+        cls: RandomAlgorithm
+    oracle_level_based_random:
         cls: RandomAlgorithm
     heuristic:
         cls: RandomAlgorithm

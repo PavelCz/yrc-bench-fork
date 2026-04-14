@@ -8,11 +8,15 @@ ACS library for the specific use case of threshold evaluation in YRC.
 from typing import Tuple, Any, Dict, Optional
 
 # Import the joint-coverage sampler from the external ACS library
-from acs import BinarySearchSampler, SamplingResult
+from acs import BinarySearchSampler
 from acs.wait_policy_sampler import WaitPolicyAwareSampler
 from YRC.policies.ood import OODPolicy
 from YRC.policies.lightning_ae import LightningAEPolicy
-from YRC.policies.base import TimestepRandomPolicy, LevelBasedRandomPolicy
+from YRC.policies.base import (
+    LevelBasedRandomPolicy,
+    OracleLevelBasedRandomPolicy,
+    TimestepRandomPolicy,
+)
 from YRC.policies.threshold import ThresholdPolicy
 from YRC.policies.heuristic import ExponentialHeuristicPolicy, WaitPolicy
 from YRC.core import Evaluator
@@ -53,14 +57,15 @@ class EvalStepTracker:
             wandb.log(
                 {
                     "eval/step": self.step,
-                    "eval/threshold": threshold if not np.isinf(threshold) else (1e10 if threshold > 0 else -1e10),
+                    "eval/threshold": threshold
+                    if not np.isinf(threshold)
+                    else (1e10 if threshold > 0 else -1e10),
                     "eval/step_afhp": step_afhp,
                     "eval/level_afhp": level_afhp,
                     "eval/performance": performance,
                 },
                 step=self.step,
             )
-
 
 
 def create_level_afhp_threshold_sampler(
@@ -96,14 +101,14 @@ def create_level_afhp_threshold_sampler(
         JointCoverageSampler ready to run
     """
     tracker = EvalStepTracker(wandb_run=wandb_run)
-    
+
     # Track threshold values seen for WaitPolicy
     thresholds_evaluated = []
-    
+
     # Get max episode length for WaitPolicy
     max_episode_length = None
     if isinstance(policy, WaitPolicy):
-        max_episode_length = getattr(policy, 'max_episode_length', 500)
+        max_episode_length = getattr(policy, "max_episode_length", 500)
 
     def percentile_to_threshold(p: float) -> float:
         # p in [0,1]
@@ -225,14 +230,14 @@ def create_step_afhp_threshold_sampler(
         JointCoverageSampler ready to run
     """
     tracker = EvalStepTracker(wandb_run=wandb_run)
-    
+
     # Track threshold values seen for WaitPolicy
     thresholds_evaluated = []
-    
+
     # Get max episode length for WaitPolicy
     max_episode_length = None
     if isinstance(policy, WaitPolicy):
-        max_episode_length = getattr(policy, 'max_episode_length', 500)
+        max_episode_length = getattr(policy, "max_episode_length", 500)
 
     def percentile_to_threshold(p: float) -> float:
         # p in [0,1]
@@ -328,17 +333,18 @@ def update_policy_params(policy, threshold):
     elif (
         isinstance(policy, TimestepRandomPolicy)
         or isinstance(policy, LevelBasedRandomPolicy)
+        or isinstance(policy, OracleLevelBasedRandomPolicy)
         or isinstance(policy, ExponentialHeuristicPolicy)
     ):
         if threshold == float("inf"):
             # An infinite threshold means that the policy will never ask for help.
-            # We need to set the probability to 0.
+            # We need to set the control parameter to 0.
             threshold = 0.0
         elif threshold == float("-inf"):
             # A negative infinite threshold means that the policy will always ask for
             # help.
-            # We need to set the probability to 1.
-            threshold = 1.0
+            # OracleLevelBasedRandomPolicy uses 2.0 as the always-ask setting.
+            threshold = 2.0 if isinstance(policy, OracleLevelBasedRandomPolicy) else 1.0
         policy.update_params(threshold)
 
     elif isinstance(policy, WaitPolicy):

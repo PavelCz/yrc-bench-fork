@@ -200,3 +200,82 @@ class LevelBasedRandomPolicy(Policy):
     def train_percentile_level(self, percentile: float) -> float:
         """Take a percentile and return the threshold for that percentile."""
         return (100 - percentile) * 0.01
+
+
+class OracleLevelBasedRandomPolicy(Policy):
+    """A delayed oracle-gated level policy.
+
+    On the first action of an episode, the policy always stays with the weak agent.
+    Once the first info dict has exposed the level's OOD ground truth, the policy
+    latches a per-episode help decision:
+
+    - control in [0, 1): ask on OOD levels with probability ``control``
+    - control in [1, 2]: always ask on OOD levels and ask on ID levels with
+      probability ``control - 1``
+
+    The latched choice is then reused for the rest of the episode.
+    """
+
+    def __init__(self, config, env):
+        self.help_control = 1.0
+        self.current_action = [0] * env.num_envs
+
+    def act(self, obs, greedy=False, return_scores_and_recons=False):
+        episode_timesteps = obs["episode_timestep"]
+        level_ood_gt = obs["level_ood_gt"]
+
+        for i, ep_timestep in enumerate(episode_timesteps):
+            if ep_timestep == 0:
+                # We only know the OOD label after the first env step.
+                self.current_action[i] = 0
+                continue
+
+            if ep_timestep == 1:
+                is_ood_level = bool(level_ood_gt[i])
+                if self.help_control < 1.0:
+                    ask_for_help = is_ood_level and (
+                        torch.rand(1).item() < self.help_control
+                    )
+                else:
+                    ask_for_help = is_ood_level or (
+                        torch.rand(1).item() < (self.help_control - 1.0)
+                    )
+                self.current_action[i] = int(ask_for_help)
+
+        if return_scores_and_recons:
+            return np.array(self.current_action), None, None
+
+        return np.array(self.current_action)
+
+    def update_params(self, help_control=None):
+        if help_control is None:
+            raise ValueError("Help control cannot be None!")
+        self.help_control = float(np.clip(help_control, 0.0, 2.0))
+
+    def save_model(self, name, save_dir):
+        save_path = os.path.join(save_dir, f"{name}.ckpt")
+        torch.save({"help_control": self.help_control}, save_path)
+        logging.info(f"Saved model to {save_path}")
+
+    def load_model(self, load_path):
+        ckpt = torch.load(load_path)
+        if "help_control" in ckpt:
+            self.help_control = ckpt["help_control"]
+        elif "prob" in ckpt:
+            # Backward-compatible fallback for early experiments.
+            self.help_control = ckpt["prob"]
+        else:
+            raise KeyError("Checkpoint missing 'help_control' entry")
+
+    def train_percentile_step(self, percentile: float) -> float:
+        raise NotImplementedError(
+            "OracleLevelBasedRandomPolicy does not support step_afhp calibration."
+        )
+
+    def train_percentile_level(self, percentile: float) -> float:
+        """Map percentile directly to the [0, 2] help-control range.
+
+        This assumes a 50/50 mix of OOD and ID evaluation levels, so the control maps
+        linearly to level AFHP over the full [0, 100] range.
+        """
+        return (100 - percentile) * 0.02

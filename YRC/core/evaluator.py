@@ -64,9 +64,7 @@ class Evaluator:
         "min_output_size": 512,  # Minimum output size for agent-only videos
     }
 
-    def __init__(
-        self, config, env_config: Optional[dict] = None
-    ):
+    def __init__(self, config, env_config: Optional[dict] = None):
         self.args = config.evaluation
 
         # Use eval_run_dir if available (eval mode), otherwise fall back to experiment_dir
@@ -199,13 +197,13 @@ class Evaluator:
                 self._process_and_log_videos(split, threshold, afhp, logger)
 
                 wandb_metrics = {
-                    "num_finished_episodes": summary[split][
-                        "num_finished_episodes"
-                    ],
+                    "num_finished_episodes": summary[split]["num_finished_episodes"],
                 }
                 # Add randomize_goal_percentage if available
                 if summary[split].get("randomize_goal_percentage") is not None:
-                    wandb_metrics["randomize_goal_percentage"] = summary[split]["randomize_goal_percentage"]
+                    wandb_metrics["randomize_goal_percentage"] = summary[split][
+                        "randomize_goal_percentage"
+                    ]
                 logger.experiment.log(wandb_metrics)
 
         return summary
@@ -288,6 +286,9 @@ class Evaluator:
             # Add the episode timestep to the obs. This is necessary for
             # LevelBasedRandomPolicy to know whether a new episode has started.
             obs["episode_timestep"] = episode_log["episode_length"]
+            # Some level-based baselines need the current episode's OOD ground truth
+            # once it becomes available from the first info dict.
+            obs["level_ood_gt"] = np.array(current_level_ood_gt, dtype=bool)
             # For most policies I have seen, the greedy flag is ignored. These include
             # random, lightning_ae, and ood.
             action, scores, recons = policy.act(
@@ -425,7 +426,9 @@ class Evaluator:
                         # Log first OOD timestep (None if never predicted)
                         log["first_ood_timestep"].append(first_ood_timestep[i])
                         # Log level seed (use prev_level_seed since info updates after step)
-                        log["level_seeds"].append(int(info[i].get("prev_level_seed", -1)))
+                        log["level_seeds"].append(
+                            int(info[i].get("prev_level_seed", -1))
+                        )
 
                     # Always increment episode counter (for upper bound check)
                     num_episodes += 1
@@ -597,7 +600,9 @@ class Evaluator:
             "level_ood_gt": log["level_ood_gt"],
             "level_ood_pred": log["level_ood_pred"],
             # Variant percentage (percentage of random goal placements)
-            "randomize_goal_percentage": float(np.mean(log["level_ood_gt"])) * 100 if log.get("level_ood_gt") and len(log["level_ood_gt"]) > 0 else None,
+            "randomize_goal_percentage": float(np.mean(log["level_ood_gt"])) * 100
+            if log.get("level_ood_gt") and len(log["level_ood_gt"]) > 0
+            else None,
             # Episode outcome information
             "invisible_coin_collected": log["invisible_coin_collected"],
             "first_ood_timestep": log["first_ood_timestep"],
@@ -626,8 +631,10 @@ class Evaluator:
             log_str += f"   Threshold:          {t_str}\n"
         log_str += f"   Level AFHP: {summary['level_afhp']:7.2f}\n"
         log_str += f"   OOD Accuracy: {summary['ood_accuracy']:7.2f}\n"
-        if summary.get('randomize_goal_percentage') is not None:
-            log_str += f"   Random Goal %: {summary['randomize_goal_percentage']:7.2f}%\n"
+        if summary.get("randomize_goal_percentage") is not None:
+            log_str += (
+                f"   Random Goal %: {summary['randomize_goal_percentage']:7.2f}%\n"
+            )
         log_str += "   Raw Rewards: "
         for r in summary["raw_returns"]:
             log_str += f"{r:.2f},"
