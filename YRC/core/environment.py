@@ -14,29 +14,37 @@ from copy import deepcopy as dc
 from YRC.core.configs import get_global_variable
 
 
-def make(config, level_seeds=None, level_seeds_mode="sequential"):
+def make(config, level_seeds=None, level_seeds_mode="sequential", cal_seeds=None):
     """Create coordination environments.
-    
+
     Args:
         config: Configuration object
         level_seeds: Optional list of level seeds to use for test environment
         level_seeds_mode: Mode for level seeds (sequential, container, random)
+        cal_seeds: Optional fixed seeds for a dedicated calibration split.
     """
-    base_envs = make_raw_envs(config, level_seeds, level_seeds_mode)
+    base_envs = make_raw_envs(config, level_seeds, level_seeds_mode, cal_seeds)
     sim_weak_agent, weak_agent, strong_agent = load_agents(config, base_envs["val_sim"])
 
+    cal_agent_names = {"train", "val_sim", "cal"}
     coord_envs = {}
     for name in base_envs:
-        if config.general.skyline or name not in ["train", "val_sim"]:
+        if config.general.skyline or name not in cal_agent_names:
             if type(strong_agent) is dict:
-                coord_envs[name] = CoordEnv(config.coord_env, base_envs[name], weak_agent, strong_agent[name])
+                coord_envs[name] = CoordEnv(
+                    config.coord_env, base_envs[name], weak_agent, strong_agent[name]
+                )
             else:
-                coord_envs[name] = CoordEnv(config.coord_env, base_envs[name], weak_agent, strong_agent)
+                coord_envs[name] = CoordEnv(
+                    config.coord_env, base_envs[name], weak_agent, strong_agent
+                )
         else:
-            # NOTE: not skyline and name in ["train", "val_sim"]
+            # NOTE: not skyline and name in ["train", "val_sim", "cal"]
             # use weak agent as strong agent
             # use sim_weak agent as weak agent
-            coord_envs[name] = CoordEnv(config.coord_env, base_envs[name], sim_weak_agent, weak_agent)
+            coord_envs[name] = CoordEnv(
+                config.coord_env, base_envs[name], sim_weak_agent, weak_agent
+            )
 
     # set costs for getting help from strong agent
     test_eval_info = get_test_eval_info(config, coord_envs)
@@ -62,12 +70,12 @@ def make(config, level_seeds=None, level_seeds_mode="sequential"):
 def check_coord_envs(envs):
     for name in envs:
         assert (
-                envs[name].strong_query_cost_per_action
-                == envs["train"].strong_query_cost_per_action
+            envs[name].strong_query_cost_per_action
+            == envs["train"].strong_query_cost_per_action
         )
         assert (
-                envs[name].switch_agent_cost_per_action
-                == envs["train"].switch_agent_cost_per_action
+            envs[name].switch_agent_cost_per_action
+            == envs["train"].switch_agent_cost_per_action
         )
 
 
@@ -99,13 +107,16 @@ def get_test_eval_info(config, coord_envs):
     return ret
 
 
-def make_raw_envs(config, level_seeds=None, level_seeds_mode="sequential"):
+def make_raw_envs(
+    config, level_seeds=None, level_seeds_mode="sequential", cal_seeds=None
+):
     """Create raw environments for each split.
-    
+
     Args:
         config: Configuration object
         level_seeds: Optional list of level seeds to use for test environment
         level_seeds_mode: Mode for level seeds (sequential, container, random)
+        cal_seeds: Optional fixed seeds for a dedicated calibration split.
     """
     module = importlib.import_module(f"YRC.envs.{get_global_variable('benchmark')}")
     create_fn = getattr(module, "create_env")
@@ -115,9 +126,9 @@ def make_raw_envs(config, level_seeds=None, level_seeds_mode="sequential"):
         # Only pass level seeds to test environment
         kwargs = {}
         if name == "test" and level_seeds is not None:
-            kwargs['level_seeds'] = level_seeds
-            kwargs['level_seeds_mode'] = level_seeds_mode
-        
+            kwargs["level_seeds"] = level_seeds
+            kwargs["level_seeds_mode"] = level_seeds_mode
+
         if name == "train" and config.general.skyline:
             env = create_fn("test", config.environment, **kwargs)
         else:
@@ -125,6 +136,16 @@ def make_raw_envs(config, level_seeds=None, level_seeds_mode="sequential"):
         # some extra information
         env.name = config.environment.common.env_name
         envs[name] = env
+
+    if cal_seeds is not None:
+        env = create_fn(
+            "train",
+            config.environment,
+            level_seeds=cal_seeds,
+            level_seeds_mode="sequential",
+        )
+        env.name = config.environment.common.env_name
+        envs["cal"] = env
 
     return envs
 
@@ -150,7 +171,7 @@ class CoordEnv(gym.Env):
         if isinstance(base_env.observation_space, list):
             obs_space = base_env.observation_space[0]
         elif isinstance(base_env.observation_space, gym.spaces.Dict):
-            obs_space = base_env.observation_space.spaces['image']
+            obs_space = base_env.observation_space.spaces["image"]
         else:
             obs_space = base_env.observation_space
         self.weak_agent = weak_agent
@@ -163,7 +184,9 @@ class CoordEnv(gym.Env):
                 "weak_features": gym.spaces.Box(
                     -100, 100, shape=(weak_agent.hidden_dim,)
                 ),
-                "weak_logit": gym.spaces.Box(-100, 100, shape=(weak_agent.model.logit_dim,)),
+                "weak_logit": gym.spaces.Box(
+                    -100, 100, shape=(weak_agent.model.logit_dim,)
+                ),
             }
         )
 
@@ -230,29 +253,38 @@ class CoordEnv(gym.Env):
     def _compute_env_action(self, action):
         # NOTE: this method only works with non-recurrent agent models
         greedy = self.args.act_greedy
-        is_weak = (action == self.WEAK)
+        is_weak = action == self.WEAK
         is_strong = ~is_weak
 
         if isinstance(self.env_obs, dict):
             if is_weak.any():
                 env_action = self.weak_agent.act(self.env_obs, greedy=greedy)
             if is_strong.any():
-                if get_global_variable('benchmark') == 'cliport':
-                    env_action = self.strong_agent.act(self.env_obs, self.base_env, greedy=greedy)
+                if get_global_variable("benchmark") == "cliport":
+                    env_action = self.strong_agent.act(
+                        self.env_obs, self.base_env, greedy=greedy
+                    )
                 else:
                     env_action = self.strong_agent.act(self.env_obs, greedy=greedy)
         else:
             env_action = np.zeros_like(action)
             if is_weak.any():
-                env_action[is_weak] = self.weak_agent.act(self.env_obs[is_weak], greedy=greedy)
+                env_action[is_weak] = self.weak_agent.act(
+                    self.env_obs[is_weak], greedy=greedy
+                )
             if is_strong.any():
-                env_action[is_strong] = self.strong_agent.act(self.env_obs[is_strong], greedy=greedy)
+                env_action[is_strong] = self.strong_agent.act(
+                    self.env_obs[is_strong], greedy=greedy
+                )
         return env_action
 
     def get_obs(self):
         obs = {
             "env_obs": self.env_obs,
-            "weak_features": self.weak_agent.get_hidden(self.env_obs).detach().cpu().numpy(),
+            "weak_features": self.weak_agent.get_hidden(self.env_obs)
+            .detach()
+            .cpu()
+            .numpy(),
             "weak_logit": self.weak_agent.forward(self.env_obs).detach().cpu().numpy(),
         }
         return obs
