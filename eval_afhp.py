@@ -43,15 +43,14 @@ def load_level_seeds(config) -> dict:
     return {"ood_eval": ood_eval, "validation": validation}
 
 
-def _calibration_split_and_count(envs, config, cal_seeds):
-    """Resolve which split to calibrate on and how many episodes to run."""
-    if cal_seeds is not None and "cal" in envs:
-        return "cal", len(cal_seeds)
-    print(
-        "No validation seeds found for fixed-seed calibration; "
-        f"falling back to {config.environment.val_sim.num_levels} train episodes."
-    )
-    return "train", config.environment.val_sim.num_levels
+def _require_calibration_split_and_count(envs, cal_seeds):
+    """Resolve the fixed-seed calibration split and episode count."""
+    if cal_seeds is None or "cal" not in envs:
+        raise ValueError(
+            "Calibration requires validation seeds. Ensure the seed file contains "
+            "a non-empty 'validation' set and --level_seeds_file is set."
+        )
+    return "cal", len(cal_seeds)
 
 
 def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs, cal_seeds):
@@ -79,15 +78,14 @@ def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs, cal
         evaluator: Evaluator instance for running episodes.
         envs: Pre-created environments (used for score generation rollouts).
         make_envs: Factory that creates fresh environments for calibration runs.
-        cal_seeds: Fixed validation seeds for reproducible calibration, or None
-            to fall back to a bounded run on the train split.
+        cal_seeds: Fixed validation seeds for reproducible calibration.
     """
     from YRC.policies.threshold import ThresholdPolicy
     from YRC.policies.ood import OODPolicy
     from YRC.policies.base import TimestepRandomPolicy
     from YRC.policies.heuristic import ExponentialHeuristicPolicy, WaitPolicy
 
-    cal_split, num_cal_episodes = _calibration_split_and_count(envs, config, cal_seeds)
+    cal_split, num_cal_episodes = _require_calibration_split_and_count(envs, cal_seeds)
     cal_env = envs[cal_split]
 
     # Score-based calibration: collect OOD score distributions via rollouts
