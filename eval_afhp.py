@@ -83,15 +83,16 @@ def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs, cal
     from YRC.policies.threshold import ThresholdPolicy
     from YRC.policies.ood import OODPolicy
     from YRC.policies.base import (
+        LevelBasedRandomPolicy,
         OracleLevelBasedRandomPolicy,
         TimestepRandomPolicy,
     )
     from YRC.policies.heuristic import ExponentialHeuristicPolicy, WaitPolicy
 
-    if isinstance(policy, OracleLevelBasedRandomPolicy):
+    if isinstance(policy, (LevelBasedRandomPolicy, OracleLevelBasedRandomPolicy)):
         print(
-            "Skipping calibration for OracleLevelBasedRandomPolicy; "
-            "using the built-in 50% OOD assumption for level AFHP mapping."
+            f"Skipping calibration for {type(policy).__name__}; "
+            "using the policy's built-in level AFHP mapping."
         )
         return
 
