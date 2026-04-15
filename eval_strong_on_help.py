@@ -13,20 +13,21 @@ import wandb
 import importlib
 
 
-def rollout(policy, env, num_episodes, expected_seeds=None, padding_seeds=None):
+def rollout(policy, env, num_episodes, expected_seeds=None):
     """
     Rollout the policy on the environment and collect episode returns.
     Using greedy=True by default for strong agent evaluation.
 
-    Note: num_episodes does NOT need to be divisible by num_envs.
-    We simply collect episodes until we have enough.
+    Relies on procgen's sequential seed mode: once shared_level_seeds are
+    exhausted, finishing slots freeze (done=False forever) while remaining
+    slots continue running their in-flight real seeds to completion. This
+    guarantees each configured seed runs exactly once.
 
     Args:
         policy: Policy to evaluate
         env: Environment to run
         num_episodes: Number of episodes to collect
         expected_seeds: Set of seeds we expect to see (for validation)
-        padding_seeds: Set of padding seeds that should NOT complete (for validation)
     """
     returns = []
     num_completed = 0
@@ -116,12 +117,6 @@ def rollout(policy, env, num_episodes, expected_seeds=None, padding_seeds=None):
                     if level_seed is not None:
                         completed_seeds.append(level_seed)
                         seed_to_return[level_seed] = cumulative_rewards[i]
-
-                        # Validation: check if this is a padding seed
-                        if padding_seeds and level_seed in padding_seeds:
-                            print(
-                                f"\n  WARNING: Padding seed {level_seed} completed! This shouldn't happen."
-                            )
 
                 cumulative_rewards[i] = 0.0
                 if hasattr(policy, "reset_episode"):
@@ -329,89 +324,19 @@ def main():
     print(f"\nEvaluating strong policy on all {len(all_seeds)} seeds...")
     print("=" * 60)
 
-    # Create environment with all seeds
-    # IMPORTANT: In sequential mode, we need to provide extra seeds to account for
-    # the initial reset consuming some seeds. Add num_envs extra seeds.
-
-    # Get num_envs from the appropriate place in config
-    original_num_envs = None
-
-    # Debug: print config structure
-    print(f"Debug: Benchmark is {benchmark}")
+    # Create environment with all seeds in sequential mode. Once the shared
+    # seed list exhausts, procgen freezes finishing slots while remaining
+    # slots run their in-flight real seeds to completion — so each seed runs
+    # exactly once without any padding workaround.
     print(
-        f"Debug: config.environment attributes: {dir(config.environment) if hasattr(config, 'environment') else 'No environment attr'}"
+        f"Creating environment with {len(all_seeds)} seeds "
+        f"(range {min(all_seeds)} - {max(all_seeds)})"
     )
-
-    # Try different paths to find num_envs
-    if (
-        hasattr(config.environment, "procgen")
-        and config.environment.procgen is not None
-    ):
-        if (
-            hasattr(config.environment.procgen, "common")
-            and config.environment.procgen.common is not None
-        ):
-            original_num_envs = getattr(
-                config.environment.procgen.common, "num_envs", None
-            )
-
-    # Try direct path
-    if original_num_envs is None and hasattr(config.environment, "num_envs"):
-        original_num_envs = getattr(config.environment, "num_envs", None)
-
-    # For other benchmarks, check their specific config
-    if original_num_envs is None and benchmark in ["minigrid", "cliport"]:
-        # These might have different config structure
-        try:
-            if hasattr(config.environment, benchmark):
-                env_config = getattr(config.environment, benchmark)
-                if hasattr(env_config, "num_envs"):
-                    original_num_envs = env_config.num_envs
-                elif hasattr(env_config, "common") and hasattr(
-                    env_config.common, "num_envs"
-                ):
-                    original_num_envs = env_config.common.num_envs
-        except Exception:
-            pass
-
-    # Try to find it in the config dict if it exists
-    if original_num_envs is None and hasattr(config, "_cfg_dict"):
-        try:
-            # Try to navigate the config dictionary
-            env_cfg = config._cfg_dict.get("environment", {})
-            if "procgen" in env_cfg:
-                original_num_envs = (
-                    env_cfg.get("procgen", {}).get("common", {}).get("num_envs")
-                )
-            if original_num_envs is None:
-                original_num_envs = env_cfg.get("num_envs")
-        except Exception:
-            pass
-
-    # Default to 8 which is common for procgen
-    if original_num_envs is None:
-        original_num_envs = 8
-        print(
-            f"Warning: Could not find num_envs in config, defaulting to {original_num_envs}"
-        )
-
-    # Create padding seeds that are distinct from the original seeds
-    max_seed = max(all_seeds) if all_seeds else 0
-    padding_seeds = list(
-        range(max_seed + 1000000, max_seed + 1000000 + original_num_envs)
-    )
-    padded_seeds = all_seeds + padding_seeds
-
-    print(
-        f"Creating environment with {len(padded_seeds)} seeds ({len(all_seeds)} original + {len(padding_seeds)} padding)"
-    )
-    print(f"  Original seeds range: {min(all_seeds)} - {max(all_seeds)}")
-    print(f"  Padding seeds: {padding_seeds}")
 
     all_seeds_env = create_env_fn(
         split,
         config.environment,
-        level_seeds=padded_seeds,
+        level_seeds=all_seeds,
         level_seeds_mode="sequential",
     )
 
@@ -426,7 +351,6 @@ def main():
             all_seeds_env,
             len(all_seeds),
             expected_seeds=all_seeds,
-            padding_seeds=set(padding_seeds),
         )
         print(f"Rollout complete! Got {len(all_returns)} returns")
     finally:
