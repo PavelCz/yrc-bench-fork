@@ -395,6 +395,7 @@ def process_single_npz(
         display_job_info(
             job_name, npz_path, strong_path, config_path, output_path, args
         )
+        stats["submitted"] += 1
     else:
         submit_job_wrapper(
             job_name, npz_path, strong_path, config_path, args, stats, wandb_run
