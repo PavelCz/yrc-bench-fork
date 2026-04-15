@@ -293,7 +293,6 @@ def main():
     if len(all_seeds) == 0:
         print("\nWarning: No seeds found in any evaluation point!")
         print("This might indicate an issue with the NPZ file format.")
-        # Let's examine the first meta entry to debug
         if len(meta) > 0:
             print("\nFirst meta entry structure:")
             print(f"  Keys: {list(meta[0].keys())}")
@@ -302,13 +301,8 @@ def main():
                 if split in meta[0]["summary"]:
                     print(f"  {split} keys: {list(meta[0]['summary'][split].keys())}")
 
-    # Handle case where no seeds were found
-    if len(all_seeds) == 0:
         print("\nNo seeds to evaluate. Creating dummy results...")
         strong_performances = [np.nan] * len(meta)
-        total_time = time.time() - start_time
-
-        # Save results even if empty
         output_path = npz_path.with_name(f"{npz_path.stem}_strong_reval.npz")
         save_npz_results(
             output_path,
