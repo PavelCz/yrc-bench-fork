@@ -12,6 +12,7 @@ from common import (
     ENSEMBLE_METHODS,
     ENVS,
     METHOD_CONFIGS,
+    SERVER_PATHS,
     SVDD_METHODS,
     find_best_model_checkpoint,
     find_newest_timestamp_dir,
@@ -41,22 +42,6 @@ EVAL_DEFAULTS = {
     "video_logging_mode": "folder",
     "video_filter_mode": "any",
     "coverage_fraction": 0.05,
-}
-
-# Server-specific paths
-SERVER_PATHS = {
-    "chai": {
-        "checkpoint_base": "/nas/ucb/czempin/data/goal-misgen/policy/icml",
-        "seeds_base": "/nas/ucb/czempin/data/goal-misgen/seeds/icml",
-        "svdd_base": "/nas/ucb/czempin/data/goal-misgen/trained_svdd",
-        "log_base": "/nas/ucb/czempin/data/goal-misgen/slurm-logs",
-    },
-    "snoopy": {
-        "checkpoint_base": "/scr/pavel/data/goal-misgen/policy/icml",
-        "seeds_base": "/scr/pavel/data/goal-misgen/seeds/icml",
-        "svdd_base": "/scr/pavel/data/goal-misgen/trained_svdd",
-        "log_base": "/scr/pavel/data/goal-misgen/slurm-logs",
-    },
 }
 
 # Default number of ensemble members (excluding weak agent which is added automatically)

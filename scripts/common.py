@@ -6,6 +6,23 @@ from typing import Optional
 EXPECTED_TIMESTEPS = 200015872
 ENVS = ["maze", "coinrun"]
 
+SERVER_PATHS = {
+    "chai": {
+        "checkpoint_base": "/nas/ucb/czempin/data/goal-misgen/policy/icml",
+        "seeds_base": "/nas/ucb/czempin/data/goal-misgen/seeds/icml",
+        "svdd_base": "/nas/ucb/czempin/data/goal-misgen/trained_svdd",
+        "log_base": "/nas/ucb/czempin/data/goal-misgen/slurm-logs",
+        "evals_base": "/nas/ucb/czempin/data/goal-misgen/experiments/evals",
+    },
+    "snoopy": {
+        "checkpoint_base": "/scr/pavel/data/goal-misgen/policy/icml",
+        "seeds_base": "/scr/pavel/data/goal-misgen/seeds/icml",
+        "svdd_base": "/scr/pavel/data/goal-misgen/trained_svdd",
+        "log_base": "/scr/pavel/data/goal-misgen/slurm-logs",
+        "evals_base": "/scr/pavel/data/goal-misgen/experiments/evals",
+    },
+}
+
 METHOD_CONFIGS = {
     "max-prob": "max_prob.yaml",
     "max-logit": "max_logit.yaml",

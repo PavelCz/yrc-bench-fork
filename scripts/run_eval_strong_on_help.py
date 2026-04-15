@@ -16,6 +16,7 @@ from typing import List, Optional, Tuple
 from common import (
     ENVS,
     METHOD_CONFIGS,
+    SERVER_PATHS,
     find_newest_timestamp_dir,
     get_strong_checkpoint,
     normalize_method_name,
@@ -34,17 +35,6 @@ SLURM_CONFIG = {
     "time": "1-00:00:00",  # Shorter time since we're only re-evaluating
     "mem": "50G",
     "cpus-per-task": "16",
-}
-
-SERVER_PATHS = {
-    "server1": {
-        "checkpoint_base": "/data/goal-misgen/policy/icml",
-        "evals_base": "/data/goal-misgen/experiments/evals",
-    },
-    "server2": {
-        "checkpoint_base": "/data2/goal-misgen/policy/icml",
-        "evals_base": "/data2/goal-misgen/experiments/evals",
-    },
 }
 
 # ==============================================================================
@@ -113,8 +103,8 @@ def parse_arguments():
     parser.add_argument(
         "--server",
         choices=list(SERVER_PATHS.keys()),
-        default="server1",
-        help="Server to use for paths (default: server1)",
+        default="chai",
+        help="Server to use for paths (default: chai)",
     )
     parser.add_argument(
         "--qos",
