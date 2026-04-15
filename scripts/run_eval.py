@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import List, Optional
 
 from common import (
+    ENSEMBLE_METHODS,
+    ENVS,
+    METHOD_CONFIGS,
+    SVDD_METHODS,
     find_best_model_checkpoint,
     find_newest_timestamp_dir,
     get_checkpoints,
@@ -54,43 +58,6 @@ SERVER_PATHS = {
         "log_base": "/scr/pavel/data/goal-misgen/slurm-logs",
     },
 }
-
-# Environment choices
-ENVS = ["maze", "coinrun"]
-
-# Method to config file mapping
-METHOD_CONFIGS = {
-    "max-prob": "max_prob.yaml",
-    "max-logit": "max_logit.yaml",
-    "lb-random": "level_based_random.yaml",
-    "oracle-lb-random": "oracle_level_based_random.yaml",
-    "ts-random": "timestep_random.yaml",
-    "svdd-image": "image_svdd.yaml",
-    "svdd-latent": "latent_svdd.yaml",
-    "ensemble": "ensemble_variance.yaml",
-    "ensemble-single": "ensemble_variance_single.yaml",
-    "wait": "wait.yaml",
-}
-
-# Method to run name suffix mapping
-METHOD_NAMES = {
-    "max-prob": "max_prob",
-    "max-logit": "max_logit",
-    "lb-random": "lb_random",
-    "oracle-lb-random": "oracle_lb_random",
-    "ts-random": "ts_random",
-    "svdd-image": "svdd_image",
-    "svdd-latent": "svdd_latent",
-    "ensemble": "ensemble",
-    "ensemble-single": "ensemble_single",
-    "wait": "wait",
-}
-
-# Methods that require a trained SVDD policy
-SVDD_METHODS = {"svdd-image", "svdd-latent"}
-
-# Methods that require ensemble members
-ENSEMBLE_METHODS = {"ensemble", "ensemble-single"}
 
 # Default number of ensemble members (excluding weak agent which is added automatically)
 DEFAULT_NUM_ENSEMBLE_MEMBERS = 4
@@ -449,8 +416,7 @@ def main():
             continue
 
         # Build job name and experiment group
-        method_name = METHOD_NAMES[args.method]
-        job_name = f"{args.env}_{method_name}_exp{exp_id}"
+        job_name = f"{args.env}_{args.method}_exp{exp_id}"
         experiment_group = f"{args.prefix}_{args.env}_exp{exp_id}"
 
         if args.dry_run:

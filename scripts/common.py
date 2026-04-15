@@ -4,6 +4,28 @@ from typing import Optional
 
 
 EXPECTED_TIMESTEPS = 200015872
+ENVS = ["maze", "coinrun"]
+
+METHOD_CONFIGS = {
+    "max-prob": "max_prob.yaml",
+    "max-logit": "max_logit.yaml",
+    "lb-random": "level_based_random.yaml",
+    "oracle-lb-random": "oracle_level_based_random.yaml",
+    "ts-random": "timestep_random.yaml",
+    "svdd-image": "image_svdd.yaml",
+    "svdd-latent": "latent_svdd.yaml",
+    "ensemble": "ensemble_variance.yaml",
+    "ensemble-single": "ensemble_variance_single.yaml",
+    "wait": "wait.yaml",
+}
+
+SVDD_METHODS = {"svdd-image", "svdd-latent"}
+ENSEMBLE_METHODS = {"ensemble", "ensemble-single"}
+
+
+def normalize_method_name(method: str) -> str:
+    """Normalize legacy underscore method ids to the shared hyphen style."""
+    return method.replace("_", "-")
 
 
 def get_env_folder(env: str) -> str:

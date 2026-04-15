@@ -14,8 +14,11 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from common import (
+    ENVS,
+    METHOD_CONFIGS,
     find_newest_timestamp_dir,
     get_strong_checkpoint,
+    normalize_method_name,
 )
 
 
@@ -44,21 +47,6 @@ SERVER_PATHS = {
     },
 }
 
-ENVS = ["maze", "coinrun"]
-
-METHOD_CONFIGS = {
-    "max_prob": "max_prob.yaml",
-    "max_logit": "max_logit.yaml",
-    "lb_random": "level_based_random.yaml",
-    "oracle_lb_random": "oracle_level_based_random.yaml",
-    "ts_random": "timestep_random.yaml",
-    "svdd_image": "image_svdd.yaml",
-    "svdd_latent": "latent_svdd.yaml",
-    "ensemble": "ensemble_variance.yaml",
-    "ensemble_single": "ensemble_variance_single.yaml",
-    "wait": "wait.yaml",
-}
-
 # ==============================================================================
 # MAIN ENTRY POINT
 # ==============================================================================
@@ -67,6 +55,8 @@ METHOD_CONFIGS = {
 def main():
     """Main function that orchestrates the entire workflow."""
     args = parse_arguments()
+    if args.method is not None:
+        args.method = normalize_method_name(args.method)
 
     # Initialize wandb if requested
     wandb_run = initialize_wandb(args) if args.use_wandb else None
@@ -148,7 +138,7 @@ def parse_arguments():
     parser.add_argument(
         "--method",
         default=None,
-        help="Filter to specific method (e.g., max_prob). If not set, processes all methods found.",
+        help="Filter to specific method (e.g., max-prob). If not set, processes all methods found.",
     )
     parser.add_argument(
         "--strong",
@@ -327,7 +317,7 @@ def find_eval_npz_files(
             if not match:
                 continue
 
-            method_name = match.group(1)
+            method_name = normalize_method_name(match.group(1))
 
             # Apply method filter if specified
             if method_filter and method_name != method_filter:
