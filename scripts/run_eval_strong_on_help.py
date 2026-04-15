@@ -10,6 +10,7 @@ import argparse
 import re
 import subprocess
 import time
+from datetime import date
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -56,6 +57,12 @@ def main():
     checkpoint_base_path = paths["checkpoint_base"]
     evals_base = args.evals_base or paths["evals_base"]
 
+    # Build log directory: <log_base>/strong_reval/<prefix>/<date>
+    log_dir = (
+        Path(paths["log_base"]) / "strong_reval" / args.prefix / date.today().isoformat()
+    )
+    print(f"Log dir: {log_dir}")
+
     # Display configuration in dry run mode
     if args.dry_run:
         display_configuration(args, evals_base)
@@ -70,7 +77,9 @@ def main():
         return 1
 
     # Process all NPZ files
-    stats = process_npz_files(args, npz_files, checkpoint_base_path, wandb_run)
+    stats = process_npz_files(
+        args, npz_files, checkpoint_base_path, log_dir, wandb_run
+    )
 
     # Display summary
     display_summary(args, npz_files, stats)
@@ -336,7 +345,7 @@ def find_eval_npz_files(
 # ==============================================================================
 
 
-def process_npz_files(args, npz_files, checkpoint_base_path, wandb_run):
+def process_npz_files(args, npz_files, checkpoint_base_path, log_dir, wandb_run):
     """Process all NPZ files and submit jobs."""
     stats = {
         "submitted": 0,
@@ -362,7 +371,14 @@ def process_npz_files(args, npz_files, checkpoint_base_path, wandb_run):
             )
 
         process_single_npz(
-            args, npz_path, method_name, exp_id, checkpoint_base_path, stats, wandb_run
+            args,
+            npz_path,
+            method_name,
+            exp_id,
+            checkpoint_base_path,
+            log_dir,
+            stats,
+            wandb_run,
         )
 
     stats["processing_time"] = time.time() - start_processing
@@ -370,7 +386,14 @@ def process_npz_files(args, npz_files, checkpoint_base_path, wandb_run):
 
 
 def process_single_npz(
-    args, npz_path, method_name, exp_id, checkpoint_base_path, stats, wandb_run
+    args,
+    npz_path,
+    method_name,
+    exp_id,
+    checkpoint_base_path,
+    log_dir,
+    stats,
+    wandb_run,
 ):
     """Process a single NPZ file."""
     # Get strong checkpoint
@@ -398,7 +421,14 @@ def process_single_npz(
         stats["submitted"] += 1
     else:
         submit_job_wrapper(
-            job_name, npz_path, strong_path, config_path, args, stats, wandb_run
+            job_name,
+            npz_path,
+            strong_path,
+            config_path,
+            args,
+            log_dir,
+            stats,
+            wandb_run,
         )
 
 
@@ -498,7 +528,7 @@ def display_job_info(job_name, npz_path, strong_path, config_path, output_path, 
 
 
 def submit_job_wrapper(
-    job_name, npz_path, strong_path, config_path, args, stats, wandb_run
+    job_name, npz_path, strong_path, config_path, args, log_dir, stats, wandb_run
 ):
     """Wrapper to submit job and handle results."""
     try:
@@ -508,6 +538,7 @@ def submit_job_wrapper(
             strong_path,
             config_path,
             args.conda_env,
+            log_dir,
             args.qos,
             overwrite=args.overwrite,
             dry_run=False,
@@ -549,13 +580,14 @@ def submit_job(
     strong_path: str,
     config_path: str,
     conda_env: str,
+    log_dir: Path,
     qos: str = "default",
     overwrite: bool = False,
     dry_run: bool = False,
 ) -> None:
     """Submit a single job via sbatch."""
     sbatch_script = build_sbatch_script(
-        job_name, npz_file, strong_path, config_path, conda_env, qos, overwrite
+        job_name, npz_file, strong_path, config_path, conda_env, log_dir, qos, overwrite
     )
 
     if dry_run:
@@ -565,7 +597,7 @@ def submit_job(
         return
 
     # Ensure logs directory exists
-    Path("logs/slurm").mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
 
     # Submit via sbatch
     result = subprocess.run(
@@ -591,6 +623,7 @@ def build_sbatch_script(
     strong_path: str,
     config_path: str,
     conda_env: str,
+    log_dir: Path,
     qos: str = "default",
     overwrite: bool = False,
 ) -> str:
@@ -607,8 +640,8 @@ def build_sbatch_script(
 
     sbatch_script = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
-#SBATCH --output=logs/slurm/%x_%j.out
-#SBATCH --error=logs/slurm/%x_%j.err
+#SBATCH --output={log_dir}/%x_%j.out
+#SBATCH --error={log_dir}/%x_%j.err
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
 
 eval "$(conda shell.bash hook)"
