@@ -94,15 +94,16 @@ def rollout(policy, env, num_episodes, expected_seeds=None, padding_seeds=None):
             cumulative_rewards[i] += reward[i]
 
             if done[i]:
-                # Extract the level seed from info
+                # Extract the level seed from info. Use prev_level_seed because
+                # procgen's info updates after reset(), so info["level_seed"] is
+                # the NEXT seed just dispatched, not the one that completed.
                 if isinstance(info, list):
-                    level_seed = info[i].get("level_seed", None)
-                elif isinstance(info, dict) and "level_seed" in info:
-                    # Some environments might return a single dict with arrays
+                    level_seed = info[i].get("prev_level_seed", None)
+                elif isinstance(info, dict) and "prev_level_seed" in info:
                     level_seed = (
-                        info["level_seed"][i]
-                        if hasattr(info["level_seed"], "__getitem__")
-                        else info["level_seed"]
+                        info["prev_level_seed"][i]
+                        if hasattr(info["prev_level_seed"], "__getitem__")
+                        else info["prev_level_seed"]
                     )
                 else:
                     level_seed = None
