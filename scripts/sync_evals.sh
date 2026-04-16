@@ -68,7 +68,7 @@ for env in "${ENVS[@]}"; do
 
     if ! ssh "${SRC_HOST}" "test -d ${SRC_PATH}/${name}" 2>/dev/null; then
       echo "– Skipping ${name}: not present on ${SRC_HOST}"
-      ((missing_syncs++))
+      missing_syncs=$((missing_syncs + 1))
       continue
     fi
 
@@ -77,7 +77,7 @@ for env in "${ENVS[@]}"; do
       echo "✓ Successfully synced ${name}"
     else
       echo "✗ Failed to sync ${name} (continuing...)"
-      ((failed_syncs++))
+      failed_syncs=$((failed_syncs + 1))
     fi
   done
 done
