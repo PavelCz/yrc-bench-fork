@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md / CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -56,25 +56,29 @@ python train.py -c configs/procgen_ood.yaml -n RUN_NAME -en ENV_NAME \
 
 ### Evaluation
 ```bash
-# Evaluate a trained model
-python eval.py -c configs/CONFIG.yaml -n RUN_NAME -en ENV_NAME \
+# Evaluate AFHP / return curves for a coordination policy
+python eval_afhp.py -c configs/eval/coinrun/max_prob.yaml -n RUN_NAME \
     -sim PATH/TO/SIM_WEAK.pt -weak PATH/TO/WEAK.pt -strong PATH/TO/STRONG.pt \
-    -query_cost COST -f_n CHECKPOINT_NAME -seed SEED
+    -level_seeds_file PATH/TO/level_seeds.json -coverage_fraction 0.05
 
-# Evaluate thresholds systematically
-python eval_thresholds.py --config CONFIG.yaml --eval.threshold_bins 20
+# Evaluate a standalone acting policy checkpoint directly
+python eval_policy.py -c configs/procgen_threshold.yaml \
+    --model_file PATH/TO/MODEL.pth -num_rollouts 100
+
+# Submit a batch of AFHP evaluations via SLURM
+python scripts/run_eval.py --env coinrun --method max-prob --exp-ids 0 1 2 3
 ```
 
 ### Analysis
 ```bash
 # Parse raw results
-python analyzing/parse.py
+python analyzing/yrc_bench/parse.py
 
 # Aggregate results
-python analyzing/aggregate.py
+python analyzing/yrc_bench/aggregate.py
 
 # Generate plots
-python analyzing/fig*.py
+python -m analyzing.icml_plot --eval_dir PATH/TO/EVALS --env coinrun
 ```
 
 ### Installation
@@ -99,22 +103,27 @@ pip install -e lib/LIBRARY_NAME
 
 2. **YRC/core/**: Essential infrastructure
    - `evaluator.py`: Unified evaluation framework with adaptive threshold sampling
-   - `config.py`: Configuration management system
+   - `configs/config.py`: Configuration data structure
+   - `configs/utils.py`: Configuration loading and command-line override handling
    - `dataset.py`: Rollout data handling
    - `rollout_helper.py`: Utility for collecting rollouts
    - `algorithm.py`: Base algorithm interface
    - `environment.py`: Environment factory and wrappers
    - `policy.py`: Policy factory and interfaces
 
-3. **YRC/envs/**: Environment wrappers
+3. **YRC/coverage/**: AFHP coverage samplers
+   - `coverage_search.py`: Binary-search-based threshold sampling for `step_afhp` and `level_afhp`
+
+4. **YRC/envs/**: Environment wrappers
    - `procgen/`: Procgen environments with models, policies, and wrappers (primary focus of this fork)
 
-4. **YRC/policies/**: Policy implementations
+5. **YRC/policies/**: Policy implementations
    - `base.py`: `TimestepRandomPolicy`, `LevelBasedRandomPolicy`, `AlwaysPolicy`
    - `heuristic.py`: `ExponentialHeuristicPolicy`, `WaitPolicy`
    - `threshold.py`: `ThresholdPolicy` (confidence-based: `max_prob`, `max_logit`, `ensemble_variance`)
    - `ood.py`: `OODPolicy` (Deep SVDD, AutoEncoder)
    - `lightning_ae.py`: `LightningAEPolicy` (PyTorch Lightning autoencoders)
+   - `mahalanobis_ae.py`: `MahalanobisAEPolicy`
    - `rl.py`: RL-based coordination policies
 
 ### Configuration System
@@ -145,9 +154,9 @@ The project uses hierarchical YAML configs in `configs/`:
 
 3. **Feature Types**: Coordination policies can use:
    - Raw observations (`obs`)
-   - Weak agent's hidden features (`feature`)
-   - Weak agent's action distributions (`action`)
-   - Combinations (e.g., `obs+feature`, `obs+action`, `feature+action`, `obs+feature+action`)
+   - Weak agent's hidden features (`hidden`)
+   - Weak agent's action distributions / logits (`dist`)
+   - Combinations (`hidden_obs`, `hidden_dist`, `obs_dist`, `obs_hidden_dist`)
 
 4. **Memory Management**: Recent work focuses on efficient handling of large rollout datasets, especially for OOD detection methods that require storing and processing many samples.
 
@@ -163,6 +172,8 @@ The project uses hierarchical YAML configs in `configs/`:
    - `last.ckpt`: Most recent checkpoint
 
 7. **Acting Policy Requirements**: Pre-trained acting policies (sim weak, weak, strong) must be provided for most environments. These should be placed in `YRC/checkpoints/{environment}/` following the existing structure.
+
+8. **Procgen Evaluation Flow**: AFHP evaluation in this fork goes through `eval_afhp.py`, which calibrates percentile-to-threshold mappings, then calls `YRC/coverage/coverage_search.py` to sample thresholds adaptively. Batch evaluation is typically launched via `scripts/run_eval.py`. See `docs/adaptive_coverage_sampling.md` and `docs/percentile_calibration.md` for the current behavior.
 
 ## Python Best Practices
 
