@@ -5,24 +5,28 @@ This script evaluates a single agent policy (e.g., weak or strong SB3 agent) dir
 not a coordination policy.
 
 Usage:
-    python eval_policy.py -c <config_file> --model_file <path_to_model> [options]
+    python eval_policy.py -c <config_file> --model_file <path_to_model> \
+        -experiment_group <group_name> [options]
 
 Examples:
     # Evaluate a specific model
     python eval_policy.py -c configs/procgen_threshold.yaml \
         --model_file YRC/checkpoints/procgen/coinrun/weak/model_80019456.pth \
-        -num_rollouts 100
+        -experiment_group policy_eval \
+        -num_rollouts 8
     
     # With environment variable
     export COINRUN_BG_EXTRAHARD=/path/to/model.pth
     python eval_policy.py -c configs/procgen_threshold.yaml \
         --model_file $COINRUN_BG_EXTRAHARD \
-        -num_rollouts 100
+        -experiment_group policy_eval \
+        -num_rollouts 8
     
     # With video recording to disk
     python eval_policy.py -c configs/procgen_threshold.yaml \
         --model_file model.pth \
-        -num_rollouts 100 \
+        -experiment_group policy_eval \
+        -num_rollouts 8 \
         -video_logging_mode folder \
         -video_output_folder ./videos \
         -video_episodes_to_collect 10
@@ -30,7 +34,8 @@ Examples:
     # With video logging to wandb
     python eval_policy.py -c configs/procgen_threshold.yaml \
         --model_file model.pth \
-        -num_rollouts 100 \
+        -experiment_group policy_eval \
+        -num_rollouts 8 \
         -video_logging_mode wandb \
         -video_episodes_to_collect 10 \
         -wandb_project my_project
@@ -38,7 +43,8 @@ Examples:
     # With video logging to both disk and wandb
     python eval_policy.py -c configs/procgen_threshold.yaml \
         --model_file model.pth \
-        -num_rollouts 100 \
+        -experiment_group policy_eval \
+        -num_rollouts 8 \
         -video_logging_mode both \
         -video_output_folder ./videos \
         -video_episodes_to_collect 10
@@ -46,12 +52,14 @@ Examples:
 Options:
     -c, --config: Path to YAML config file (required)
     --model_file: Path to the model checkpoint to evaluate (required)
+    -experiment_group: Required eval output group name
     -num_rollouts: Number of episodes to evaluate (default: from config)
     -num_envs: Number of parallel environments
+    -eval_split: One of train, val_sim, val_true, test (default: test)
     -seed: Random seed
     -greedy: Use greedy action selection (default: True)
     -video_logging_mode: Video logging mode: 'folder', 'wandb', 'both', 'none' (default)
-    -video_output_folder: Folder path for saving videos (default: <experiment_dir>/videos)
+    -video_output_folder: Folder path for saving videos (default: <eval_run_dir>/videos)
     -video_episodes_to_collect: Number of episodes to save as videos (default: 0)
     -wandb_project: Weights & Biases project name (for wandb logging)
     -wandb_mode: wandb mode: 'online', 'offline', 'disabled' (default: 'online')
@@ -59,7 +67,7 @@ Options:
 
 Output:
     - Prints mean return statistics to console
-    - Saves results to <experiment_dir>/policy_eval_results.json
+    - Saves results to <eval_run_dir>/policy_eval_results.json
     - Optionally saves episode videos to disk and/or Weights & Biases
 """
 
@@ -136,7 +144,7 @@ def main():
     )
 
     # Determine which environment split to use (train/test/val)
-    eval_split = getattr(args, "eval_split", "test")
+    eval_split = getattr(args, "eval_split", None) or "test"
     logging.info(f"Creating {eval_split} environment for evaluation")
 
     # Create the evaluation environment
@@ -153,8 +161,11 @@ def main():
     )
     logging.info(f"Using greedy action selection: {greedy}")
 
-    # Get save directory
-    save_dir = Path(str(get_global_variable("experiment_dir")))
+    # Use eval_run_dir in eval mode to keep outputs with the rest of the eval artifacts.
+    if hasattr(config, "eval_run_dir") and config.eval_run_dir is not None:
+        save_dir = Path(config.eval_run_dir)
+    else:
+        save_dir = Path(str(get_global_variable("experiment_dir")))
 
     # Check video collection settings
     video_logging_mode = (
@@ -262,10 +273,6 @@ def rollout_and_get_returns(
         - returns: List of episode returns
         - video_episodes: List of collected video data (if collect_videos=True)
     """
-    assert num_episodes % env.num_envs == 0, (
-        f"num_episodes ({num_episodes}) must be divisible by num_envs ({env.num_envs})"
-    )
-
     returns = []
     num_completed = 0
     target_episodes = num_episodes

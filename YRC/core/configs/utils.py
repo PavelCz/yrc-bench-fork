@@ -251,8 +251,8 @@ def config_logging(log_file, log_level=logging.INFO):
     )
 
     def handler(type, value, tb):
-        logging.exception("Uncaught exception: %s", str(value))
-        logging.exception("\n".join(traceback.format_exception(type, value, tb)))
+        logging.error("Uncaught exception: %s", str(value))
+        logging.error("".join(traceback.format_exception(type, value, tb)))
 
     sys.excepthook = handler
 

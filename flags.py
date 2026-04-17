@@ -376,6 +376,14 @@ def make():
     )
 
     parser.add_argument(
+        "-eval_split",
+        "--eval_split",
+        type=str,
+        choices=["train", "val_sim", "val_true", "test"],
+        help="environment split to evaluate in eval_policy.py",
+    )
+
+    parser.add_argument(
         "-video_logging_mode",
         "--evaluation.video_logging_mode",
         type=str,
