@@ -23,6 +23,11 @@ of the environment: one with deterministic coin placement and one with random co
 
 Plot the policy training timestep -> reward curve.
 
+## `policy_eval_plot.py`
+
+Aggregate `eval_policy.py` JSON outputs across experiment IDs, print overall / ID /
+OOD return summaries, and optionally save a grouped bar plot.
+
 ## `plotting.ipynb`
 
 Plotting notebook.
