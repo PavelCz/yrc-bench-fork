@@ -8,6 +8,8 @@ usage() {
   echo "Usage: $0 [--with-videos] [prefix]"
   echo
   echo "Sync eval directories from ${SRC_BASE} to ${DST_BASE}."
+  echo "Includes both standard eval dirs (<prefix>_<env>_expN) and"
+  echo "policy-eval dirs (<prefix>_<env>_<agent>_expN)."
   echo "Videos and images in the videos folder are excluded by default."
 }
 
@@ -38,6 +40,7 @@ done
 
 ENVS=("maze" "coinrun")
 EXPS=("exp0" "exp1" "exp2" "exp3")
+AGENTS=("sim" "weak" "strong")
 
 # Parse "host:path" into host and path for remote existence checks
 SRC_HOST="${SRC_BASE%%:*}"
@@ -60,25 +63,35 @@ if [[ "${SYNC_VIDEOS}" -eq 0 ]]; then
   )
 fi
 
+sync_name() {
+  local name="$1"
+  local src_dir="${SRC_BASE}/${name}"
+  local dst_dir="${DST_BASE}/"
+
+  if ! ssh "${SRC_HOST}" "test -d ${SRC_PATH}/${name}" 2>/dev/null; then
+    echo "– Skipping ${name}: not present on ${SRC_HOST}"
+    missing_syncs=$((missing_syncs + 1))
+    return
+  fi
+
+  echo "Syncing ${src_dir} -> ${dst_dir}"
+  if rsync "${RSYNC_ARGS[@]}" "${src_dir}" "${dst_dir}"; then
+    echo "✓ Successfully synced ${name}"
+  else
+    echo "✗ Failed to sync ${name} (continuing...)"
+    failed_syncs=$((failed_syncs + 1))
+  fi
+}
+
 for env in "${ENVS[@]}"; do
   for exp in "${EXPS[@]}"; do
-    name="${PREFIX}_${env}_${exp}"
-    src_dir="${SRC_BASE}/${name}"
-    dst_dir="${DST_BASE}/"
+    # Standard AFHP eval directories
+    sync_name "${PREFIX}_${env}_${exp}"
 
-    if ! ssh "${SRC_HOST}" "test -d ${SRC_PATH}/${name}" 2>/dev/null; then
-      echo "– Skipping ${name}: not present on ${SRC_HOST}"
-      missing_syncs=$((missing_syncs + 1))
-      continue
-    fi
-
-    echo "Syncing ${src_dir} -> ${dst_dir}"
-    if rsync "${RSYNC_ARGS[@]}" "${src_dir}" "${dst_dir}"; then
-      echo "✓ Successfully synced ${name}"
-    else
-      echo "✗ Failed to sync ${name} (continuing...)"
-      failed_syncs=$((failed_syncs + 1))
-    fi
+    # Agent-specific policy eval directories
+    for agent in "${AGENTS[@]}"; do
+      sync_name "${PREFIX}_${env}_${agent}_${exp}"
+    done
   done
 done
 
@@ -91,4 +104,3 @@ if [ $failed_syncs -gt 0 ]; then
 else
   echo "All available syncs completed successfully"
 fi
-
