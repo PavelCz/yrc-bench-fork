@@ -129,6 +129,29 @@ def load_eval_level_seeds(config) -> Optional[List[int]]:
     return level_seeds
 
 
+def summarize_returns(returns: List[float]) -> Dict[str, Optional[float]]:
+    """Compute summary stats for a list of episodic returns."""
+    if len(returns) == 0:
+        return {
+            "count": 0,
+            "mean": None,
+            "std": None,
+            "median": None,
+            "min": None,
+            "max": None,
+        }
+
+    returns_np = np.asarray(returns, dtype=np.float32)
+    return {
+        "count": int(len(returns)),
+        "mean": float(np.mean(returns_np)),
+        "std": float(np.std(returns_np)),
+        "median": float(np.median(returns_np)),
+        "min": float(np.min(returns_np)),
+        "max": float(np.max(returns_np)),
+    }
+
+
 def main():
     args = flags.make()
     args.eval_mode = True
@@ -233,7 +256,7 @@ def main():
         wandb_logger = initialize_wandb_logger(config, args, save_dir)
 
     # Run evaluation
-    returns, video_episodes = rollout_and_get_returns(
+    returns, level_ood_gt, level_seeds, video_episodes = rollout_and_get_returns(
         policy,
         env,
         num_episodes,
@@ -242,36 +265,49 @@ def main():
         max_video_episodes=video_episodes_to_collect,
     )
 
-    # Calculate statistics
-    mean_return = np.mean(returns)
-    std_return = np.std(returns)
-    median_return = np.median(returns)
-    min_return = np.min(returns)
-    max_return = np.max(returns)
+    overall_stats = summarize_returns(returns)
+    id_returns = [ret for ret, is_ood in zip(returns, level_ood_gt) if not is_ood]
+    ood_returns = [ret for ret, is_ood in zip(returns, level_ood_gt) if is_ood]
+    id_stats = summarize_returns(id_returns)
+    ood_stats = summarize_returns(ood_returns)
 
     # Print results
     print("\n" + "=" * 60)
     print("Policy Evaluation Results")
     print("=" * 60)
-    print(f"Number of episodes: {len(returns)}")
-    print(f"Mean return: {mean_return:.4f}")
-    print(f"Std return: {std_return:.4f}")
-    print(f"Median return: {median_return:.4f}")
-    print(f"Min return: {min_return:.4f}")
-    print(f"Max return: {max_return:.4f}")
+    print(f"Number of episodes: {overall_stats['count']}")
+    print(f"Mean return: {overall_stats['mean']:.4f}")
+    print(f"Std return: {overall_stats['std']:.4f}")
+    print(f"Median return: {overall_stats['median']:.4f}")
+    print(f"Min return: {overall_stats['min']:.4f}")
+    print(f"Max return: {overall_stats['max']:.4f}")
+    print(f"ID episodes: {id_stats['count']}")
+    if id_stats["mean"] is not None:
+        print(f"ID mean return: {id_stats['mean']:.4f}")
+    print(f"OOD episodes: {ood_stats['count']}")
+    if ood_stats["mean"] is not None:
+        print(f"OOD mean return: {ood_stats['mean']:.4f}")
     print("=" * 60 + "\n")
 
     # Save results
     save_dir.mkdir(parents=True, exist_ok=True)
 
     results = {
-        "num_episodes": len(returns),
-        "mean_return": float(mean_return),
-        "std_return": float(std_return),
-        "median_return": float(median_return),
-        "min_return": float(min_return),
-        "max_return": float(max_return),
+        "num_episodes": overall_stats["count"],
+        "mean_return": overall_stats["mean"],
+        "std_return": overall_stats["std"],
+        "median_return": overall_stats["median"],
+        "min_return": overall_stats["min"],
+        "max_return": overall_stats["max"],
+        "id_num_episodes": id_stats["count"],
+        "id_mean_return": id_stats["mean"],
+        "id_std_return": id_stats["std"],
+        "ood_num_episodes": ood_stats["count"],
+        "ood_mean_return": ood_stats["mean"],
+        "ood_std_return": ood_stats["std"],
         "all_returns": [float(r) for r in returns],
+        "level_ood_gt": [bool(x) for x in level_ood_gt],
+        "level_seeds": level_seeds,
         "eval_split": eval_split,
         "model_file": model_file,
         "level_seeds_file": getattr(config.environment, "level_seeds_file", None),
@@ -308,16 +344,22 @@ def rollout_and_get_returns(
         max_video_episodes: Maximum number of episodes to collect videos for (default: 0)
 
     Returns:
-        Tuple of (returns, video_episodes)
+        Tuple of (returns, level_ood_gt, level_seeds, video_episodes)
         - returns: List of episode returns
+        - level_ood_gt: Whether each completed episode was OOD
+        - level_seeds: Procgen level seed for each completed episode when available
         - video_episodes: List of collected video data (if collect_videos=True)
     """
     returns = []
+    level_ood_gt = []
+    level_seeds = []
     num_completed = 0
     target_episodes = num_episodes
 
     # Track cumulative reward for each parallel environment
     cumulative_rewards = [0.0] * env.num_envs
+    # The current episode's OOD ground truth becomes available after the first step.
+    current_level_ood_gt = [False] * env.num_envs
 
     # Video collection data structures (one per parallel env)
     video_episodes = []
@@ -366,6 +408,8 @@ def rollout_and_get_returns(
             if done[i]:
                 if num_completed < target_episodes:
                     returns.append(cumulative_rewards[i])
+                    level_ood_gt.append(bool(current_level_ood_gt[i]))
+                    level_seeds.append(int(info[i].get("prev_level_seed", -1)))
                     num_completed += 1
 
                     if num_completed % 10 == 0 or num_completed == target_episodes:
@@ -400,9 +444,14 @@ def rollout_and_get_returns(
                 if hasattr(policy, "reset_episode"):
                     policy.reset_episode()
 
+            # Gym3 auto-resets immediately, so after processing any done episode we
+            # update the OOD label from the current info dict for the next episode.
+            if "randomize_goal" in info[i]:
+                current_level_ood_gt[i] = bool(info[i]["randomize_goal"])
+
         obs = next_obs
 
-    return returns, video_episodes
+    return returns, level_ood_gt, level_seeds, video_episodes
 
 
 def initialize_wandb_logger(config, args, save_dir: Path) -> WandbLogger:
