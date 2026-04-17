@@ -104,6 +104,31 @@ VIDEO_CONFIG = {
 }
 
 
+def load_eval_level_seeds(config) -> Optional[List[int]]:
+    """Load fixed evaluation seeds from config.environment.level_seeds_file.
+
+    The seed files generated for this repo contain separate splits. `scripts/run_eval.py`
+    passes these files to `eval_afhp.py`, which uses the `ood_eval` split for test-time
+    evaluation. We mirror that behavior here so standalone policy evaluation can run on
+    the same fixed levels.
+    """
+    level_seeds_file = getattr(config.environment, "level_seeds_file", None)
+    if level_seeds_file is None:
+        return None
+
+    logging.info(f"Loading level seeds from {level_seeds_file}")
+    with open(level_seeds_file) as f:
+        seeds_data = json.load(f)
+
+    level_seeds = seeds_data["seeds"].get("ood_eval") or None
+    if level_seeds is not None:
+        logging.info(f"Loaded {len(level_seeds)} ood_eval seeds for evaluation")
+    else:
+        logging.warning("No ood_eval seeds found in level seeds file; using default env seeds")
+
+    return level_seeds
+
+
 def main():
     args = flags.make()
     args.eval_mode = True
@@ -147,8 +172,20 @@ def main():
     eval_split = getattr(args, "eval_split", None) or "test"
     logging.info(f"Creating {eval_split} environment for evaluation")
 
+    # If a level seeds file is provided, mirror eval_afhp.py and evaluate on the fixed
+    # ood_eval split in sequential order.
+    level_seeds = load_eval_level_seeds(config)
+
     # Create the evaluation environment
-    env = create_env_fn(eval_split, config.environment)
+    if level_seeds is not None:
+        env = create_env_fn(
+            eval_split,
+            config.environment,
+            level_seeds=level_seeds,
+            level_seeds_mode="sequential",
+        )
+    else:
+        env = create_env_fn(eval_split, config.environment)
 
     logging.info(
         f"Evaluating policy on {num_episodes} episodes using {eval_split} environment"
@@ -237,6 +274,8 @@ def main():
         "all_returns": [float(r) for r in returns],
         "eval_split": eval_split,
         "model_file": model_file,
+        "level_seeds_file": getattr(config.environment, "level_seeds_file", None),
+        "num_fixed_eval_seeds": len(level_seeds) if level_seeds is not None else None,
     }
 
     results_path = save_dir / "policy_eval_results.json"
