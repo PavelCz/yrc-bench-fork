@@ -115,6 +115,8 @@ def make():
         type=str,
         help="path to model file to evaluate (for eval_policy.py)",
     )
+    # Only standalone policy-eval scripts should read this flag. Other code paths
+    # use coord_env/evaluation act_greedy settings, which default to false.
     parser.add_argument(
         "-greedy",
         "--policy.greedy",
