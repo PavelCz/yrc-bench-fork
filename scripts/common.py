@@ -9,6 +9,7 @@ ENVS = ["maze", "coinrun"]
 SERVER_PATHS = {
     "chai": {
         "checkpoint_base": "/nas/ucb/czempin/data/goal-misgen/policy/icml",
+        "rollouts_base": "/nas/ucb/czempin/data/goal-misgen/rollouts/icml",
         "seeds_base": "/nas/ucb/czempin/data/goal-misgen/seeds/icml",
         "svdd_base": "/nas/ucb/czempin/data/goal-misgen/trained_svdd",
         "log_base": "/nas/ucb/czempin/data/goal-misgen/slurm-logs",
@@ -16,6 +17,7 @@ SERVER_PATHS = {
     },
     "snoopy": {
         "checkpoint_base": "/scr/pavel/data/goal-misgen/policy/icml",
+        "rollouts_base": "/scr/pavel/data/goal-misgen/rollouts/icml",
         "seeds_base": "/scr/pavel/data/goal-misgen/seeds/icml",
         "svdd_base": "/scr/pavel/data/goal-misgen/trained_svdd",
         "log_base": "/scr/pavel/data/goal-misgen/slurm-logs",

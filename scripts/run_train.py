@@ -6,7 +6,7 @@ Script to run DeepSVDD training jobs in parallel via SLURM sbatch.
 import subprocess
 from pathlib import Path
 
-from common import get_checkpoints
+from common import ENVS, SERVER_PATHS, get_checkpoints
 
 
 # Conda environment
@@ -34,21 +34,6 @@ EXP_ID_TO_SEED = {
     1: 1,
     2: 2,
 }
-
-# Server-specific paths
-SERVER_PATHS = {
-    "chai": {
-        "checkpoint_base": "/nas/ucb/czempin/data/goal-misgen/policy/icml",
-        "rollouts_base": "/nas/ucb/czempin/data/goal-misgen/rollouts/icml",
-    },
-    "snoopy": {
-        "checkpoint_base": "/scr/pavel/data/goal-misgen/policy/icml",
-        "rollouts_base": "/scr/pavel/data/goal-misgen/rollouts/icml",
-    },
-}
-
-# Environment choices
-ENVS = ["coinrun", "maze"]
 
 # Feature type choices
 FEATURE_TYPES = ["obs", "hidden"]
@@ -134,7 +119,7 @@ def main():
     )
     parser.add_argument(
         "--server",
-        choices=["chai", "snoopy"],
+        choices=list(SERVER_PATHS.keys()),
         default="snoopy",
         help="Server to use for paths (default: snoopy)",
     )
