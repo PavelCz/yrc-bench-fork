@@ -48,7 +48,8 @@ SRC_PATH="${SRC_BASE#*:}"
 
 failed_syncs=0
 missing_syncs=0
-RSYNC_ARGS=(-av --progress)
+SSH_OPTS=(-o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
+RSYNC_ARGS=(-av --progress -e "ssh ${SSH_OPTS[*]}")
 
 if [[ "${SYNC_VIDEOS}" -eq 0 ]]; then
   RSYNC_ARGS+=(
@@ -63,12 +64,23 @@ if [[ "${SYNC_VIDEOS}" -eq 0 ]]; then
   )
 fi
 
+echo "Listing remote directories under ${SRC_BASE}..."
+if ! REMOTE_LISTING="$(ssh "${SSH_OPTS[@]}" "${SRC_HOST}" "ls -1 ${SRC_PATH}" 2>/dev/null)"; then
+  echo "✗ Failed to list remote directory ${SRC_BASE}" >&2
+  exit 1
+fi
+
+remote_has() {
+  local name="$1"
+  grep -Fxq "${name}" <<<"${REMOTE_LISTING}"
+}
+
 sync_name() {
   local name="$1"
   local src_dir="${SRC_BASE}/${name}"
   local dst_dir="${DST_BASE}/"
 
-  if ! ssh "${SRC_HOST}" "test -d ${SRC_PATH}/${name}" 2>/dev/null; then
+  if ! remote_has "${name}"; then
     echo "– Skipping ${name}: not present on ${SRC_HOST}"
     missing_syncs=$((missing_syncs + 1))
     return
