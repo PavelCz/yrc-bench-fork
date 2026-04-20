@@ -39,6 +39,7 @@ EVAL_DEFAULTS = {
     "eval_split": "test",
     "video_logging_mode": "none",
     "wandb_mode": "disabled",
+    "greedy": False,
 }
 
 
@@ -65,6 +66,7 @@ def build_sbatch_command(
         f"-level_seeds_file {eval_args['level_seeds_file']}",
         f"-video_logging_mode {eval_args['video_logging_mode']}",
         f"-wandb_mode {eval_args['wandb_mode']}",
+        f"-greedy {str(eval_args['greedy']).lower()}",
     ]
 
     if eval_args.get("wandb_project"):
@@ -204,6 +206,12 @@ def parse_args():
         help=f"WandB mode (default: {EVAL_DEFAULTS['wandb_mode']})",
     )
     parser.add_argument(
+        "--greedy",
+        action="store_true",
+        default=EVAL_DEFAULTS["greedy"],
+        help="Use greedy/argmax action selection. Default is stochastic sampling to match run_eval.py.",
+    )
+    parser.add_argument(
         "--wandb-project",
         default=None,
         help="Override wandb project name",
@@ -256,6 +264,7 @@ def main():
         print(f"Config: {config_path}")
         print(f"Environment: {args.env}")
         print(f"Agents: {' '.join(args.agents)}")
+        print(f"Greedy actions: {args.greedy}")
         print(f"Prefix: {args.prefix}")
         print()
 
@@ -307,6 +316,7 @@ def main():
                 "eval_split": args.eval_split,
                 "video_logging_mode": args.video_logging_mode,
                 "wandb_mode": args.wandb_mode,
+                "greedy": args.greedy,
                 "wandb_project": args.wandb_project,
                 "random_percent": args.random_percent,
                 "num_envs": args.num_envs,
