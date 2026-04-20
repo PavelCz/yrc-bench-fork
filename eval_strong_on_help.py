@@ -13,10 +13,27 @@ import wandb
 import importlib
 
 
-def rollout(policy, env, num_episodes, expected_seeds=None):
+def resolve_action_greedy(config):
+    policy_config = getattr(config, "policy", None)
+    greedy = (
+        getattr(policy_config, "greedy", None) if policy_config is not None else None
+    )
+    if greedy is not None:
+        return bool(greedy)
+
+    coord_env_config = getattr(config, "coord_env", None)
+    coord_env_greedy = (
+        getattr(coord_env_config, "act_greedy", None)
+        if coord_env_config is not None
+        else None
+    )
+    return bool(coord_env_greedy) if coord_env_greedy is not None else False
+
+
+def rollout(policy, env, num_episodes, expected_seeds=None, greedy=False):
     """
     Rollout the policy on the environment and collect episode returns.
-    Using greedy=True by default for strong agent evaluation.
+    Uses the supplied greedy flag for action selection.
 
     Relies on procgen's sequential seed mode: once shared_level_seeds are
     exhausted, finishing slots freeze (done=False forever) while remaining
@@ -28,6 +45,7 @@ def rollout(policy, env, num_episodes, expected_seeds=None):
         env: Environment to run
         num_episodes: Number of episodes to collect
         expected_seeds: Set of seeds we expect to see (for validation)
+        greedy: Whether to use greedy/argmax action selection
     """
     returns = []
     num_completed = 0
@@ -88,7 +106,7 @@ def rollout(policy, env, num_episodes, expected_seeds=None):
             stuck_counter = 0
             last_num_completed = num_completed
 
-        action = policy.act(obs, greedy=True)
+        action = policy.act(obs, greedy=greedy)
         next_obs, reward, done, info = env.step(action)
 
         for i in range(env.num_envs):
@@ -185,6 +203,8 @@ def main():
 
     # Load config
     config = config_utils.load(args.config, flags=args)
+    greedy = resolve_action_greedy(config)
+    print(f"Using greedy action selection: {greedy}")
 
     # Record time for profiling purposes
     start_time = time.time()
@@ -204,6 +224,7 @@ def main():
                 "strong_agent": strong_agent_path,
                 "config_file": args.config,
                 "exp_name": config.exp_name,
+                "greedy": greedy,
             },
             project_fallback="yrc-bench-strong-reval",
             tolerate_failure=True,
@@ -345,6 +366,7 @@ def main():
             all_seeds_env,
             len(all_seeds),
             expected_seeds=all_seeds,
+            greedy=greedy,
         )
         print(f"Rollout complete! Got {len(all_returns)} returns")
     finally:

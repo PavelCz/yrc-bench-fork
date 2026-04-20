@@ -160,6 +160,12 @@ def parse_arguments():
         help="Overwrite experiment folder if it exists",
     )
     parser.add_argument(
+        "--greedy",
+        action="store_true",
+        default=False,
+        help="Use greedy/argmax strong-agent actions. Default is stochastic sampling to match scripts/run_eval.py.",
+    )
+    parser.add_argument(
         "--use-wandb",
         action="store_true",
         help="Enable wandb logging for job submission progress",
@@ -188,6 +194,7 @@ def initialize_wandb(args):
                 "method": args.method,
                 "server": args.server,
                 "qos": args.qos,
+                "greedy": args.greedy,
             },
         )
         print(f"Initialized wandb run: {run_name}")
@@ -235,6 +242,7 @@ def display_configuration(args, evals_base):
     print(f"Environment: {args.env}")
     print(f"Prefix: {args.prefix}")
     print(f"Method filter: {args.method or 'all'}")
+    print(f"Greedy actions: {args.greedy}")
     print()
 
 
@@ -524,6 +532,7 @@ def display_job_info(job_name, npz_path, strong_path, config_path, output_path, 
     print(f"  Config:   {config_path}")
     print(f"  Output:   {output_path}")
     print(f"  Overwrite: {args.overwrite}")
+    print(f"  Greedy:    {args.greedy}")
     print()
 
 
@@ -540,6 +549,7 @@ def submit_job_wrapper(
             args.conda_env,
             log_dir,
             args.qos,
+            greedy=args.greedy,
             overwrite=args.overwrite,
             dry_run=False,
         )
@@ -582,12 +592,21 @@ def submit_job(
     conda_env: str,
     log_dir: Path,
     qos: str = "default",
+    greedy: bool = False,
     overwrite: bool = False,
     dry_run: bool = False,
 ) -> None:
     """Submit a single job via sbatch."""
     sbatch_script = build_sbatch_script(
-        job_name, npz_file, strong_path, config_path, conda_env, log_dir, qos, overwrite
+        job_name,
+        npz_file,
+        strong_path,
+        config_path,
+        conda_env,
+        log_dir,
+        qos,
+        greedy,
+        overwrite,
     )
 
     if dry_run:
@@ -625,6 +644,7 @@ def build_sbatch_script(
     conda_env: str,
     log_dir: Path,
     qos: str = "default",
+    greedy: bool = False,
     overwrite: bool = False,
 ) -> str:
     """Build the sbatch script for job submission."""
@@ -634,7 +654,11 @@ def build_sbatch_script(
     slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
 
     # Build the python command
-    python_cmd = f"python eval_strong_on_help.py -c {config_path} -n {job_name} --npz_file {npz_file} -strong {strong_path}"
+    python_cmd = (
+        f"python eval_strong_on_help.py -c {config_path} -n {job_name} "
+        f"--npz_file {npz_file} -strong {strong_path} "
+        f"-greedy {str(greedy).lower()}"
+    )
     if overwrite:
         python_cmd += " --overwrite"
 

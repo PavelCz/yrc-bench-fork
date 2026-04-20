@@ -1,6 +1,18 @@
 import jsonargparse
 
 
+def parse_bool(value):
+    if isinstance(value, bool):
+        return value
+
+    value = value.lower()
+    if value in {"true", "1", "yes", "y", "on"}:
+        return True
+    if value in {"false", "0", "no", "n", "off"}:
+        return False
+    raise ValueError(f"Expected a boolean value, got {value!r}")
+
+
 def make():
     parser = jsonargparse.ArgumentParser()
 
@@ -106,11 +118,13 @@ def make():
     parser.add_argument(
         "-greedy",
         "--policy.greedy",
-        type=bool,
-        default=True,
+        type=parse_bool,
+        nargs="?",
+        const=True,
+        default=None,
         help=(
-            "use greedy action selection during evaluation (default: True)"
-            "Only used in eval_policy.py"
+            "use greedy action selection during evaluation. "
+            "Accepts true/false; if omitted, the eval script chooses its default."
         ),
     )
     parser.add_argument(
