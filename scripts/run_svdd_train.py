@@ -160,7 +160,10 @@ def main():
         default=TRAIN_DEFAULTS["query_cost"],
         help="Query cost",
     )
-    parser.add_argument("--rollout-dir", help="Override rollout directory path")
+    parser.add_argument(
+        "--rollout-dir",
+        help="Override rollout directory path, or pass a specific rollout .pt file",
+    )
     # Override checkpoints if needed
     parser.add_argument("--sim", help="Override sim weak checkpoint path")
     parser.add_argument("--weak", help="Override weak checkpoint path")

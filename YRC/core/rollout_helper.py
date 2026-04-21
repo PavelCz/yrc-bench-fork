@@ -40,19 +40,54 @@ class RolloutHelper:
                 a single contiguous tensor. If set to True, instead, the observations
                 are returned as a list of tensors.
         """
-        assert num_rollouts % env.num_envs == 0
+        if num_rollouts <= 0:
+            raise ValueError(f"num_rollouts must be positive, got {num_rollouts}")
+
         observations = []
         completed_level_seeds = []
-        for i in range(num_rollouts // env.num_envs):
-            rollout_result = self._rollout_once(
-                env, gather_all=gather_all, return_metadata=return_metadata
-            )
+        num_completed = 0
+        num_started = min(num_rollouts, env.num_envs)
+        active_rollouts = np.zeros(env.num_envs, dtype=bool)
+        active_rollouts[:num_started] = True
+
+        agent = self.agent
+        agent.eval()
+        obs = env.reset()
+
+        while num_completed < num_rollouts:
+            logit = agent.forward(obs["env_obs"])
+
+            for i in range(env.num_envs):
+                if not active_rollouts[i]:
+                    continue
+                obs_features = self._get_features_for_env(obs, self.feature_type, i)
+                if gather_all or np.random.rand() < 0.005:
+                    obs_features = self.maybe_convert_to_tensor(obs_features)
+                    if isinstance(obs_features, dict):
+                        observations.extend(v for v in obs_features.values())
+                    elif isinstance(obs_features, list):
+                        observations.extend(obs_features)
+                    else:
+                        observations.append(obs_features)
+
+            action = self._sample_action(logit)
+            obs, reward, done, info = env.step(action)
+            completed_this_step = np.asarray(done, dtype=bool) & active_rollouts
+
             if return_metadata:
-                rollout_observations, rollout_metadata = rollout_result
-                observations.extend(rollout_observations)
-                completed_level_seeds.extend(rollout_metadata["completed_level_seeds"])
-            else:
-                observations.extend(rollout_result)
+                completed_level_seeds.extend(
+                    self._extract_completed_level_seeds(info, completed_this_step)
+                )
+
+            completed_indices = np.flatnonzero(completed_this_step)
+            num_completed += len(completed_indices)
+
+            for i in completed_indices:
+                if num_started < num_rollouts:
+                    num_started += 1
+                else:
+                    active_rollouts[i] = False
+
         if self.feature_type in ["hidden_obs", "hidden_dist", "obs_dist"]:
             feature_tensors = [[], []]
             for i, tensor in enumerate(observations):
@@ -104,87 +139,58 @@ class RolloutHelper:
             return observations, {"completed_level_seeds": completed_level_seeds}
         return observations
 
-    def _rollout_once(self, env, gather_all=False, return_metadata=False):
-        def sample_action(logit):
-            """Samples an action using a categorical distribution with exploration temperature."""
-            dist = Categorical(logits=logit / self.explore_temp)
-            return dist.sample().cpu().numpy()
+    def _sample_action(self, logit):
+        """Samples an action using a categorical distribution with exploration temperature."""
+        dist = Categorical(logits=logit / self.explore_temp)
+        return dist.sample().cpu().numpy()
 
-        def get_features(obs, feature_type):
-            """Retrieves features based on the specified feature type."""
-            feature_map = {
-                "obs": lambda obs: (
-                    obs["env_obs"]["image"]
-                    if get_global_variable("benchmark") == "cliport"
-                    else obs["env_obs"]
-                ),
-                "hidden": lambda obs: obs["weak_features"],
-                "hidden_obs": lambda obs: (
-                    [
-                        obs["env_obs"]["image"],
-                        obs["weak_features"],
-                    ]
-                    if get_global_variable("benchmark") == "cliport"
-                    else [obs["env_obs"], obs["weak_features"]]
-                ),
-                "dist": lambda obs: obs["weak_logit"],
-                "hidden_dist": lambda obs: [obs["weak_features"], obs["weak_logit"]],
-                "obs_dist": lambda obs: (
-                    [obs["env_obs"]["image"], obs["weak_logit"]]
-                    if get_global_variable("benchmark") == "cliport"
-                    else [obs["env_obs"], obs["weak_logit"]]
-                ),
-                "obs_hidden_dist": lambda obs: (
-                    [
-                        obs["env_obs"]["image"],
-                        obs["weak_features"],
-                        obs["weak_logit"],
-                    ]
-                    if get_global_variable("benchmark") == "cliport"
-                    else [obs["env_obs"], obs["weak_features"], obs["weak_logit"]]
-                ),
-            }
-            return feature_map[feature_type](obs)
+    def _get_features(self, obs, feature_type):
+        """Retrieves batched features based on the specified feature type."""
+        feature_map = {
+            "obs": lambda obs: (
+                obs["env_obs"]["image"]
+                if get_global_variable("benchmark") == "cliport"
+                else obs["env_obs"]
+            ),
+            "hidden": lambda obs: obs["weak_features"],
+            "hidden_obs": lambda obs: (
+                [
+                    obs["env_obs"]["image"],
+                    obs["weak_features"],
+                ]
+                if get_global_variable("benchmark") == "cliport"
+                else [obs["env_obs"], obs["weak_features"]]
+            ),
+            "dist": lambda obs: obs["weak_logit"],
+            "hidden_dist": lambda obs: [obs["weak_features"], obs["weak_logit"]],
+            "obs_dist": lambda obs: (
+                [obs["env_obs"]["image"], obs["weak_logit"]]
+                if get_global_variable("benchmark") == "cliport"
+                else [obs["env_obs"], obs["weak_logit"]]
+            ),
+            "obs_hidden_dist": lambda obs: (
+                [
+                    obs["env_obs"]["image"],
+                    obs["weak_features"],
+                    obs["weak_logit"],
+                ]
+                if get_global_variable("benchmark") == "cliport"
+                else [obs["env_obs"], obs["weak_features"], obs["weak_logit"]]
+            ),
+        }
+        return feature_map[feature_type](obs)
 
-        agent = self.agent
-        agent.eval()
-        obs = env.reset()
-        has_done = np.array([False] * env.num_envs)
-        observations = []
-        completed_level_seeds = []
+    def _get_features_for_env(self, obs, feature_type, env_idx):
+        return self._slice_batch_item(self._get_features(obs, feature_type), env_idx)
 
-        while not has_done.all():
-            logit = agent.forward(obs["env_obs"])
-
-            if get_global_variable("benchmark") == "cliport":
-                obs_features = get_features(obs, self.feature_type)
-                obs_features = self.maybe_convert_to_tensor(obs_features)
-                observations.extend(obs_features)
-            else:
-                for i in range(env.num_envs):
-                    if not has_done[i]:
-                        obs_features = get_features(obs, self.feature_type)
-                        if (
-                            gather_all or np.random.rand() < 0.005
-                        ):  # Randomly sample for memory efficiency
-                            obs_features = self.maybe_convert_to_tensor(obs_features)
-                            if isinstance(obs_features, dict):
-                                observations.extend(v for k, v in obs_features.items())
-                            else:
-                                observations.extend(obs_features)
-
-            action = sample_action(logit)
-            obs, reward, done, info = env.step(action)
-            newly_done = np.asarray(done, dtype=bool) & ~has_done
-            if return_metadata:
-                completed_level_seeds.extend(
-                    self._extract_completed_level_seeds(info, newly_done)
-                )
-            has_done |= done
-
-        if return_metadata:
-            return observations, {"completed_level_seeds": completed_level_seeds}
-        return observations
+    def _slice_batch_item(self, value, index):
+        if isinstance(value, dict):
+            return {k: self._slice_batch_item(v, index) for k, v in value.items()}
+        if isinstance(value, list):
+            return [self._slice_batch_item(v, index) for v in value]
+        if isinstance(value, tuple):
+            return tuple(self._slice_batch_item(v, index) for v in value)
+        return value[index]
 
     def _extract_completed_level_seeds(
         self, info: Any, newly_done: np.ndarray

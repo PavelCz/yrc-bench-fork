@@ -38,6 +38,30 @@ class DummyEnv:
         return obs, reward, done, info
 
 
+class DummySequentialEnv:
+    def __init__(self):
+        self.num_envs = 2
+        self.weak_agent = DummyAgent()
+        self._step_idx = 0
+
+    def reset(self):
+        self._step_idx = 0
+        return {"env_obs": np.array([[10.0], [20.0]], dtype=np.float32)}
+
+    def step(self, action):
+        self._step_idx += 1
+        reward = np.zeros(self.num_envs, dtype=np.float32)
+        if self._step_idx == 1:
+            obs = {"env_obs": np.array([[11.0], [21.0]], dtype=np.float32)}
+            done = np.array([True, False], dtype=bool)
+            info = [{"prev_level_seed": 101}, {}]
+        else:
+            obs = {"env_obs": np.array([[12.0], [22.0]], dtype=np.float32)}
+            done = np.array([True, True], dtype=bool)
+            info = [{"prev_level_seed": 303}, {"prev_level_seed": 202}]
+        return obs, reward, done, info
+
+
 def make_config():
     return SimpleNamespace(
         coord_policy=SimpleNamespace(
@@ -61,3 +85,20 @@ def test_rollout_helper_records_only_first_completed_seed_per_env():
         )
 
     assert metadata["completed_level_seeds"] == [101, 202]
+
+
+def test_rollout_helper_supports_arbitrary_rollout_counts():
+    env = DummySequentialEnv()
+    helper = RolloutHelper(make_config(), env)
+
+    with patch("YRC.core.rollout_helper.get_global_variable", return_value="procgen"):
+        observations, metadata = helper.gather_rollouts(
+            env,
+            num_rollouts=3,
+            gather_all=True,
+            return_list=True,
+            return_metadata=True,
+        )
+
+    assert len(observations) == 4
+    assert metadata["completed_level_seeds"] == [101, 303, 202]

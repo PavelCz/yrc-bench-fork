@@ -308,7 +308,10 @@ def make():
     )
 
     parser.add_argument(
-        "-npz_file", "--npz_file", type=str, help="Path to NPZ file with evaluation results"
+        "-npz_file",
+        "--npz_file",
+        type=str,
+        help="Path to NPZ file with evaluation results",
     )
 
     parser.add_argument("-seed", "--general.seed", type=int, help="random seed")
@@ -318,6 +321,15 @@ def make():
         "--algorithm.num_rollouts",
         type=int,
         help="number of rollouts to collect for training",
+    )
+    parser.add_argument(
+        "-rollout_levels",
+        "--rollout_levels",
+        type=int,
+        help=(
+            "number of fixed ood_train level seeds to use when gathering rollouts. "
+            "If omitted, gather_rollouts.py uses all available ood_train seeds."
+        ),
     )
 
     parser.add_argument(
@@ -461,7 +473,7 @@ def make():
         "-rollout_dir",
         "--training.rollout_dir",
         type=str,
-        help="directory to save rollouts",
+        help="directory containing rollouts, or a specific rollout .pt file",
     )
 
     parser.add_argument(

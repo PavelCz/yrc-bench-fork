@@ -26,7 +26,6 @@ GATHER_DEFAULTS = {
     "wandb_mode": "offline",
     "config": "configs/procgen_gather.yaml",
     "random_percent": 0,
-    "num_rollouts": 64,
     "use_bg": True,
     "query_cost": 0,
 }
@@ -54,6 +53,29 @@ SERVER_PATHS = {
 ENVS = ["coinrun", "maze"]
 
 
+def parse_rollout_levels_arg(value: str):
+    value = value.strip().lower()
+    if value == "all":
+        return None
+
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid --num-levels value {value!r}. Use a positive integer or 'all'."
+        ) from exc
+
+    if parsed <= 0:
+        raise ValueError(
+            f"Invalid --num-levels value {parsed}. Use a positive integer or 'all'."
+        )
+    return parsed
+
+
+def format_rollout_levels_label(num_levels) -> str:
+    return "alllevels" if num_levels is None else f"{num_levels}levels"
+
+
 def build_sbatch_command(job_name: str, gather_args: dict) -> str:
     """Build the sbatch command string."""
     slurm_args = " ".join(f"--{k}={v}" for k, v in SLURM_CONFIG.items())
@@ -69,12 +91,13 @@ def build_sbatch_command(job_name: str, gather_args: dict) -> str:
         f"-sim {gather_args['sim']}",
         f"-weak {gather_args['weak']}",
         f"-strong {gather_args['strong']}",
-        f"-num_rollouts={gather_args['num_rollouts']}",
         f"-use_bg={gather_args['use_bg']}",
         f"-seed {gather_args['seed']}",
         f"-level_seeds_file {gather_args['level_seeds_file']}",
         f"-query_cost {gather_args['query_cost']}",
     ]
+    if gather_args["rollout_levels"] is not None:
+        python_args.append(f"-rollout_levels {gather_args['rollout_levels']}")
     python_cmd = " ".join(python_args)
 
     sbatch_script = f"""#!/bin/bash
@@ -142,10 +165,14 @@ def main():
         help="Experiment IDs to run (default: 0 1 2)",
     )
     parser.add_argument(
-        "--num-rollouts",
-        type=int,
-        default=GATHER_DEFAULTS["num_rollouts"],
-        help="Number of rollouts",
+        "--num-levels",
+        type=parse_rollout_levels_arg,
+        nargs="+",
+        default=None,
+        help=(
+            "Number(s) of ood_train levels to gather. Use positive integers and/or "
+            "'all'. Omit the flag to use all available ood_train seeds."
+        ),
     )
     parser.add_argument(
         "--random-percent",
@@ -190,7 +217,21 @@ def main():
         print(f"Environment: {args.env}")
         print(f"Prefix: {args.prefix}")
         print(f"Experiment IDs: {args.exp_ids}")
+        rollout_level_counts = [
+            "all" if num_levels is None else num_levels
+            for num_levels in (
+                args.num_levels if args.num_levels is not None else [None]
+            )
+        ]
+        print(
+            "Rollout level counts: "
+            f"{rollout_level_counts}"
+        )
         print()
+
+    requested_rollout_levels = (
+        args.num_levels if args.num_levels is not None else [None]
+    )
 
     # Loop over experiment IDs
     for exp_id in args.exp_ids:
@@ -223,40 +264,50 @@ def main():
             print(f"Skipping exp{exp_id} due to missing files\n")
             continue
 
-        # Build job name and experiment group
-        job_name = f"gather_{args.env}_exp{exp_id}"
+        # Build run name and experiment group
+        run_name = f"gather_{args.env}_exp{exp_id}"
         experiment_group = f"{args.prefix}_{args.env}_exp{exp_id}"
 
         # Get seed for this experiment ID
         seed = EXP_ID_TO_SEED.get(exp_id, exp_id)
 
-        if args.dry_run:
-            print(f"=== exp{exp_id} ===")
-            print(f"  Job name: {job_name}")
-            print(f"  Experiment group: {experiment_group}")
-            print(f"  Weak:   {checkpoints['weak']}")
-            print(f"  Strong: {checkpoints['strong']}")
-            print(f"  Level seeds: {level_seeds_file}")
-            print(f"  Seed: {seed}")
-            print()
-            continue
+        for rollout_levels in requested_rollout_levels:
+            rollout_levels_label = format_rollout_levels_label(rollout_levels)
+            job_name = (
+                run_name
+                if rollout_levels is None and len(requested_rollout_levels) == 1
+                else f"{run_name}_{rollout_levels_label}"
+            )
 
-        gather_args = {
-            "config": args.config,
-            "name": job_name,
-            "experiment_group": experiment_group,
-            "env_name": args.env,
-            "random_percent": args.random_percent,
-            "num_rollouts": args.num_rollouts,
-            "use_bg": args.use_bg,
-            "seed": seed,
-            "query_cost": args.query_cost,
-            "wandb_mode": args.wandb_mode,
-            "level_seeds_file": str(level_seeds_file),
-            **checkpoints,
-        }
+            if args.dry_run:
+                print(f"=== exp{exp_id} / {rollout_levels_label} ===")
+                print(f"  Job name: {job_name}")
+                print(f"  Run name: {run_name}")
+                print(f"  Experiment group: {experiment_group}")
+                print(f"  Weak:   {checkpoints['weak']}")
+                print(f"  Strong: {checkpoints['strong']}")
+                print(f"  Level seeds: {level_seeds_file}")
+                print(f"  Rollout levels: {rollout_levels_label}")
+                print(f"  Seed: {seed}")
+                print()
+                continue
 
-        submit_job(job_name, gather_args, dry_run=False)
+            gather_args = {
+                "config": args.config,
+                "name": run_name,
+                "experiment_group": experiment_group,
+                "env_name": args.env,
+                "random_percent": args.random_percent,
+                "rollout_levels": rollout_levels,
+                "use_bg": args.use_bg,
+                "seed": seed,
+                "query_cost": args.query_cost,
+                "wandb_mode": args.wandb_mode,
+                "level_seeds_file": str(level_seeds_file),
+                **checkpoints,
+            }
+
+            submit_job(job_name, gather_args, dry_run=False)
 
     return 0
 
