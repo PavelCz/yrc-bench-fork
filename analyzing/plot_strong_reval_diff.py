@@ -13,7 +13,7 @@ import argparse
 import re
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -84,6 +84,7 @@ def extract_strong_reval_results(
     eval_dir: Path,
     prefix_filter: Optional[List[str]] = None,
     env_filter: Optional[str] = None,
+    exp_id_filter: Optional[Set[int]] = None,
 ) -> Dict[str, Dict[int, Tuple[Path, Path]]]:
     """
     Extract evaluation results including strong re-evaluation files.
@@ -92,6 +93,7 @@ def extract_strong_reval_results(
         eval_dir: Directory containing evaluation results
         prefix_filter: Only include runs with these prefixes (list)
         env_filter: Only include runs for this environment
+        exp_id_filter: Only include these experiment IDs
 
     Returns:
         Dictionary mapping method names to dict of {exp_id: (original_npz, strong_reval_npz)}
@@ -112,6 +114,8 @@ def extract_strong_reval_results(
         if prefix_filter is not None and prefix not in prefix_filter:
             continue
         if env_filter is not None and env != env_filter:
+            continue
+        if exp_id_filter is not None and exp_id not in exp_id_filter:
             continue
 
         # Find method directories within this experiment
@@ -211,22 +215,22 @@ def load_performance_data(
     strong_performances = strong_data["strong_performances"]
     
     # CRITICAL VALIDATION: Ensure arrays are properly aligned
-    print(f"\n  === Array Length Validation ===")
-    print(f"  Original data:")
+    print("\n  === Array Length Validation ===")
+    print("  Original data:")
     print(f"    - Number of checkpoints (meta): {len(meta)}")
     print(f"    - Number of performances: {len(performances)}")
     print(f"    - Number of calculated AFHPs: {len(calculated_afhps)}")
-    print(f"  Strong re-eval data:")
+    print("  Strong re-eval data:")
     print(f"    - Number of strong performances: {len(strong_performances)}")
     
     # Check if arrays have the same length
     if len(performances) != len(strong_performances):
-        print(f"  ERROR: Performance array length mismatch!")
+        print("  ERROR: Performance array length mismatch!")
         print(f"    Original: {len(performances)}, Strong: {len(strong_performances)}")
         raise ValueError("Cannot compare performances - arrays have different lengths!")
     
     if len(calculated_afhps) != len(strong_performances):
-        print(f"  ERROR: AFHP/performance array length mismatch!")
+        print("  ERROR: AFHP/performance array length mismatch!")
         print(f"    AFHPs: {len(calculated_afhps)}, Strong performances: {len(strong_performances)}")
         raise ValueError("Cannot align AFHPs with performances!")
     
@@ -252,7 +256,7 @@ def load_performance_data(
             max_diff = np.abs(afhp_diff).max()
             
             if max_diff > 0.01:  # Allow small floating point differences
-                print(f"  WARNING: AFHP mismatch between original and strong data!")
+                print("  WARNING: AFHP mismatch between original and strong data!")
                 print(f"  Maximum difference: {max_diff:.4f}%")
                 print(f"  Original AFHPs: {calculated_afhps[:5]}... (showing first 5)")
                 print(f"  Strong AFHPs:   {strong_calculated_afhps[:5]}... (showing first 5)")
@@ -261,12 +265,10 @@ def load_performance_data(
         else:
             print(f"  WARNING: Different number of checkpoints in original ({len(calculated_afhps)}) vs strong ({len(strong_calculated_afhps)}) data!")
     else:
-        print(f"  INFO: No meta data in strong re-eval file to validate AFHPs")
+        print("  INFO: No meta data in strong re-eval file to validate AFHPs")
     
     # Also check AFHPs from stored arrays if they exist
     orig_stored_afhps = orig_data.get("afhps", None)
-    strong_stored_afhps = strong_data.get("afhps", None)
-    
     if orig_stored_afhps is not None and len(orig_stored_afhps) > 0:
         print(f"  Original stored AFHP range: {orig_stored_afhps.min():.2f}% - {orig_stored_afhps.max():.2f}%")
         # Compare stored vs calculated
@@ -282,7 +284,10 @@ def load_performance_data(
                 # Check if it's a factor of 100 issue
                 factor_check = np.array(calculated_afhps[:n_examples]) / (orig_stored_afhps[:n_examples] + 1e-10)
                 if np.all(np.abs(factor_check - 100) < 1):
-                    print(f"  → Stored values appear to be fractions (0-1) instead of percentages (0-100)")
+                    print(
+                        "  → Stored values appear to be fractions (0-1) instead of "
+                        "percentages (0-100)"
+                    )
     
     # Use calculated AFHPs instead of the ones from the file
     afhps = np.array(calculated_afhps)
@@ -290,7 +295,7 @@ def load_performance_data(
     print(f"  AFHP range (calculated): {afhps.min():.2f}% - {afhps.max():.2f}%")
     
     # Additional validation: Check if performance values are reasonable
-    print(f"\n  === Performance Value Validation ===")
+    print("\n  === Performance Value Validation ===")
     print(f"  Original performances: min={performances.min():.2f}, max={performances.max():.2f}")
     
     # Handle NaN values in performance_asked
@@ -312,9 +317,12 @@ def load_performance_data(
         nan_mask_asked = np.isnan(performance_asked)
         nan_mask_strong = np.isnan(strong_performances)
         if np.array_equal(nan_mask_asked, nan_mask_strong):
-            print(f"  ✓ NaN positions match between performance_asked and strong_performances")
+            print(
+                "  ✓ NaN positions match between performance_asked and "
+                "strong_performances"
+            )
         else:
-            print(f"  WARNING: NaN positions don't match between arrays!")
+            print("  WARNING: NaN positions don't match between arrays!")
             print(f"    NaN in performance_asked: {np.where(nan_mask_asked)[0]}")
             print(f"    NaN in strong_performances: {np.where(nan_mask_strong)[0]}")
     
@@ -412,6 +420,7 @@ def plot_strong_reval_diff(
     eval_dir: Path,
     prefix_filter: Optional[List[str]],
     env_filter: Optional[str],
+    exp_id_filter: Optional[Set[int]] = None,
     method_order: Optional[List[str]] = None,
     method_filter: Optional[List[str]] = None,
     save_path: Optional[str] = None,
@@ -427,6 +436,7 @@ def plot_strong_reval_diff(
         eval_dir: Directory containing evaluation results
         prefix_filter: Only include runs with these prefixes
         env_filter: Only include runs for this environment
+        exp_id_filter: Only include these experiment IDs
         method_order: Order of methods to plot
         method_filter: Methods to exclude
         save_path: Path to save the figure
@@ -435,7 +445,9 @@ def plot_strong_reval_diff(
         plot_absolute: If True, plot absolute performances instead of differences
         plot_strong_only: If True, only plot strong agent performance (not differences)
     """
-    results = extract_strong_reval_results(eval_dir, prefix_filter, env_filter)
+    results = extract_strong_reval_results(
+        eval_dir, prefix_filter, env_filter, exp_id_filter
+    )
 
     if not results:
         print("No results found with both original and strong re-evaluation files.")
@@ -640,6 +652,13 @@ def main():
         help="Environment filter",
     )
     parser.add_argument(
+        "--exp-ids",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Only include these experiment IDs (e.g. --exp-ids 0 2)",
+    )
+    parser.add_argument(
         "--method_order",
         "-m",
         type=str,
@@ -695,6 +714,7 @@ def main():
         eval_dir=eval_dir,
         prefix_filter=args.prefix,
         env_filter=args.env,
+        exp_id_filter=set(args.exp_ids) if args.exp_ids is not None else None,
         method_order=method_order,
         method_filter=args.method_filter,
         save_path=args.save,
