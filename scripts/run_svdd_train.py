@@ -51,7 +51,7 @@ def build_sbatch_command(job_name: str, train_args: dict) -> str:
     slurm_args = " ".join(f"--{k}={v}" for k, v in SLURM_CONFIG.items())
 
     python_args = [
-        "python train.py",
+        "python train_svdd.py",
         f"-wandb_group {train_args['wandb_group']}",
         f"-c {train_args['config']}",
         f"-n {train_args['name']}",

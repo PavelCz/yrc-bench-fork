@@ -49,7 +49,7 @@ conda run -n ood ci/format_and_check.sh
 ### Training
 ```bash
 # Train a coordination policy (Procgen)
-python train.py -c configs/procgen_ood.yaml -n RUN_NAME -en ENV_NAME \
+python train_svdd.py -c configs/procgen_ood.yaml -n RUN_NAME -en ENV_NAME \
     -sim PATH/TO/SIM_WEAK.pt -weak PATH/TO/WEAK.pt -strong PATH/TO/STRONG.pt \
     -query_cost COST -cp_feature FEATURE_TYPE
 ```

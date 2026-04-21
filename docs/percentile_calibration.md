@@ -46,7 +46,7 @@ These policies have an explicit score distribution that needs to be collected.
 - `_train_scores`: all per-step scores across all episodes (flat array)
 - `_train_episode_max_scores`: the maximum score within each episode (one value per episode)
 
-**OODPolicy / LightningAEPolicy**: These policies support two sources of scores. During model training (`train.py`), per-step decision scores are collected (`clf.decision_scores_` / `_train_decision_scores`), but these lack episode boundaries. To support `train_percentile_level`, `eval_afhp.py` calls `policy.generate_scores()` which runs rollouts in the training environment with the trained OOD detector, collecting both per-step scores and per-episode max scores — the same approach as ThresholdPolicy. When rollout-based scores are available, `train_percentile_step` uses them instead of the training-time scores.
+**OODPolicy / LightningAEPolicy**: These policies support two sources of scores. During model training (`train_svdd.py`), per-step decision scores are collected (`clf.decision_scores_` / `_train_decision_scores`), but these lack episode boundaries. To support `train_percentile_level`, `eval_afhp.py` calls `policy.generate_scores()` which runs rollouts in the training environment with the trained OOD detector, collecting both per-step scores and per-episode max scores — the same approach as ThresholdPolicy. When rollout-based scores are available, `train_percentile_step` uses them instead of the training-time scores.
 
 ### Episode-length calibration (TimestepRandomPolicy, ExponentialHeuristicPolicy)
 

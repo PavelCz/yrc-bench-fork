@@ -1,3 +1,5 @@
+"""Train OOD/SVDD-style coordination policies from collected rollouts."""
+
 from YRC.core.utils import load_rollouts_from_file
 import flags
 import YRC.core.algorithm as algo_factory

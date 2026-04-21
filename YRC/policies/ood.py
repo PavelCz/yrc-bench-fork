@@ -3,7 +3,6 @@ import numpy as np
 from copy import deepcopy as dc
 import logging
 import collections
-import torch
 from YRC.core import Policy
 from lib.pyod.pyod.models import deep_svdd
 from joblib import dump, load
@@ -26,7 +25,7 @@ class OODPolicy(Policy):
         self.clf_name = None
         self.device = get_global_variable("device")
         self.feature_type = config.coord_policy.feature_type
-        self.logger = None  # Will be set by train.py for wandb logging
+        self.logger = None  # Will be set by train_svdd.py for wandb logging
 
         # Store training scores for percentile computation (used in AFHP eval)
         self._train_scores = None
@@ -279,7 +278,7 @@ class OODPolicy(Policy):
             },
             'clf_name': self.clf_name,
         }
-        if type(self.clf) == deep_svdd.DeepSVDD:
+        if isinstance(self.clf, deep_svdd.DeepSVDD):
             state_dict['config']['use_ae'] = self.clf.use_ae
         dump(state_dict, save_path)
         logging.info(f"Saved model to {save_path}")
