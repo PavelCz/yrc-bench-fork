@@ -1,5 +1,4 @@
 from pathlib import Path
-import json
 import os
 import time
 from typing import List
@@ -11,6 +10,7 @@ import YRC.core.policy as policy_factory
 from YRC.core import Evaluator
 from YRC.core.configs.global_configs import get_global_variable
 from YRC.core.eval_script_utils import init_eval_wandb_run, save_npz_results
+from YRC.core.level_seeds import load_level_seed_splits
 
 from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
 
@@ -20,27 +20,6 @@ from YRC.coverage.coverage_search import create_level_afhp_threshold_sampler
 import numpy as np
 from pytorch_lightning.loggers import WandbLogger
 from acs.types import CurvePoint
-
-
-def load_level_seeds(config) -> dict:
-    """Load evaluation and calibration seeds from file, if configured."""
-    level_seeds_file = getattr(config.environment, "level_seeds_file", None)
-    if level_seeds_file is None:
-        return {"ood_eval": None, "validation": None}
-
-    print(f"Loading level seeds from {level_seeds_file}...")
-    with open(level_seeds_file) as f:
-        seeds_data = json.load(f)
-
-    ood_eval = seeds_data["seeds"].get("ood_eval") or None
-    validation = seeds_data["seeds"].get("validation") or None
-
-    if ood_eval:
-        print(f"  - Loaded {len(ood_eval)} ood_eval seeds")
-    if validation:
-        print(f"  - Loaded {len(validation)} validation seeds (calibration)")
-
-    return {"ood_eval": ood_eval, "validation": validation}
 
 
 def _require_calibration_split_and_count(envs, cal_seeds):
@@ -174,9 +153,14 @@ def main():
     # Record time for profiling purposes
     start_time = time.time()
 
-    # Load level seeds for evaluation and optional fixed-seed calibration.
-    seeds = load_level_seeds(config)
-    level_seeds = seeds["ood_eval"]
+    # Load all seed splits, then explicitly map semantic seed splits to env splits.
+    seeds = load_level_seed_splits(
+        config, required_splits=("ood_eval", "validation")
+    )
+    level_seeds_by_split = {
+        "test": seeds["ood_eval"],
+        "cal": seeds["validation"],
+    }
     cal_seeds = seeds["validation"]
 
     # Create environment factory for the sampler
@@ -184,9 +168,9 @@ def main():
     def make_envs():
         return env_factory.make(
             config,
-            level_seeds,
-            "sequential",
-            cal_seeds=cal_seeds,
+            level_seeds_by_split=level_seeds_by_split,
+            level_seeds_mode="sequential",
+            require_level_seeds_for_splits=("test", "cal"),
         )
 
     # Create initial environments for policy creation and score generation

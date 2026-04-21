@@ -14,16 +14,33 @@ from copy import deepcopy as dc
 from YRC.core.configs import get_global_variable
 
 
-def make(config, level_seeds=None, level_seeds_mode="sequential", cal_seeds=None):
+def make(
+    config,
+    level_seeds=None,
+    level_seeds_mode="sequential",
+    cal_seeds=None,
+    *,
+    level_seeds_by_split=None,
+    require_level_seeds_for_splits=(),
+):
     """Create coordination environments.
 
     Args:
         config: Configuration object
-        level_seeds: Optional list of level seeds to use for created environments
+        level_seeds: Legacy optional level seeds for the test split.
         level_seeds_mode: Mode for level seeds (sequential, container, random)
-        cal_seeds: Optional fixed seeds for a dedicated calibration split.
+        cal_seeds: Legacy optional fixed seeds for a dedicated calibration split.
+        level_seeds_by_split: Optional mapping from env split name to level seeds.
+        require_level_seeds_for_splits: Splits that must have fixed seeds.
     """
-    base_envs = make_raw_envs(config, level_seeds, level_seeds_mode, cal_seeds)
+    base_envs = make_raw_envs(
+        config,
+        level_seeds,
+        level_seeds_mode,
+        cal_seeds,
+        level_seeds_by_split=level_seeds_by_split,
+        require_level_seeds_for_splits=require_level_seeds_for_splits,
+    )
     sim_weak_agent, weak_agent, strong_agent = load_agents(config, base_envs["val_sim"])
 
     cal_agent_names = {"train", "val_sim", "cal"}
@@ -108,24 +125,41 @@ def get_test_eval_info(config, coord_envs):
 
 
 def make_raw_envs(
-    config, level_seeds=None, level_seeds_mode="sequential", cal_seeds=None
+    config,
+    level_seeds=None,
+    level_seeds_mode="sequential",
+    cal_seeds=None,
+    *,
+    level_seeds_by_split=None,
+    require_level_seeds_for_splits=(),
 ):
     """Create raw environments for each split.
 
     Args:
         config: Configuration object
-        level_seeds: Optional list of level seeds to use for created environments
+        level_seeds: Legacy optional level seeds for the test split.
         level_seeds_mode: Mode for level seeds (sequential, container, random)
-        cal_seeds: Optional fixed seeds for a dedicated calibration split.
+        cal_seeds: Legacy optional fixed seeds for a dedicated calibration split.
+        level_seeds_by_split: Optional mapping from env split name to level seeds.
+        require_level_seeds_for_splits: Splits that must have fixed seeds.
     """
     module = importlib.import_module(f"YRC.envs.{get_global_variable('benchmark')}")
     create_fn = getattr(module, "create_env")
+    level_seeds_by_split = _normalize_level_seeds_by_split(
+        level_seeds=level_seeds,
+        cal_seeds=cal_seeds,
+        level_seeds_by_split=level_seeds_by_split,
+    )
+    _validate_required_level_seed_splits(
+        level_seeds_by_split, require_level_seeds_for_splits
+    )
 
     envs = {}
     for name in ["train", "val_sim", "val_true", "test"]:
         kwargs = {}
-        if level_seeds is not None:
-            kwargs["level_seeds"] = level_seeds
+        split_level_seeds = level_seeds_by_split.get(name)
+        if _has_level_seeds(split_level_seeds):
+            kwargs["level_seeds"] = split_level_seeds
             kwargs["level_seeds_mode"] = level_seeds_mode
 
         if name == "train" and config.general.skyline:
@@ -136,17 +170,54 @@ def make_raw_envs(
         env.name = config.environment.common.env_name
         envs[name] = env
 
-    if cal_seeds is not None:
+    cal_level_seeds = level_seeds_by_split.get("cal")
+    if _has_level_seeds(cal_level_seeds):
         env = create_fn(
             "train",
             config.environment,
-            level_seeds=cal_seeds,
+            level_seeds=cal_level_seeds,
             level_seeds_mode="sequential",
         )
         env.name = config.environment.common.env_name
         envs["cal"] = env
 
     return envs
+
+
+def _normalize_level_seeds_by_split(
+    *, level_seeds=None, cal_seeds=None, level_seeds_by_split=None
+):
+    if level_seeds is not None and level_seeds_by_split is not None:
+        raise ValueError(
+            "Pass either legacy level_seeds or level_seeds_by_split, not both."
+        )
+
+    normalized = dict(level_seeds_by_split or {})
+    if level_seeds is not None:
+        normalized["test"] = level_seeds
+    if cal_seeds is not None:
+        normalized["cal"] = cal_seeds
+
+    return normalized
+
+
+def _validate_required_level_seed_splits(level_seeds_by_split, required_splits):
+    missing = [
+        split
+        for split in required_splits
+        if not _has_level_seeds(level_seeds_by_split.get(split))
+    ]
+    if missing:
+        missing_str = ", ".join(sorted(missing))
+        provided = ", ".join(sorted(level_seeds_by_split)) or "none"
+        raise ValueError(
+            f"Missing required fixed level seeds for env split(s): {missing_str}. "
+            f"Provided split seed keys: {provided}."
+        )
+
+
+def _has_level_seeds(level_seeds):
+    return level_seeds is not None and len(level_seeds) > 0
 
 
 def load_agents(config, env):

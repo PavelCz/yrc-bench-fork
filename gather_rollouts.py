@@ -2,39 +2,12 @@ import flags
 import YRC.core.configs.utils as config_utils
 import YRC.core.environment as env_factory
 from YRC.core.configs.global_configs import get_global_variable
+from YRC.core.level_seeds import load_level_seed_splits
 from pathlib import Path
 from YRC.core.rollout_helper import RolloutHelper
-from typing import List, Optional
 import torch
 import json
 import time
-
-
-def load_level_seeds(config) -> Optional[List[int]]:
-    """Load ood_train level seeds from file if configured.
-
-    Args:
-        config: Configuration object with environment.level_seeds_file path
-
-    Returns:
-        List of level seeds for OOD detector training, or None if not configured
-    """
-    level_seeds_file = getattr(config.environment, "level_seeds_file", None)
-    if level_seeds_file is None:
-        return None
-
-    print(f"Loading level seeds from {level_seeds_file}...")
-    with open(level_seeds_file) as f:
-        seeds_data = json.load(f)
-
-    # Use ood_train seeds for gathering rollouts (always sequential mode)
-    level_seeds = seeds_data["seeds"].get("ood_train", None)
-    if level_seeds:
-        print(f"  - Loaded {len(level_seeds)} ood_train seeds (mode: sequential)")
-    else:
-        print("  - No ood_train seeds in file")
-
-    return level_seeds
 
 
 def main():
@@ -47,12 +20,18 @@ def main():
     config = config_utils.load(args.config, flags=args)
     print(f"Config loaded in {time.time() - start:.2f}s")
 
-    # Load level seeds for OOD training (uses ood_train seeds, always sequential mode)
-    level_seeds = load_level_seeds(config)
+    # Load all seed splits, then explicitly use ood_train for rollout collection.
+    seed_splits = load_level_seed_splits(config, required_splits=("ood_train",))
+    level_seeds = seed_splits["ood_train"]
 
     print("Creating environments...")
     start = time.time()
-    envs = env_factory.make(config, level_seeds, "sequential")
+    envs = env_factory.make(
+        config,
+        level_seeds_by_split={"train": level_seeds},
+        level_seeds_mode="sequential",
+        require_level_seeds_for_splits=("train",),
+    )
     print(f"Environments created in {time.time() - start:.2f}s")
 
     num_rollouts = config.algorithm.num_rollouts
