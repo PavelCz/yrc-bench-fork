@@ -19,7 +19,7 @@ def make(config, level_seeds=None, level_seeds_mode="sequential", cal_seeds=None
 
     Args:
         config: Configuration object
-        level_seeds: Optional list of level seeds to use for test environment
+        level_seeds: Optional list of level seeds to use for created environments
         level_seeds_mode: Mode for level seeds (sequential, container, random)
         cal_seeds: Optional fixed seeds for a dedicated calibration split.
     """
@@ -114,7 +114,7 @@ def make_raw_envs(
 
     Args:
         config: Configuration object
-        level_seeds: Optional list of level seeds to use for test environment
+        level_seeds: Optional list of level seeds to use for created environments
         level_seeds_mode: Mode for level seeds (sequential, container, random)
         cal_seeds: Optional fixed seeds for a dedicated calibration split.
     """
@@ -123,9 +123,8 @@ def make_raw_envs(
 
     envs = {}
     for name in ["train", "val_sim", "val_true", "test"]:
-        # Only pass level seeds to test environment
         kwargs = {}
-        if name == "test" and level_seeds is not None:
+        if level_seeds is not None:
             kwargs["level_seeds"] = level_seeds
             kwargs["level_seeds_mode"] = level_seeds_mode
 
