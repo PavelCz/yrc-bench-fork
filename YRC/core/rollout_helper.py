@@ -1,4 +1,4 @@
-from typing import Union, List
+from typing import Any, Dict, List, Optional, Tuple, Union
 import torch
 from YRC.core.configs.global_configs import get_global_variable
 from torch.distributions.categorical import Categorical
@@ -22,7 +22,12 @@ class RolloutHelper:
         num_rollouts: int,
         gather_all=False,
         return_list=False,
-    ) -> Union[torch.Tensor, List[torch.Tensor]]:
+        return_metadata=False,
+    ) -> Union[
+        torch.Tensor,
+        List[torch.Tensor],
+        Tuple[Union[torch.Tensor, List[torch.Tensor]], Dict[str, Any]],
+    ]:
         """
         Gathers rollouts from the environment.
 
@@ -37,8 +42,17 @@ class RolloutHelper:
         """
         assert num_rollouts % env.num_envs == 0
         observations = []
+        completed_level_seeds = []
         for i in range(num_rollouts // env.num_envs):
-            observations.extend(self._rollout_once(env, gather_all))
+            rollout_result = self._rollout_once(
+                env, gather_all=gather_all, return_metadata=return_metadata
+            )
+            if return_metadata:
+                rollout_observations, rollout_metadata = rollout_result
+                observations.extend(rollout_observations)
+                completed_level_seeds.extend(rollout_metadata["completed_level_seeds"])
+            else:
+                observations.extend(rollout_result)
         if self.feature_type in ["hidden_obs", "hidden_dist", "obs_dist"]:
             feature_tensors = [[], []]
             for i, tensor in enumerate(observations):
@@ -86,9 +100,11 @@ class RolloutHelper:
             else:
                 if not return_list:
                     observations = torch.stack(observations)
+        if return_metadata:
+            return observations, {"completed_level_seeds": completed_level_seeds}
         return observations
 
-    def _rollout_once(self, env, gather_all=False):
+    def _rollout_once(self, env, gather_all=False, return_metadata=False):
         def sample_action(logit):
             """Samples an action using a categorical distribution with exploration temperature."""
             dist = Categorical(logits=logit / self.explore_temp)
@@ -97,28 +113,36 @@ class RolloutHelper:
         def get_features(obs, feature_type):
             """Retrieves features based on the specified feature type."""
             feature_map = {
-                "obs": lambda obs: obs["env_obs"]["image"]
-                if get_global_variable("benchmark") == "cliport"
-                else obs["env_obs"],
+                "obs": lambda obs: (
+                    obs["env_obs"]["image"]
+                    if get_global_variable("benchmark") == "cliport"
+                    else obs["env_obs"]
+                ),
                 "hidden": lambda obs: obs["weak_features"],
-                "hidden_obs": lambda obs: [
-                    obs["env_obs"]["image"],
-                    obs["weak_features"],
-                ]
-                if get_global_variable("benchmark") == "cliport"
-                else [obs["env_obs"], obs["weak_features"]],
+                "hidden_obs": lambda obs: (
+                    [
+                        obs["env_obs"]["image"],
+                        obs["weak_features"],
+                    ]
+                    if get_global_variable("benchmark") == "cliport"
+                    else [obs["env_obs"], obs["weak_features"]]
+                ),
                 "dist": lambda obs: obs["weak_logit"],
                 "hidden_dist": lambda obs: [obs["weak_features"], obs["weak_logit"]],
-                "obs_dist": lambda obs: [obs["env_obs"]["image"], obs["weak_logit"]]
-                if get_global_variable("benchmark") == "cliport"
-                else [obs["env_obs"], obs["weak_logit"]],
-                "obs_hidden_dist": lambda obs: [
-                    obs["env_obs"]["image"],
-                    obs["weak_features"],
-                    obs["weak_logit"],
-                ]
-                if get_global_variable("benchmark") == "cliport"
-                else [obs["env_obs"], obs["weak_features"], obs["weak_logit"]],
+                "obs_dist": lambda obs: (
+                    [obs["env_obs"]["image"], obs["weak_logit"]]
+                    if get_global_variable("benchmark") == "cliport"
+                    else [obs["env_obs"], obs["weak_logit"]]
+                ),
+                "obs_hidden_dist": lambda obs: (
+                    [
+                        obs["env_obs"]["image"],
+                        obs["weak_features"],
+                        obs["weak_logit"],
+                    ]
+                    if get_global_variable("benchmark") == "cliport"
+                    else [obs["env_obs"], obs["weak_features"], obs["weak_logit"]]
+                ),
             }
             return feature_map[feature_type](obs)
 
@@ -127,6 +151,7 @@ class RolloutHelper:
         obs = env.reset()
         has_done = np.array([False] * env.num_envs)
         observations = []
+        completed_level_seeds = []
 
         while not has_done.all():
             logit = agent.forward(obs["env_obs"])
@@ -150,9 +175,61 @@ class RolloutHelper:
 
             action = sample_action(logit)
             obs, reward, done, info = env.step(action)
+            newly_done = np.asarray(done, dtype=bool) & ~has_done
+            if return_metadata:
+                completed_level_seeds.extend(
+                    self._extract_completed_level_seeds(info, newly_done)
+                )
             has_done |= done
 
+        if return_metadata:
+            return observations, {"completed_level_seeds": completed_level_seeds}
         return observations
+
+    def _extract_completed_level_seeds(
+        self, info: Any, newly_done: np.ndarray
+    ) -> List[int]:
+        completed_level_seeds = []
+        for i, done in enumerate(newly_done):
+            if not done:
+                continue
+            level_seed = self._get_level_seed(info, i)
+            if level_seed is not None:
+                completed_level_seeds.append(level_seed)
+        return completed_level_seeds
+
+    def _get_level_seed(self, info: Any, index: int) -> Optional[int]:
+        if isinstance(info, list):
+            info_i = info[index] if index < len(info) else None
+            if not isinstance(info_i, dict):
+                return None
+            level_seed = info_i.get("prev_level_seed", info_i.get("level_seed"))
+        elif isinstance(info, dict):
+            level_seed = None
+            for key in ("prev_level_seed", "level_seed"):
+                if key not in info:
+                    continue
+                value = info[key]
+                if hasattr(value, "__getitem__") and not isinstance(
+                    value, (str, bytes)
+                ):
+                    try:
+                        level_seed = value[index]
+                    except (IndexError, KeyError, TypeError):
+                        level_seed = value
+                else:
+                    level_seed = value
+                break
+        else:
+            return None
+
+        if level_seed is None:
+            return None
+        try:
+            level_seed = int(level_seed)
+        except (TypeError, ValueError):
+            return None
+        return None if level_seed < 0 else level_seed
 
     def maybe_convert_to_tensor(self, features):
         """Converts features to tensors if they are not already tensors."""

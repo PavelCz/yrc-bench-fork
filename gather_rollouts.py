@@ -19,20 +19,20 @@ def load_level_seeds(config) -> Optional[List[int]]:
     Returns:
         List of level seeds for OOD detector training, or None if not configured
     """
-    level_seeds_file = getattr(config.environment, 'level_seeds_file', None)
+    level_seeds_file = getattr(config.environment, "level_seeds_file", None)
     if level_seeds_file is None:
         return None
 
-    print(f'Loading level seeds from {level_seeds_file}...')
+    print(f"Loading level seeds from {level_seeds_file}...")
     with open(level_seeds_file) as f:
         seeds_data = json.load(f)
 
     # Use ood_train seeds for gathering rollouts (always sequential mode)
-    level_seeds = seeds_data['seeds'].get('ood_train', None)
+    level_seeds = seeds_data["seeds"].get("ood_train", None)
     if level_seeds:
-        print(f'  - Loaded {len(level_seeds)} ood_train seeds (mode: sequential)')
+        print(f"  - Loaded {len(level_seeds)} ood_train seeds (mode: sequential)")
     else:
-        print('  - No ood_train seeds in file')
+        print("  - No ood_train seeds in file")
 
     return level_seeds
 
@@ -60,8 +60,12 @@ def main():
     print(f"Gathering {num_rollouts} rollouts...")
     start = time.time()
     rollout_helper = RolloutHelper(config, envs["train"])
-    rollout_obs: List[torch.Tensor] = rollout_helper.gather_rollouts(
-        envs["train"], num_rollouts, gather_all=True, return_list=True
+    rollout_obs, rollout_metadata = rollout_helper.gather_rollouts(
+        envs["train"],
+        num_rollouts,
+        gather_all=True,
+        return_list=True,
+        return_metadata=True,
     )
     print(f"Rollouts gathered in {time.time() - start:.2f}s")
 
@@ -75,7 +79,7 @@ def main():
     with (save_dir / "rollouts_config.json").open("w") as f:
         # Skip keys that are not JSON serializable, e.g. torch device.
         config_dict = config.as_dict()
-        
+
         # Convert torch.device objects to strings for JSON serialization
         def convert_devices(obj):
             if isinstance(obj, dict):
@@ -86,9 +90,24 @@ def main():
                 return [convert_devices(item) for item in obj]
             else:
                 return obj
-        
+
         serializable_config = convert_devices(config_dict)
         json.dump(serializable_config, f)
+
+    completed_level_seeds = rollout_metadata["completed_level_seeds"]
+    metadata_to_save = {
+        "level_seeds_file": getattr(config.environment, "level_seeds_file", None),
+        "requested_level_seeds": level_seeds,
+        "completed_level_seeds": completed_level_seeds,
+        "num_requested_level_seeds": len(level_seeds)
+        if level_seeds is not None
+        else None,
+        "num_completed_level_seeds": len(completed_level_seeds),
+    }
+
+    print(f"Saving rollout metadata to {save_dir / 'rollouts_metadata.json'}")
+    with (save_dir / "rollouts_metadata.json").open("w") as f:
+        json.dump(metadata_to_save, f, indent=2)
 
     print(f"Saving rollouts to {save_dir / 'rollouts.pt'}")
 
