@@ -11,13 +11,13 @@ import time
 
 
 def load_level_seeds(config) -> Optional[List[int]]:
-    """Load policy_train level seeds from file if configured.
+    """Load ood_train level seeds from file if configured.
 
     Args:
         config: Configuration object with environment.level_seeds_file path
 
     Returns:
-        List of level seeds for policy training, or None if not configured
+        List of level seeds for OOD detector training, or None if not configured
     """
     level_seeds_file = getattr(config.environment, 'level_seeds_file', None)
     if level_seeds_file is None:
@@ -27,12 +27,12 @@ def load_level_seeds(config) -> Optional[List[int]]:
     with open(level_seeds_file) as f:
         seeds_data = json.load(f)
 
-    # Use policy_train seeds for gathering rollouts (always sequential mode)
-    level_seeds = seeds_data['seeds'].get('policy_train', None)
+    # Use ood_train seeds for gathering rollouts (always sequential mode)
+    level_seeds = seeds_data['seeds'].get('ood_train', None)
     if level_seeds:
-        print(f'  - Loaded {len(level_seeds)} policy_train seeds (mode: sequential)')
+        print(f'  - Loaded {len(level_seeds)} ood_train seeds (mode: sequential)')
     else:
-        print('  - No policy_train seeds in file')
+        print('  - No ood_train seeds in file')
 
     return level_seeds
 
