@@ -52,41 +52,42 @@ class RolloutHelper:
 
         agent = self.agent
         agent.eval()
-        obs = env.reset()
+        with torch.no_grad():
+            obs = env.reset()
 
-        while num_completed < num_rollouts:
-            logit = agent.forward(obs["env_obs"])
+            while num_completed < num_rollouts:
+                logit = agent.forward(obs["env_obs"])
 
-            for i in range(env.num_envs):
-                if not active_rollouts[i]:
-                    continue
-                obs_features = self._get_features_for_env(obs, self.feature_type, i)
-                if gather_all or np.random.rand() < 0.005:
-                    obs_features = self.maybe_convert_to_tensor(obs_features)
-                    if isinstance(obs_features, dict):
-                        observations.extend(v for v in obs_features.values())
-                    elif isinstance(obs_features, list):
-                        observations.extend(obs_features)
+                for i in range(env.num_envs):
+                    if not active_rollouts[i]:
+                        continue
+                    obs_features = self._get_features_for_env(obs, self.feature_type, i)
+                    if gather_all or np.random.rand() < 0.005:
+                        obs_features = self.maybe_convert_to_tensor(obs_features)
+                        if isinstance(obs_features, dict):
+                            observations.extend(v for v in obs_features.values())
+                        elif isinstance(obs_features, list):
+                            observations.extend(obs_features)
+                        else:
+                            observations.append(obs_features)
+
+                action = self._sample_action(logit)
+                obs, reward, done, info = env.step(action)
+                completed_this_step = np.asarray(done, dtype=bool) & active_rollouts
+
+                if return_metadata:
+                    completed_level_seeds.extend(
+                        self._extract_completed_level_seeds(info, completed_this_step)
+                    )
+
+                completed_indices = np.flatnonzero(completed_this_step)
+                num_completed += len(completed_indices)
+
+                for i in completed_indices:
+                    if num_started < num_rollouts:
+                        num_started += 1
                     else:
-                        observations.append(obs_features)
-
-            action = self._sample_action(logit)
-            obs, reward, done, info = env.step(action)
-            completed_this_step = np.asarray(done, dtype=bool) & active_rollouts
-
-            if return_metadata:
-                completed_level_seeds.extend(
-                    self._extract_completed_level_seeds(info, completed_this_step)
-                )
-
-            completed_indices = np.flatnonzero(completed_this_step)
-            num_completed += len(completed_indices)
-
-            for i in completed_indices:
-                if num_started < num_rollouts:
-                    num_started += 1
-                else:
-                    active_rollouts[i] = False
+                        active_rollouts[i] = False
 
         if self.feature_type in ["hidden_obs", "hidden_dist", "obs_dist"]:
             feature_tensors = [[], []]
