@@ -30,6 +30,51 @@ def resolve_action_greedy(config):
     return bool(coord_env_greedy) if coord_env_greedy is not None else False
 
 
+def get_info_value(info, key, index, default=None):
+    if isinstance(info, list):
+        if index >= len(info) or not isinstance(info[index], dict):
+            return default
+        return info[index].get(key, default)
+
+    if isinstance(info, dict):
+        value = info.get(key, default)
+        if hasattr(value, "__getitem__") and not isinstance(value, (str, bytes)):
+            try:
+                return value[index]
+            except (IndexError, KeyError, TypeError):
+                return value
+        return value
+
+    return default
+
+
+def get_info_values(info, key, num_envs, default=None):
+    return [get_info_value(info, key, i, default) for i in range(num_envs)]
+
+
+def get_completed_level_seed(info, index):
+    level_seed = get_info_value(info, "prev_level_seed", index)
+    if level_seed is None:
+        level_seed = get_info_value(info, "level_seed", index)
+
+    if level_seed is None:
+        return None
+    try:
+        level_seed = int(level_seed)
+    except (TypeError, ValueError):
+        return None
+    return None if level_seed < 0 else level_seed
+
+
+def get_seeds_exhausted(info, num_envs):
+    return np.array(
+        [
+            bool(get_info_value(info, "seeds_exhausted", i, False))
+            for i in range(num_envs)
+        ]
+    )
+
+
 def rollout(policy, env, num_episodes, expected_seeds=None, greedy=False):
     """
     Rollout the policy on the environment and collect episode returns.
@@ -56,14 +101,11 @@ def rollout(policy, env, num_episodes, expected_seeds=None, greedy=False):
     completed_seeds = []
     seed_to_return = {}
 
-    # IMPORTANT: Calling reset() consumes the first batch of seeds in sequential mode
-    # The initial reset triggers episodes that we should count
+    # The initial reset starts the first vectorized batch of episodes. Procgen
+    # env creation disables forced reset when explicit level seeds are used.
     print(f"  Calling reset() - this will start the first {env.num_envs} episodes")
     obs = env.reset()
     print(f"  Environment reset complete. Obs shape: {obs.shape}")
-
-    # The environments are now running their first episodes using seeds 0-7
-    # We need to count these episodes when they complete
 
     # Reset episode counter for heuristic policies
     if hasattr(policy, "reset_episode"):
@@ -76,6 +118,7 @@ def rollout(policy, env, num_episodes, expected_seeds=None, greedy=False):
     last_num_completed = 0
     done = None
     info = {}
+    seeds_exhausted = np.array([False] * env.num_envs)
 
     while num_completed < target_episodes:
         if step_count % 100 == 0:
@@ -95,12 +138,11 @@ def rollout(policy, env, num_episodes, expected_seeds=None, greedy=False):
                 print(
                     f"  DEBUG: cumulative_rewards = {[f'{r:.1f}' for r in cumulative_rewards]}"
                 )
-                if "level_seed" in info:
-                    print(f"  DEBUG: level_seeds = {info.get('level_seed', 'N/A')}")
-                if "seeds_exhausted" in info:
-                    print(
-                        f"  DEBUG: seeds_exhausted = {info.get('seeds_exhausted', 'N/A')}"
-                    )
+                print(
+                    "  DEBUG: level_seeds = "
+                    f"{get_info_values(info, 'level_seed', env.num_envs, 'N/A')}"
+                )
+                print(f"  DEBUG: seeds_exhausted = {seeds_exhausted}")
                 last_debug_step = step_count
         else:
             stuck_counter = 0
@@ -113,19 +155,9 @@ def rollout(policy, env, num_episodes, expected_seeds=None, greedy=False):
             cumulative_rewards[i] += reward[i]
 
             if done[i]:
-                # Extract the level seed from info. Use prev_level_seed because
-                # procgen's info updates after reset(), so info["level_seed"] is
-                # the NEXT seed just dispatched, not the one that completed.
-                if isinstance(info, list):
-                    level_seed = info[i].get("prev_level_seed", None)
-                elif isinstance(info, dict) and "prev_level_seed" in info:
-                    level_seed = (
-                        info["prev_level_seed"][i]
-                        if hasattr(info["prev_level_seed"], "__getitem__")
-                        else info["prev_level_seed"]
-                    )
-                else:
-                    level_seed = None
+                # Use prev_level_seed because procgen's info updates after
+                # reset(), so info["level_seed"] is the next dispatched seed.
+                level_seed = get_completed_level_seed(info, i)
 
                 if num_completed < target_episodes:
                     returns.append(cumulative_rewards[i])
@@ -140,13 +172,22 @@ def rollout(policy, env, num_episodes, expected_seeds=None, greedy=False):
                 if hasattr(policy, "reset_episode"):
                     policy.reset_episode()
 
+        seeds_exhausted |= get_seeds_exhausted(info, env.num_envs)
         obs = next_obs
         step_count += 1
+
+        if seeds_exhausted.all() and num_completed < target_episodes:
+            raise RuntimeError(
+                "Sequential level seeds exhausted before rollout completed: "
+                f"{num_completed}/{target_episodes} episodes finished. "
+                "This usually means the seed list was shorter than the requested "
+                "episode count or reset consumed seeds before rollout."
+            )
 
     print()  # New line after progress
 
     # Validation: Check that all expected seeds completed exactly once
-    if expected_seeds:
+    if expected_seeds is not None:
         completed_set = set(completed_seeds)
         expected_set = set(expected_seeds)
 
@@ -179,6 +220,9 @@ def rollout(policy, env, num_episodes, expected_seeds=None, greedy=False):
         print(
             f"    - All expected seeds completed exactly once: {missing_seeds == set() and duplicates == {} and unexpected_seeds == set()}"
         )
+
+        if missing_seeds or duplicates or unexpected_seeds:
+            raise RuntimeError("Seed validation failed during strong re-evaluation.")
 
     return returns, seed_to_return
 

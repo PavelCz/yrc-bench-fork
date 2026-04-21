@@ -5,7 +5,7 @@ import torch
 from procgen import ProcgenEnv
 import YRC.envs.procgen.wrappers as wrappers
 from YRC.envs.procgen.models import ProcgenModel
-from YRC.envs.procgen.policies import EnsemblePolicy, ProcgenPolicy
+from YRC.envs.procgen.policies import EnsemblePolicy as EnsemblePolicy, ProcgenPolicy
 from YRC.core.configs.global_configs import get_global_variable
 
 
@@ -17,19 +17,19 @@ def create_env(
 ):
     common_config = config.common
 
-    # These are the config settigns that might depend on the specific mode, i.e. train, 
+    # These are the config settigns that might depend on the specific mode, i.e. train,
     # val, test
     specific_config = getattr(config, name)
 
     # Get max_steps if specified in config
-    max_steps = getattr(common_config, 'max_steps', None)
-    
+    max_steps = getattr(common_config, "max_steps", None)
+
     # Build kwargs for level seeds if provided
     seed_kwargs = {}
     if level_seeds is not None:
-        seed_kwargs['level_seeds'] = level_seeds
-        seed_kwargs['level_seeds_mode'] = level_seeds_mode
-    
+        seed_kwargs["level_seeds"] = level_seeds
+        seed_kwargs["level_seeds_mode"] = level_seeds_mode
+
     env = ProcgenEnv(
         env_name=common_config.env_name,
         num_envs=common_config.num_envs,
@@ -57,9 +57,10 @@ def create_env(
         )  # normalizing returns, but not the img frames
     env = wrappers.TransposeFrame(env)
     env = wrappers.ScaledFloatFrame(env)
-    
-    # NOTE: this must be done last
-    env = wrappers.HardResetWrapper(env)
+
+    # NOTE: this must be done last. In explicit level-seed mode, a forced reset
+    # consumes the initial vectorized seed batch and discards those completions.
+    env = wrappers.HardResetWrapper(env, force_on_reset=level_seeds is None)
     env.obs_shape = env.observation_space.shape
     return env
 

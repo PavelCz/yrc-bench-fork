@@ -114,7 +114,6 @@ class VecEnv(ABC):
         return self.step_wait()
 
     def render(self, mode="human"):
-        imgs = self.get_images()
         bigimg = "ARGHH"  # tile_images(imgs)
         if mode == "human":
             self.get_viewer().imshow(bigimg)
@@ -414,10 +413,16 @@ class ScaledFloatFrame(VecEnvWrapper):
 
 # NOTE: this only works with Procgen, assuming venv is a baselines environment
 class HardResetWrapper(VecEnvWrapper):
+    def __init__(self, env, force_on_reset=True):
+        self.force_on_reset = force_on_reset
+        super().__init__(venv=env)
+
     def step_wait(self):
         return self.venv.step_wait()
 
     def reset(self):
+        if not self.force_on_reset:
+            return self.venv.reset()
         obs, _, _, _ = self.venv.step(np.array([-1] * self.venv.num_envs))
         return obs
 
