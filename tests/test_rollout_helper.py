@@ -15,6 +15,22 @@ class DummyAgent:
         return torch.zeros((env_obs.shape[0], 2), dtype=torch.float32)
 
 
+class DummyActingAgent:
+    def __init__(self):
+        self.observations = []
+        self.reset_masks = []
+
+    def eval(self):
+        return self
+
+    def reset(self, should_reset):
+        self.reset_masks.append(np.asarray(should_reset).tolist())
+
+    def act(self, obs, greedy=False):
+        self.observations.append(obs.copy())
+        return np.array([7, 8], dtype=np.int32)
+
+
 class DummyEnv:
     def __init__(self):
         self.num_envs = 2
@@ -57,6 +73,31 @@ class DummySequentialEnv:
             info = [{"prev_level_seed": 101}, {}]
         else:
             obs = {"env_obs": np.array([[12.0], [22.0]], dtype=np.float32)}
+            done = np.array([True, True], dtype=bool)
+            info = [{"prev_level_seed": 303}, {"prev_level_seed": 202}]
+        return obs, reward, done, info
+
+
+class DummyRawSequentialEnv:
+    def __init__(self):
+        self.num_envs = 2
+        self._step_idx = 0
+        self.actions = []
+
+    def reset(self):
+        self._step_idx = 0
+        return np.array([[10.0], [20.0]], dtype=np.float32)
+
+    def step(self, action):
+        self.actions.append(np.asarray(action).tolist())
+        self._step_idx += 1
+        reward = np.zeros(self.num_envs, dtype=np.float32)
+        if self._step_idx == 1:
+            obs = np.array([[11.0], [21.0]], dtype=np.float32)
+            done = np.array([True, False], dtype=bool)
+            info = [{"prev_level_seed": 101}, {}]
+        else:
+            obs = np.array([[12.0], [22.0]], dtype=np.float32)
             done = np.array([True, True], dtype=bool)
             info = [{"prev_level_seed": 303}, {"prev_level_seed": 202}]
         return obs, reward, done, info
@@ -129,3 +170,22 @@ def test_rollout_helper_flushes_observation_chunks():
         [11.0, 21.0],
     ]
     assert metadata["completed_level_seeds"] == [101, 303, 202]
+
+
+def test_rollout_helper_steps_raw_env_with_acting_policy_actions():
+    env = DummyRawSequentialEnv()
+    agent = DummyActingAgent()
+    helper = RolloutHelper(make_config(), env, agent=agent)
+
+    observations, metadata = helper.gather_acting_policy_rollouts(
+        env,
+        num_rollouts=3,
+        gather_all=True,
+        return_metadata=True,
+    )
+
+    assert [obs.item() for obs in observations] == [10.0, 20.0, 11.0, 21.0]
+    assert metadata["completed_level_seeds"] == [101, 303, 202]
+    assert env.actions == [[7, 8], [7, 8]]
+    assert len(agent.observations) == 2
+    assert agent.reset_masks == [[True, True], [True, False], [True, True]]

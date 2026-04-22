@@ -7,9 +7,11 @@ from YRC.core.utils import to_tensor
 
 
 class RolloutHelper:
-    def __init__(self, config, env):
+    def __init__(self, config, env=None, agent=None):
         self.args = config.coord_policy
-        if config.coord_policy.collect_data_agent == "weak":
+        if agent is not None:
+            self.agent = agent
+        elif config.coord_policy.collect_data_agent == "weak":
             self.agent = env.weak_agent
         elif config.coord_policy.collect_data_agent == "strong":
             self.agent = env.strong_agent
@@ -166,6 +168,90 @@ class RolloutHelper:
             else:
                 if not return_list:
                     observations = torch.stack(observations)
+        if return_metadata:
+            return observations, {"completed_level_seeds": completed_level_seeds}
+        return observations
+
+    def gather_acting_policy_rollouts(
+        self,
+        env,
+        num_rollouts: int,
+        gather_all=False,
+        return_metadata=False,
+        chunk_size: Optional[int] = None,
+        chunk_callback: Optional[Callable[[List[torch.Tensor]], None]] = None,
+    ) -> Union[List[torch.Tensor], Tuple[List[torch.Tensor], Dict[str, Any]]]:
+        """Gather observations by stepping a raw environment with an acting policy.
+
+        This path bypasses CoordEnv, so it does not compute coordination features or
+        reinterpret acting-policy actions as weak/strong switch actions.
+        """
+        if self.feature_type != "obs":
+            raise NotImplementedError(
+                "Direct acting-policy rollout collection currently supports "
+                f"feature_type='obs' only, got {self.feature_type!r}."
+            )
+        if num_rollouts <= 0:
+            raise ValueError(f"num_rollouts must be positive, got {num_rollouts}")
+        if chunk_callback is not None and (chunk_size is None or chunk_size <= 0):
+            raise ValueError(
+                f"chunk_size must be positive when chunk_callback is set, got "
+                f"{chunk_size}"
+            )
+
+        observations = []
+        completed_level_seeds = []
+        num_completed = 0
+        num_started = min(num_rollouts, env.num_envs)
+        active_rollouts = np.zeros(env.num_envs, dtype=bool)
+        active_rollouts[:num_started] = True
+
+        agent = self.agent
+        agent.eval()
+        with torch.no_grad():
+            obs = env.reset()
+            if hasattr(agent, "reset"):
+                agent.reset(np.array([True] * env.num_envs))
+
+            while num_completed < num_rollouts:
+                for i in range(env.num_envs):
+                    if not active_rollouts[i]:
+                        continue
+                    if gather_all or np.random.rand() < 0.005:
+                        observations.append(self.maybe_convert_to_tensor(obs[i]))
+                        if (
+                            chunk_callback is not None
+                            and chunk_size is not None
+                            and len(observations) >= chunk_size
+                        ):
+                            chunk_callback(observations)
+                            observations = []
+
+                action = agent.act(obs, greedy=False)
+                obs, reward, done, info = env.step(action)
+                completed_this_step = np.asarray(done, dtype=bool) & active_rollouts
+
+                if hasattr(agent, "reset"):
+                    agent.reset(done)
+
+                if return_metadata:
+                    completed_level_seeds.extend(
+                        self._extract_completed_level_seeds(info, completed_this_step)
+                    )
+
+                completed_indices = np.flatnonzero(completed_this_step)
+                num_completed += len(completed_indices)
+
+                for i in completed_indices:
+                    if num_started < num_rollouts:
+                        num_started += 1
+                    else:
+                        active_rollouts[i] = False
+
+        if chunk_callback is not None and observations:
+            chunk_callback(observations)
+            observations = []
+
         if return_metadata:
             return observations, {"completed_level_seeds": completed_level_seeds}
         return observations

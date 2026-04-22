@@ -1,6 +1,5 @@
 import flags
 import YRC.core.configs.utils as config_utils
-import YRC.core.environment as env_factory
 from YRC.core.configs.global_configs import get_global_variable
 from YRC.core.level_seeds import load_level_seed_splits
 from pathlib import Path
@@ -9,6 +8,7 @@ from YRC.core.rollout_helper import RolloutHelper
 import torch
 import json
 import time
+import importlib
 
 
 DEFAULT_ROLLOUT_CHUNK_SIZE = 10_000
@@ -55,6 +55,46 @@ def write_rollout_config(config, path: Path):
         json.dump(serializable_config, f)
 
 
+def get_gather_agent_path(config):
+    """Match the train-split agent mapping used by env_factory.make()."""
+    collect_data_agent = config.coord_policy.collect_data_agent
+    if config.general.skyline:
+        weak_agent_path = config.agents.weak
+        strong_agent_path = config.agents.strong
+    else:
+        weak_agent_path = config.agents.sim_weak
+        strong_agent_path = config.agents.weak
+
+    if collect_data_agent == "weak":
+        return weak_agent_path, "weak"
+    if collect_data_agent == "strong":
+        return strong_agent_path, "strong"
+    raise ValueError(f"Unknown collect_data_agent {collect_data_agent!r}")
+
+
+def make_gather_env_and_agent(config, level_seeds):
+    if config.general.benchmark != "procgen":
+        raise NotImplementedError(
+            "Fast gather_rollouts.py path currently supports procgen only."
+        )
+
+    procgen_env = importlib.import_module("YRC.envs.procgen")
+    env_split = "test" if config.general.skyline else "train"
+    env = procgen_env.create_env(
+        env_split,
+        config.environment,
+        level_seeds=level_seeds,
+        level_seeds_mode="sequential",
+        render_mode=None,
+    )
+    env.name = config.environment.common.env_name
+
+    agent_path, agent_label = get_gather_agent_path(config)
+    print(f"Loading gather agent ({agent_label}) from {agent_path}")
+    agent = procgen_env.load_policy(agent_path, env)
+    return env, agent
+
+
 def main():
     total_start = time.time()
 
@@ -87,19 +127,14 @@ def main():
         )
         rollout_chunk_size = None
 
-    print("Creating environments...")
+    print("Creating gather environment and policy...")
     start = time.time()
-    envs = env_factory.make(
-        config,
-        level_seeds_by_split={"train": level_seeds},
-        level_seeds_mode="sequential",
-        require_level_seeds_for_splits=("train",),
-    )
-    print(f"Environments created in {time.time() - start:.2f}s")
+    gather_env, gather_agent = make_gather_env_and_agent(config, level_seeds)
+    print(f"Gather environment and policy created in {time.time() - start:.2f}s")
 
     print(f"Gathering {num_rollout_levels} rollouts...")
     start = time.time()
-    rollout_helper = RolloutHelper(config, envs["train"])
+    rollout_helper = RolloutHelper(config, gather_env, agent=gather_agent)
     chunk_writer = None
     if rollout_chunk_size is not None:
         print(
@@ -109,22 +144,20 @@ def main():
         chunk_writer = RolloutChunkWriter(
             rollout_paths["manifest"], rollout_paths["chunks_dir"]
         )
-        rollout_obs, rollout_metadata = rollout_helper.gather_rollouts(
-            envs["train"],
+        rollout_obs, rollout_metadata = rollout_helper.gather_acting_policy_rollouts(
+            gather_env,
             num_rollout_levels,
             gather_all=True,
-            return_list=True,
             return_metadata=True,
             chunk_size=rollout_chunk_size,
             chunk_callback=chunk_writer.write_chunk,
         )
     else:
         print("Chunked rollout saving disabled: keeping all observations in memory")
-        rollout_obs, rollout_metadata = rollout_helper.gather_rollouts(
-            envs["train"],
+        rollout_obs, rollout_metadata = rollout_helper.gather_acting_policy_rollouts(
+            gather_env,
             num_rollout_levels,
             gather_all=True,
-            return_list=True,
             return_metadata=True,
         )
     print(f"Rollouts gathered in {time.time() - start:.2f}s")
@@ -198,6 +231,7 @@ def main():
             torch.save(rollout_obs, f)
     print(f"Rollouts saved in {time.time() - start:.2f}s")
 
+    gather_env.close()
     print(f"Total time: {time.time() - total_start:.2f}s")
 
 
