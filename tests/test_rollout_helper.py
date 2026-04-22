@@ -102,3 +102,30 @@ def test_rollout_helper_supports_arbitrary_rollout_counts():
 
     assert len(observations) == 4
     assert metadata["completed_level_seeds"] == [101, 303, 202]
+
+
+def test_rollout_helper_flushes_observation_chunks():
+    env = DummySequentialEnv()
+    helper = RolloutHelper(make_config(), env)
+    chunks = []
+
+    def record_chunk(observations):
+        chunks.append([obs.clone() for obs in observations])
+
+    with patch("YRC.core.rollout_helper.get_global_variable", return_value="procgen"):
+        observations, metadata = helper.gather_rollouts(
+            env,
+            num_rollouts=3,
+            gather_all=True,
+            return_list=True,
+            return_metadata=True,
+            chunk_size=2,
+            chunk_callback=record_chunk,
+        )
+
+    assert observations == []
+    assert [[obs.item() for obs in chunk] for chunk in chunks] == [
+        [10.0, 20.0],
+        [11.0, 21.0],
+    ]
+    assert metadata["completed_level_seeds"] == [101, 303, 202]

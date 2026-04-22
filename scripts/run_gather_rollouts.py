@@ -28,6 +28,7 @@ GATHER_DEFAULTS = {
     "random_percent": 0,
     "use_bg": True,
     "query_cost": 0,
+    "rollout_chunk_size": None,
 }
 
 # Seed mapping for each experiment ID
@@ -98,6 +99,8 @@ def build_sbatch_command(job_name: str, gather_args: dict) -> str:
     ]
     if gather_args["rollout_levels"] is not None:
         python_args.append(f"-rollout_levels {gather_args['rollout_levels']}")
+    if gather_args["rollout_chunk_size"] is not None:
+        python_args.append(f"-rollout_chunk_size {gather_args['rollout_chunk_size']}")
     python_cmd = " ".join(python_args)
 
     sbatch_script = f"""#!/bin/bash
@@ -195,6 +198,15 @@ def main():
         default=GATHER_DEFAULTS["query_cost"],
         help="Query cost",
     )
+    parser.add_argument(
+        "--rollout-chunk-size",
+        type=int,
+        default=GATHER_DEFAULTS["rollout_chunk_size"],
+        help=(
+            "Maximum observations per rollout chunk in gather_rollouts.py. "
+            "Omit to use the gather script default; use 0 to disable chunked saving."
+        ),
+    )
     # Override checkpoints if needed
     parser.add_argument("--sim", help="Override sim weak checkpoint path")
     parser.add_argument("--weak", help="Override weak checkpoint path")
@@ -223,10 +235,8 @@ def main():
                 args.num_levels if args.num_levels is not None else [None]
             )
         ]
-        print(
-            "Rollout level counts: "
-            f"{rollout_level_counts}"
-        )
+        print(f"Rollout level counts: {rollout_level_counts}")
+        print(f"Rollout chunk size: {args.rollout_chunk_size}")
         print()
 
     requested_rollout_levels = (
@@ -302,6 +312,7 @@ def main():
                 "use_bg": args.use_bg,
                 "seed": seed,
                 "query_cost": args.query_cost,
+                "rollout_chunk_size": args.rollout_chunk_size,
                 "wandb_mode": args.wandb_mode,
                 "level_seeds_file": str(level_seeds_file),
                 **checkpoints,

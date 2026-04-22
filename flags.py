@@ -331,6 +331,15 @@ def make():
             "If omitted, gather_rollouts.py uses all available ood_train seeds."
         ),
     )
+    parser.add_argument(
+        "-rollout_chunk_size",
+        "--rollout_chunk_size",
+        type=int,
+        help=(
+            "maximum observations per rollout chunk in gather_rollouts.py. "
+            "Use 0 to disable chunked saving."
+        ),
+    )
 
     parser.add_argument(
         "-batch_size",

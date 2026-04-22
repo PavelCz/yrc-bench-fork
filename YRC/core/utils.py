@@ -4,6 +4,10 @@ from typing import List, Optional
 import torch
 
 from YRC.core.configs import ConfigDict
+from YRC.core.rollout_storage import (
+    is_rollout_chunk_manifest,
+    load_chunked_rollouts,
+)
 
 
 def to_tensor(data):
@@ -146,8 +150,11 @@ def load_rollouts_from_file(
     with rollouts_config_path.open("r") as f:
         rollouts_config_loaded = json.load(f)
 
-    with rollouts_data_path.open("rb") as f:
-        rollout_obs = torch.load(f)
+    if is_rollout_chunk_manifest(rollouts_data_path):
+        rollout_obs = load_chunked_rollouts(rollouts_data_path)
+    else:
+        with rollouts_data_path.open("rb") as f:
+            rollout_obs = torch.load(f)
 
     # for key, value in rollouts_config.items():
     #     if rollouts_config_loaded[key] != value:
@@ -166,14 +173,21 @@ def load_rollouts_from_file(
 def resolve_rollout_paths(rollout_path: Path):
     rollout_path = Path(rollout_path)
     if rollout_path.is_file():
-        if rollout_path.suffix != ".pt":
-            raise ValueError(f"Expected rollout file to end in .pt, got {rollout_path}")
         data_path = rollout_path
-        if rollout_path.stem.startswith("rollouts_"):
-            suffix = rollout_path.stem[len("rollouts_") :]
+        if rollout_path.suffix == ".pt":
+            if rollout_path.stem.startswith("rollouts_"):
+                suffix = rollout_path.stem[len("rollouts_") :]
+                config_path = rollout_path.with_name(f"rollouts_config_{suffix}.json")
+            else:
+                config_path = rollout_path.with_name("rollouts_config.json")
+        elif is_rollout_chunk_manifest(rollout_path):
+            suffix = rollout_path.stem[len("rollouts_manifest_") :]
             config_path = rollout_path.with_name(f"rollouts_config_{suffix}.json")
         else:
-            config_path = rollout_path.with_name("rollouts_config.json")
+            raise ValueError(
+                "Expected rollout file to be a .pt file or rollouts_manifest*.json, "
+                f"got {rollout_path}"
+            )
         return config_path, data_path
 
     config_path = rollout_path / "rollouts_config.json"
@@ -182,16 +196,24 @@ def resolve_rollout_paths(rollout_path: Path):
         return config_path, data_path
 
     matching_rollout_files = sorted(rollout_path.glob("rollouts_*levels.pt"))
-    if len(matching_rollout_files) == 1:
-        return resolve_rollout_paths(matching_rollout_files[0])
-    if len(matching_rollout_files) > 1:
-        available = ", ".join(path.name for path in matching_rollout_files)
+    matching_manifests = sorted(rollout_path.glob("rollouts_manifest_*levels.json"))
+    matching_data_files = matching_rollout_files + matching_manifests
+    if len(matching_data_files) == 1:
+        return resolve_rollout_paths(matching_data_files[0])
+    if len(matching_data_files) > 1:
+        available = ", ".join(path.name for path in matching_data_files)
         raise ValueError(
             f"Multiple rollout datasets found in {rollout_path}: {available}. "
-            "Pass the specific rollout .pt file you want to load."
+            "Pass the specific rollout .pt file or rollout manifest you want to load."
+        )
+
+    if data_path.exists() != config_path.exists():
+        missing = config_path if data_path.exists() else data_path
+        raise FileNotFoundError(
+            f"Incomplete legacy rollout dataset in {rollout_path}; missing {missing}."
         )
 
     raise FileNotFoundError(
         f"Could not find rollout dataset in {rollout_path}. Expected rollouts.pt "
-        "or a single rollouts_*levels.pt file."
+        "or a single rollouts_*levels.pt / rollouts_manifest_*levels.json file."
     )

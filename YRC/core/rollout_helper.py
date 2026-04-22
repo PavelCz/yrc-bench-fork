@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import torch
 from YRC.core.configs.global_configs import get_global_variable
 from torch.distributions.categorical import Categorical
@@ -23,6 +23,8 @@ class RolloutHelper:
         gather_all=False,
         return_list=False,
         return_metadata=False,
+        chunk_size: Optional[int] = None,
+        chunk_callback: Optional[Callable[[List[torch.Tensor]], None]] = None,
     ) -> Union[
         torch.Tensor,
         List[torch.Tensor],
@@ -39,9 +41,26 @@ class RolloutHelper:
             return_list: If set to False, the list of observations is concatenated into
                 a single contiguous tensor. If set to True, instead, the observations
                 are returned as a list of tensors.
+            chunk_size: If set with chunk_callback, flush observations when this many
+                observations have accumulated.
+            chunk_callback: Callback that receives flushed observation lists. This is
+                intended for streaming Procgen observation rollouts to disk.
         """
         if num_rollouts <= 0:
             raise ValueError(f"num_rollouts must be positive, got {num_rollouts}")
+        if chunk_callback is not None:
+            if not return_list:
+                raise ValueError("chunk_callback requires return_list=True.")
+            if self.feature_type != "obs":
+                raise NotImplementedError(
+                    "Chunked rollout flushing currently supports feature_type='obs' "
+                    f"only, got {self.feature_type!r}."
+                )
+            if chunk_size is None or chunk_size <= 0:
+                raise ValueError(
+                    f"chunk_size must be positive when chunk_callback is set, got "
+                    f"{chunk_size}"
+                )
 
         observations = []
         completed_level_seeds = []
@@ -70,6 +89,13 @@ class RolloutHelper:
                             observations.extend(obs_features)
                         else:
                             observations.append(obs_features)
+                        if (
+                            chunk_callback is not None
+                            and chunk_size is not None
+                            and len(observations) >= chunk_size
+                        ):
+                            chunk_callback(observations)
+                            observations = []
 
                 action = self._sample_action(logit)
                 obs, reward, done, info = env.step(action)
@@ -88,6 +114,10 @@ class RolloutHelper:
                         num_started += 1
                     else:
                         active_rollouts[i] = False
+
+        if chunk_callback is not None and observations:
+            chunk_callback(observations)
+            observations = []
 
         if self.feature_type in ["hidden_obs", "hidden_dist", "obs_dist"]:
             feature_tensors = [[], []]
