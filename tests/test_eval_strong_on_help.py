@@ -18,9 +18,11 @@ from eval_strong_on_help import (
     replay_actions_then_expert,
     reset_timeout_cap,
     load_reval_config,
+    make_env_config,
     rollout_coordination_sanity,
     validate_sanity_matches,
 )
+from YRC.core.configs.config import ConfigDict
 
 
 def test_extract_point_record_normalizes_help_fields():
@@ -86,6 +88,28 @@ def test_load_reval_config_prefers_sibling_config_without_cli_overrides(
     assert loaded_config["eval_mode"] is False
     assert loaded_config["overwrite"] is True
     assert loaded_config["use_wandb"] is False
+
+
+def test_make_env_config_clones_configdict_without_deepcopy_protocol():
+    original_env_config = ConfigDict(
+        common={
+            "num_envs": 4,
+            "num_threads": 4,
+            "max_steps": None,
+            "env_name": "coinrun",
+        },
+        train={"num_levels": 1},
+    )
+    config = SimpleNamespace(environment=original_env_config)
+
+    cloned_env_config = make_env_config(config, num_envs=1, max_steps=1004)
+
+    assert cloned_env_config.common.num_envs == 1
+    assert cloned_env_config.common.num_threads == 1
+    assert cloned_env_config.common.max_steps == 1004
+    assert original_env_config.common.num_envs == 4
+    assert original_env_config.common.num_threads == 4
+    assert original_env_config.common.max_steps is None
 
 
 def test_build_point_comparison_no_help_returns_nan_values():

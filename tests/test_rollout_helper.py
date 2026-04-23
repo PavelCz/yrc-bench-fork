@@ -126,6 +126,7 @@ def test_rollout_helper_records_only_first_completed_seed_per_env():
         )
 
     assert metadata["completed_level_seeds"] == [101, 202]
+    assert metadata["completed_rollout_observation_counts"] == [1, 2]
 
 
 def test_rollout_helper_supports_arbitrary_rollout_counts():
@@ -143,6 +144,7 @@ def test_rollout_helper_supports_arbitrary_rollout_counts():
 
     assert len(observations) == 4
     assert metadata["completed_level_seeds"] == [101, 303, 202]
+    assert metadata["completed_rollout_observation_counts"] == [1, 1, 2]
 
 
 def test_rollout_helper_flushes_observation_chunks():
@@ -170,6 +172,7 @@ def test_rollout_helper_flushes_observation_chunks():
         [11.0, 21.0],
     ]
     assert metadata["completed_level_seeds"] == [101, 303, 202]
+    assert metadata["completed_rollout_observation_counts"] == [1, 1, 2]
 
 
 def test_rollout_helper_steps_raw_env_with_acting_policy_actions():
@@ -186,6 +189,7 @@ def test_rollout_helper_steps_raw_env_with_acting_policy_actions():
 
     assert [obs.item() for obs in observations] == [10.0, 20.0, 11.0, 21.0]
     assert metadata["completed_level_seeds"] == [101, 303, 202]
+    assert metadata["completed_rollout_observation_counts"] == [1, 1, 2]
     assert env.actions == [[7, 8], [7, 8]]
     assert len(agent.observations) == 2
     assert agent.reset_masks == [[True, True], [True, False], [True, True]]

@@ -26,6 +26,7 @@ TRAIN_DEFAULTS = {
     "cp_method": "DeepSVDD",
     "num_rollouts": 64,
     "query_cost": 0,
+    "rollout_max_levels": None,
 }
 
 # Seed mapping for each experiment ID
@@ -68,6 +69,8 @@ def build_sbatch_command(job_name: str, train_args: dict) -> str:
         f"-seed {train_args['seed']}",
         "-over",
     ]
+    if train_args["rollout_max_levels"] is not None:
+        python_args.append(f"-rollout_max_levels {train_args['rollout_max_levels']}")
     python_cmd = " ".join(python_args)
 
     sbatch_script = f"""#!/bin/bash
@@ -164,6 +167,15 @@ def main():
         "--rollout-dir",
         help="Override rollout directory path, or pass a specific rollout .pt file",
     )
+    parser.add_argument(
+        "--rollout-max-levels",
+        type=int,
+        default=TRAIN_DEFAULTS["rollout_max_levels"],
+        help=(
+            "Maximum completed rollout levels to load from the selected rollout "
+            "artifact. Omit to use the full largest artifact."
+        ),
+    )
     # Override checkpoints if needed
     parser.add_argument("--sim", help="Override sim weak checkpoint path")
     parser.add_argument("--weak", help="Override weak checkpoint path")
@@ -187,6 +199,7 @@ def main():
         print(f"Feature type: {args.feature_type}")
         print(f"Prefix: {args.prefix}")
         print(f"Experiment IDs: {args.exp_ids}")
+        print(f"Rollout max levels: {args.rollout_max_levels}")
         print()
 
     # Loop over experiment IDs
@@ -238,6 +251,7 @@ def main():
             print(f"  Weak:   {checkpoints['weak']}")
             print(f"  Strong: {checkpoints['strong']}")
             print(f"  Rollout dir: {rollout_dir}")
+            print(f"  Rollout max levels: {args.rollout_max_levels}")
             print(f"  Seed: {seed}")
             print()
             continue
@@ -252,6 +266,7 @@ def main():
             "num_rollouts": args.num_rollouts,
             "query_cost": args.query_cost,
             "rollout_dir": rollout_dir,
+            "rollout_max_levels": args.rollout_max_levels,
             "seed": seed,
             **checkpoints,
         }

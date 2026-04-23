@@ -166,10 +166,18 @@ def main():
     write_rollout_config(config, rollout_paths["config"])
 
     completed_level_seeds = rollout_metadata["completed_level_seeds"]
+    completed_observation_counts = rollout_metadata[
+        "completed_rollout_observation_counts"
+    ]
     if len(completed_level_seeds) != num_rollout_levels:
         raise ValueError(
             f"Expected {num_rollout_levels} completed rollout seeds, but recorded "
             f"{len(completed_level_seeds)}."
+        )
+    if len(completed_observation_counts) != num_rollout_levels:
+        raise ValueError(
+            f"Expected {num_rollout_levels} completed rollout observation counts, "
+            f"but recorded {len(completed_observation_counts)}."
         )
     metadata_to_save = {
         "level_seeds_file": getattr(config.environment, "level_seeds_file", None),
@@ -177,6 +185,7 @@ def main():
         "requested_rollout_levels": requested_rollout_levels,
         "requested_level_seeds": level_seeds,
         "completed_level_seeds": completed_level_seeds,
+        "completed_rollout_observation_counts": completed_observation_counts,
         "num_requested_level_seeds": len(level_seeds)
         if level_seeds is not None
         else None,
@@ -218,6 +227,7 @@ def main():
                 "feature_type": config.coord_policy.feature_type,
                 "num_rollout_levels": num_rollout_levels,
                 "rollout_chunk_size": rollout_chunk_size,
+                "completed_rollout_observation_counts": completed_observation_counts,
             }
         )
         print(

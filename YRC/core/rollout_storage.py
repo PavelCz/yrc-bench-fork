@@ -73,7 +73,9 @@ def is_rollout_chunk_manifest(path: Path) -> bool:
     return path.suffix == ".json" and path.name.startswith("rollouts_manifest_")
 
 
-def load_chunked_rollouts(manifest_path: Path) -> List[torch.Tensor]:
+def load_chunked_rollouts(
+    manifest_path: Path, max_observations: Optional[int] = None
+) -> List[torch.Tensor]:
     manifest_path = Path(manifest_path)
     with manifest_path.open("r") as f:
         manifest = json.load(f)
@@ -84,8 +86,15 @@ def load_chunked_rollouts(manifest_path: Path) -> List[torch.Tensor]:
             f"{manifest.get('format')!r} in {manifest_path}"
         )
 
+    if max_observations is not None and max_observations < 0:
+        raise ValueError(
+            f"max_observations must be non-negative, got {max_observations}"
+        )
+
     rollout_obs: List[torch.Tensor] = []
     for chunk in manifest["chunks"]:
+        if max_observations is not None and len(rollout_obs) >= max_observations:
+            break
         chunk_path = manifest_path.parent / chunk["path"]
         with chunk_path.open("rb") as f:
             chunk_obs = torch.load(f)
@@ -94,11 +103,16 @@ def load_chunked_rollouts(manifest_path: Path) -> List[torch.Tensor]:
                 f"Expected rollout chunk {chunk_path} to contain a list, got "
                 f"{type(chunk_obs)}"
             )
-        rollout_obs.extend(chunk_obs)
+        if max_observations is not None:
+            remaining = max_observations - len(rollout_obs)
+            rollout_obs.extend(chunk_obs[:remaining])
+        else:
+            rollout_obs.extend(chunk_obs)
 
     expected_num_observations = manifest.get("num_observations")
     if (
-        expected_num_observations is not None
+        max_observations is None
+        and expected_num_observations is not None
         and len(rollout_obs) != expected_num_observations
     ):
         raise ValueError(

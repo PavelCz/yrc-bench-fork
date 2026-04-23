@@ -277,7 +277,11 @@ def load_reval_config(args, npz_path: Path):
 
 
 def make_env_config(config, *, num_envs: Optional[int] = None, max_steps=None):
-    env_config = deepcopy(config.environment)
+    as_dict = getattr(config.environment, "as_dict", None)
+    if callable(as_dict):
+        env_config = type(config.environment)(**as_dict())
+    else:
+        env_config = deepcopy(config.environment)
     if num_envs is not None:
         env_config.common.num_envs = int(num_envs)
         env_config.common.num_threads = int(num_envs)

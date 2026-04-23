@@ -484,6 +484,16 @@ def make():
         type=str,
         help="directory containing rollouts, or a specific rollout .pt file",
     )
+    parser.add_argument(
+        "-rollout_max_levels",
+        "--training.rollout_max_levels",
+        type=int,
+        help=(
+            "maximum number of completed rollout levels to load for SVDD training. "
+            "When rollout_dir contains multiple level artifacts, train_svdd.py loads "
+            "the largest artifact and uses the first N levels."
+        ),
+    )
 
     parser.add_argument(
         "-val_rollout_dir",

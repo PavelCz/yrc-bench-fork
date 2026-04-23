@@ -139,22 +139,43 @@ def print_dict_diff(
 
 
 def load_rollouts_from_file(
-    rollout_dir: Path, config: Optional[ConfigDict] = None
+    rollout_dir: Path,
+    config: Optional[ConfigDict] = None,
+    max_levels: Optional[int] = None,
+    prefer_largest: bool = False,
 ) -> List[torch.Tensor]:
     """Reads a ConfigDict and loads the rollouts, i.e. a dataset of collected
     observations from the file. As a sanity check the differences in the passed config
     and the config saved with the rollouts are printed.
     """
-    rollouts_config_path, rollouts_data_path = resolve_rollout_paths(rollout_dir)
+    rollouts_config_path, rollouts_data_path = resolve_rollout_paths(
+        rollout_dir, prefer_largest=prefer_largest
+    )
+    print(f"Loading rollout dataset from {rollouts_data_path}")
 
     with rollouts_config_path.open("r") as f:
         rollouts_config_loaded = json.load(f)
 
+    max_observations = _get_max_observations_for_levels(rollouts_data_path, max_levels)
+    if max_levels is not None:
+        print(
+            f"Using first {max_levels} rollout levels"
+            + (
+                f" ({max_observations} observations)"
+                if max_observations is not None
+                else ""
+            )
+        )
+
     if is_rollout_chunk_manifest(rollouts_data_path):
-        rollout_obs = load_chunked_rollouts(rollouts_data_path)
+        rollout_obs = load_chunked_rollouts(
+            rollouts_data_path, max_observations=max_observations
+        )
     else:
         with rollouts_data_path.open("rb") as f:
             rollout_obs = torch.load(f)
+        if max_observations is not None:
+            rollout_obs = rollout_obs[:max_observations]
 
     # for key, value in rollouts_config.items():
     #     if rollouts_config_loaded[key] != value:
@@ -170,25 +191,10 @@ def load_rollouts_from_file(
     return rollout_obs
 
 
-def resolve_rollout_paths(rollout_path: Path):
+def resolve_rollout_paths(rollout_path: Path, prefer_largest: bool = False):
     rollout_path = Path(rollout_path)
     if rollout_path.is_file():
-        data_path = rollout_path
-        if rollout_path.suffix == ".pt":
-            if rollout_path.stem.startswith("rollouts_"):
-                suffix = rollout_path.stem[len("rollouts_") :]
-                config_path = rollout_path.with_name(f"rollouts_config_{suffix}.json")
-            else:
-                config_path = rollout_path.with_name("rollouts_config.json")
-        elif is_rollout_chunk_manifest(rollout_path):
-            suffix = rollout_path.stem[len("rollouts_manifest_") :]
-            config_path = rollout_path.with_name(f"rollouts_config_{suffix}.json")
-        else:
-            raise ValueError(
-                "Expected rollout file to be a .pt file or rollouts_manifest*.json, "
-                f"got {rollout_path}"
-            )
-        return config_path, data_path
+        return _resolve_rollout_file_paths(rollout_path)
 
     config_path = rollout_path / "rollouts_config.json"
     data_path = rollout_path / "rollouts.pt"
@@ -201,6 +207,14 @@ def resolve_rollout_paths(rollout_path: Path):
     if len(matching_data_files) == 1:
         return resolve_rollout_paths(matching_data_files[0])
     if len(matching_data_files) > 1:
+        if prefer_largest:
+            selected_path = max(matching_data_files, key=_rollout_level_count_from_path)
+            selected_levels = _rollout_level_count_from_path(selected_path)
+            print(
+                f"Multiple rollout datasets found in {rollout_path}; selecting "
+                f"{selected_path.name} ({selected_levels} levels)."
+            )
+            return _resolve_rollout_file_paths(selected_path)
         available = ", ".join(path.name for path in matching_data_files)
         raise ValueError(
             f"Multiple rollout datasets found in {rollout_path}: {available}. "
@@ -217,3 +231,104 @@ def resolve_rollout_paths(rollout_path: Path):
         f"Could not find rollout dataset in {rollout_path}. Expected rollouts.pt "
         "or a single rollouts_*levels.pt / rollouts_manifest_*levels.json file."
     )
+
+
+def _resolve_rollout_file_paths(rollout_path: Path):
+    data_path = Path(rollout_path)
+    if data_path.suffix == ".pt":
+        if data_path.stem.startswith("rollouts_"):
+            suffix = data_path.stem[len("rollouts_") :]
+            config_path = data_path.with_name(f"rollouts_config_{suffix}.json")
+        else:
+            config_path = data_path.with_name("rollouts_config.json")
+    elif is_rollout_chunk_manifest(data_path):
+        suffix = data_path.stem[len("rollouts_manifest_") :]
+        config_path = data_path.with_name(f"rollouts_config_{suffix}.json")
+    else:
+        raise ValueError(
+            "Expected rollout file to be a .pt file or rollouts_manifest*.json, "
+            f"got {data_path}"
+        )
+    return config_path, data_path
+
+
+def _rollout_level_count_from_path(path: Path) -> int:
+    path = Path(path)
+    if path.suffix == ".pt" and path.stem.startswith("rollouts_"):
+        suffix = path.stem[len("rollouts_") :]
+    elif is_rollout_chunk_manifest(path):
+        suffix = path.stem[len("rollouts_manifest_") :]
+    else:
+        raise ValueError(f"Cannot infer rollout level count from {path}")
+
+    if not suffix.endswith("levels"):
+        raise ValueError(f"Cannot infer rollout level count from {path}")
+    level_count_str = suffix[: -len("levels")]
+    try:
+        return int(level_count_str)
+    except ValueError as exc:
+        raise ValueError(f"Cannot infer rollout level count from {path}") from exc
+
+
+def _get_rollout_metadata_path(data_path: Path) -> Path:
+    data_path = Path(data_path)
+    if data_path.suffix == ".pt" and data_path.stem.startswith("rollouts_"):
+        suffix = data_path.stem[len("rollouts_") :]
+    elif is_rollout_chunk_manifest(data_path):
+        suffix = data_path.stem[len("rollouts_manifest_") :]
+    else:
+        return data_path.with_name("rollouts_metadata.json")
+    return data_path.with_name(f"rollouts_metadata_{suffix}.json")
+
+
+def _load_rollout_level_observation_counts(data_path: Path) -> Optional[List[int]]:
+    metadata_path = _get_rollout_metadata_path(data_path)
+    if metadata_path.exists():
+        with metadata_path.open("r") as f:
+            metadata = json.load(f)
+        counts = metadata.get("completed_rollout_observation_counts")
+        if counts is not None:
+            return [int(count) for count in counts]
+
+    if is_rollout_chunk_manifest(data_path):
+        with Path(data_path).open("r") as f:
+            manifest = json.load(f)
+        counts = manifest.get("metadata", {}).get(
+            "completed_rollout_observation_counts"
+        )
+        if counts is not None:
+            return [int(count) for count in counts]
+    return None
+
+
+def _get_max_observations_for_levels(
+    data_path: Path, max_levels: Optional[int]
+) -> Optional[int]:
+    if max_levels is None:
+        return None
+    if max_levels <= 0:
+        raise ValueError(f"rollout max levels must be positive, got {max_levels}")
+
+    artifact_levels = _rollout_level_count_from_path(data_path)
+    if max_levels > artifact_levels:
+        raise ValueError(
+            f"Requested rollout max levels {max_levels}, but selected artifact "
+            f"{data_path} only contains {artifact_levels} levels."
+        )
+    if max_levels == artifact_levels:
+        return None
+
+    observation_counts = _load_rollout_level_observation_counts(data_path)
+    if observation_counts is None:
+        raise ValueError(
+            f"Cannot select the first {max_levels} levels from {data_path} because "
+            "the rollout metadata does not contain per-level observation counts. "
+            "Regather rollouts with the current gather_rollouts.py or pass a "
+            "rollout artifact with exactly the requested level count."
+        )
+    if len(observation_counts) < max_levels:
+        raise ValueError(
+            f"Cannot select the first {max_levels} levels from {data_path}; metadata "
+            f"only contains {len(observation_counts)} per-level counts."
+        )
+    return sum(observation_counts[:max_levels])

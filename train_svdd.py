@@ -19,6 +19,7 @@ import time
 # Algorithms that support training without threshold search.
 ALGORITHMS = ["ood", "lightning_ae"]
 
+
 def main():
     total_start = time.time()
 
@@ -50,7 +51,13 @@ def main():
 
         output_dir = experiment_dir.parent
         rollout_dir = output_dir / config.training.rollout_dir
-        rollout_obs = load_rollouts_from_file(rollout_dir, config)
+        rollout_max_levels = getattr(config.training, "rollout_max_levels", None)
+        rollout_obs = load_rollouts_from_file(
+            rollout_dir,
+            config,
+            max_levels=rollout_max_levels,
+            prefer_largest=True,
+        )
         print(f"Rollouts loaded in {time.time() - start:.2f}s")
 
     print("Processing features...")
@@ -74,7 +81,6 @@ def main():
     print(f"Features processed in {time.time() - start:.2f}s")
 
     if hasattr(policy, "logger"):
-
         save_dir = Path(str(get_global_variable("experiment_dir")))
 
         # Prepare wandb init parameters
@@ -93,7 +99,8 @@ def main():
         exp = wandb.init(**wandb_kwargs)
 
         wandb_logger = WandbLogger(
-            save_dir=save_dir, experiment=exp,
+            save_dir=save_dir,
+            experiment=exp,
         )
         policy.logger = wandb_logger
 

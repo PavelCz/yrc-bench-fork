@@ -66,6 +66,8 @@ class RolloutHelper:
 
         observations = []
         completed_level_seeds = []
+        completed_observation_counts = []
+        current_observation_counts = np.zeros(env.num_envs, dtype=int)
         num_completed = 0
         num_started = min(num_rollouts, env.num_envs)
         active_rollouts = np.zeros(env.num_envs, dtype=bool)
@@ -91,6 +93,7 @@ class RolloutHelper:
                             observations.extend(obs_features)
                         else:
                             observations.append(obs_features)
+                        current_observation_counts[i] += 1
                         if (
                             chunk_callback is not None
                             and chunk_size is not None
@@ -107,6 +110,11 @@ class RolloutHelper:
                     completed_level_seeds.extend(
                         self._extract_completed_level_seeds(info, completed_this_step)
                     )
+                    completed_observation_counts.extend(
+                        self._extract_completed_observation_counts(
+                            current_observation_counts, completed_this_step
+                        )
+                    )
 
                 completed_indices = np.flatnonzero(completed_this_step)
                 num_completed += len(completed_indices)
@@ -114,6 +122,7 @@ class RolloutHelper:
                 for i in completed_indices:
                     if num_started < num_rollouts:
                         num_started += 1
+                        current_observation_counts[i] = 0
                     else:
                         active_rollouts[i] = False
 
@@ -169,7 +178,10 @@ class RolloutHelper:
                 if not return_list:
                     observations = torch.stack(observations)
         if return_metadata:
-            return observations, {"completed_level_seeds": completed_level_seeds}
+            return observations, {
+                "completed_level_seeds": completed_level_seeds,
+                "completed_rollout_observation_counts": completed_observation_counts,
+            }
         return observations
 
     def gather_acting_policy_rollouts(
@@ -201,6 +213,8 @@ class RolloutHelper:
 
         observations = []
         completed_level_seeds = []
+        completed_observation_counts = []
+        current_observation_counts = np.zeros(env.num_envs, dtype=int)
         num_completed = 0
         num_started = min(num_rollouts, env.num_envs)
         active_rollouts = np.zeros(env.num_envs, dtype=bool)
@@ -219,6 +233,7 @@ class RolloutHelper:
                         continue
                     if gather_all or np.random.rand() < 0.005:
                         observations.append(self.maybe_convert_to_tensor(obs[i]))
+                        current_observation_counts[i] += 1
                         if (
                             chunk_callback is not None
                             and chunk_size is not None
@@ -238,6 +253,11 @@ class RolloutHelper:
                     completed_level_seeds.extend(
                         self._extract_completed_level_seeds(info, completed_this_step)
                     )
+                    completed_observation_counts.extend(
+                        self._extract_completed_observation_counts(
+                            current_observation_counts, completed_this_step
+                        )
+                    )
 
                 completed_indices = np.flatnonzero(completed_this_step)
                 num_completed += len(completed_indices)
@@ -245,6 +265,7 @@ class RolloutHelper:
                 for i in completed_indices:
                     if num_started < num_rollouts:
                         num_started += 1
+                        current_observation_counts[i] = 0
                     else:
                         active_rollouts[i] = False
 
@@ -253,7 +274,10 @@ class RolloutHelper:
             observations = []
 
         if return_metadata:
-            return observations, {"completed_level_seeds": completed_level_seeds}
+            return observations, {
+                "completed_level_seeds": completed_level_seeds,
+                "completed_rollout_observation_counts": completed_observation_counts,
+            }
         return observations
 
     def _sample_action(self, logit):
@@ -320,6 +344,15 @@ class RolloutHelper:
             if level_seed is not None:
                 completed_level_seeds.append(level_seed)
         return completed_level_seeds
+
+    def _extract_completed_observation_counts(
+        self, observation_counts: np.ndarray, newly_done: np.ndarray
+    ) -> List[int]:
+        completed_observation_counts = []
+        for i, done in enumerate(newly_done):
+            if done:
+                completed_observation_counts.append(int(observation_counts[i]))
+        return completed_observation_counts
 
     def _get_level_seed(self, info: Any, index: int) -> Optional[int]:
         if isinstance(info, list):
