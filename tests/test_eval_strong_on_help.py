@@ -15,9 +15,11 @@ from eval_strong_on_help import (
     build_point_comparison,
     default_procgen_timeout,
     extract_point_record,
+    dispatch_seeds_for_record,
     replay_actions_then_expert,
     reset_timeout_cap,
     load_reval_config,
+    load_test_dispatch_seeds,
     make_env_config,
     rollout_coordination_sanity,
     validate_sanity_matches,
@@ -160,6 +162,62 @@ def test_build_point_comparison_aligns_help_seed_outputs():
     assert comparison["reset_timeout_performance"] == 10.0
     assert comparison["comparison_meta"]["help_seeds"] == [202, 303]
     assert comparison["comparison_meta"]["reset_timeout_caps"] == [504, 500]
+
+
+def test_load_test_dispatch_seeds_uses_ood_eval_split(tmp_path):
+    seeds_file = tmp_path / "seeds.json"
+    seeds_file.write_text(
+        json.dumps(
+            {
+                "seeds": {
+                    "validation": [1, 2],
+                    "ood_eval": [100206, 101041, 100888],
+                }
+            }
+        )
+    )
+    config = SimpleNamespace(
+        environment=SimpleNamespace(level_seeds_file=str(seeds_file))
+    )
+
+    assert load_test_dispatch_seeds(config) == [100206, 101041, 100888]
+
+
+def test_dispatch_seeds_for_record_preserves_original_seed_file_order():
+    record = PointRecord(
+        index=0,
+        threshold=0.5,
+        split="test",
+        level_seeds=[30, 10, 20],
+        level_ood_pred=[False, True, False],
+        first_help_timesteps=[None, 3, None],
+        raw_returns=[3.0, 1.0, 2.0],
+    )
+
+    dispatch = dispatch_seeds_for_record(record, [10, 20, 30, 40])
+
+    assert dispatch == [10, 20, 30]
+
+
+def test_validate_sanity_matches_accepts_reordered_completion():
+    record = PointRecord(
+        index=0,
+        threshold=0.5,
+        split="test",
+        level_seeds=[101, 202],
+        level_ood_pred=[False, True],
+        first_help_timesteps=[None, 3],
+        raw_returns=[1.0, 2.0],
+    )
+    sanity = SanityRolloutResult(
+        level_seeds=[202, 101],
+        level_ood_pred=[True, False],
+        first_help_timesteps=[3, None],
+        raw_returns=[2.0, 1.0],
+        pre_help_actions_by_seed={202: [0, 1], 101: [2]},
+    )
+
+    validate_sanity_matches(record, sanity)
 
 
 def test_timeout_defaults_and_reset_cap_include_help_action():

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from copy import deepcopy
 from dataclasses import dataclass
 import importlib
@@ -196,6 +197,76 @@ def help_indices(record: PointRecord) -> List[int]:
 
 def help_seeds(record: PointRecord) -> List[int]:
     return [record.level_seeds[i] for i in help_indices(record)]
+
+
+def values_by_seed(
+    seeds: List[int],
+    values: List[Any],
+    *,
+    label: str,
+    point_index: int,
+) -> Dict[int, Any]:
+    counts = Counter(seeds)
+    duplicates = {seed: count for seed, count in counts.items() if count > 1}
+    if duplicates:
+        raise AssertionError(
+            f"Point {point_index}: cannot compare {label} by seed because "
+            f"some seeds are duplicated: {duplicates}"
+        )
+    return dict(zip(seeds, values))
+
+
+def load_test_dispatch_seeds(config) -> Optional[List[int]]:
+    level_seeds_file = getattr(config.environment, "level_seeds_file", None)
+    if level_seeds_file is None:
+        return None
+
+    level_seeds_path = Path(level_seeds_file)
+    if not level_seeds_path.exists():
+        print(
+            "Warning: configured level seeds file does not exist, using NPZ "
+            f"completion order as dispatch order: {level_seeds_path}"
+        )
+        return None
+
+    with level_seeds_path.open("r") as f:
+        seed_data = json.load(f)
+
+    seed_splits = seed_data.get("seeds", seed_data)
+    for split_name in ("ood_eval", "test", "eval"):
+        split_seeds = seed_splits.get(split_name)
+        if split_seeds:
+            seeds = [int(seed) for seed in split_seeds]
+            print(
+                f"Using dispatch seed order from {level_seeds_path} "
+                f"split {split_name!r} ({len(seeds)} seeds)"
+            )
+            return seeds
+
+    available = ", ".join(sorted(seed_splits)) or "none"
+    print(
+        "Warning: level seeds file has no ood_eval/test/eval split; using NPZ "
+        f"completion order as dispatch order. Available splits: {available}"
+    )
+    return None
+
+
+def dispatch_seeds_for_record(
+    record: PointRecord,
+    test_dispatch_seeds: Optional[List[int]],
+) -> List[int]:
+    if test_dispatch_seeds is None:
+        return record.level_seeds
+
+    expected_counts = Counter(record.level_seeds)
+    dispatch = [seed for seed in test_dispatch_seeds if seed in expected_counts]
+    if Counter(dispatch) != expected_counts:
+        print(
+            f"Warning: original dispatch seed file does not cover point {record.index} "
+            "exactly; falling back to NPZ seed order for this point."
+        )
+        return record.level_seeds
+    return dispatch
 
 
 def build_point_comparison(
@@ -593,46 +664,88 @@ def rollout_coordination_sanity(
 
 
 def validate_sanity_matches(record: PointRecord, sanity: SanityRolloutResult):
-    if sanity.level_seeds != record.level_seeds:
+    original_seed_counts = Counter(record.level_seeds)
+    sanity_seed_counts = Counter(sanity.level_seeds)
+    if sanity_seed_counts != original_seed_counts:
         raise AssertionError(
-            f"Point {record.index}: level seed order changed.\n"
-            f"Original first 10: {record.level_seeds[:10]}\n"
-            f"Sanity first 10:   {sanity.level_seeds[:10]}"
+            f"Point {record.index}: completed seed set changed.\n"
+            f"Missing: {list((original_seed_counts - sanity_seed_counts).elements())[:10]}\n"
+            f"Unexpected: {list((sanity_seed_counts - original_seed_counts).elements())[:10]}"
         )
 
-    if sanity.level_ood_pred != record.level_ood_pred:
-        mismatches = [
-            seed
-            for seed, expected, actual in zip(
-                record.level_seeds, record.level_ood_pred, sanity.level_ood_pred
-            )
-            if expected != actual
-        ]
+    if sanity.level_seeds != record.level_seeds:
+        print(
+            f"  - Seed completion order changed for point {record.index}; "
+            "validating per-seed behavior instead"
+        )
+
+    original_pred_by_seed = values_by_seed(
+        record.level_seeds,
+        record.level_ood_pred,
+        label="original help decisions",
+        point_index=record.index,
+    )
+    sanity_pred_by_seed = values_by_seed(
+        sanity.level_seeds,
+        sanity.level_ood_pred,
+        label="sanity help decisions",
+        point_index=record.index,
+    )
+    mismatches = [
+        seed
+        for seed, expected in original_pred_by_seed.items()
+        if expected != sanity_pred_by_seed[seed]
+    ]
+    if mismatches:
         raise AssertionError(
             f"Point {record.index}: help decisions changed for "
             f"{len(mismatches)} seeds. First mismatches: {mismatches[:10]}"
         )
 
-    for seed, expected_pred, expected_ts, actual_ts in zip(
+    original_first_help_by_seed = values_by_seed(
         record.level_seeds,
-        record.level_ood_pred,
         record.first_help_timesteps,
+        label="original first help timesteps",
+        point_index=record.index,
+    )
+    sanity_first_help_by_seed = values_by_seed(
+        sanity.level_seeds,
         sanity.first_help_timesteps,
-    ):
+        label="sanity first help timesteps",
+        point_index=record.index,
+    )
+    for seed, expected_pred in original_pred_by_seed.items():
+        expected_ts = original_first_help_by_seed[seed]
+        actual_ts = sanity_first_help_by_seed[seed]
         if expected_pred and expected_ts != actual_ts:
             raise AssertionError(
                 f"Point {record.index}: first help timestep changed for seed {seed}: "
                 f"original={expected_ts}, sanity={actual_ts}"
             )
 
-    if not np.allclose(record.raw_returns, sanity.raw_returns, atol=RETURN_ATOL):
-        diffs = np.abs(np.array(record.raw_returns) - np.array(sanity.raw_returns))
-        max_idx = int(np.argmax(diffs))
+    original_return_by_seed = values_by_seed(
+        record.level_seeds,
+        record.raw_returns,
+        label="original returns",
+        point_index=record.index,
+    )
+    sanity_return_by_seed = values_by_seed(
+        sanity.level_seeds,
+        sanity.raw_returns,
+        label="sanity returns",
+        point_index=record.index,
+    )
+    return_diffs = {
+        seed: abs(original_return_by_seed[seed] - sanity_return_by_seed[seed])
+        for seed in original_return_by_seed
+    }
+    max_seed = max(return_diffs, key=return_diffs.get)
+    if return_diffs[max_seed] > RETURN_ATOL:
         raise AssertionError(
             f"Point {record.index}: sanity returns differ from original. "
-            f"Max diff {diffs[max_idx]:.6g} at seed {record.level_seeds[max_idx]} "
-            f"(original={record.raw_returns[max_idx]}, "
-            f"sanity={sanity.raw_returns[max_idx]})."
+            f"Max diff {return_diffs[max_seed]:.6g} at seed {max_seed} "
+            f"(original={original_return_by_seed[max_seed]}, "
+            f"sanity={sanity_return_by_seed[max_seed]})."
         )
 
 
@@ -779,6 +892,7 @@ def main():
     point_records = [
         extract_point_record(pt_meta, i, split=split) for i, pt_meta in enumerate(meta)
     ]
+    test_dispatch_seeds = load_test_dispatch_seeds(config)
     all_help_seeds = sorted(
         {seed for record in point_records for seed in help_seeds(record)}
     )
@@ -848,7 +962,7 @@ def main():
             create_env_fn,
             config,
             split,
-            record.level_seeds,
+            dispatch_seeds_for_record(record, test_dispatch_seeds),
             weak_agent,
             strong_agent,
             test_eval_info,
