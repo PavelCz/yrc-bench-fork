@@ -118,6 +118,7 @@ class Game {
     Game(std::string name);
     void step();
     void reset();
+    void reset_remaining_timeout(int remaining_steps);
     void render_to_buf(void *buf, int w, int h, bool antialias);
     void parse_options(std::string name, VecOptions opt_vec);
 

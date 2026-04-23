@@ -143,6 +143,11 @@ void Game::reset() {
     action = default_action;
 }
 
+void Game::reset_remaining_timeout(int remaining_steps) {
+    fassert(remaining_steps > 0);
+    timeout = cur_time + remaining_steps;
+}
+
 void Game::step() {
     // If seeds exhausted, just keep returning the frozen state
     if (seeds_exhausted) {

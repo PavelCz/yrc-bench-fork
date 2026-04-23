@@ -14,7 +14,7 @@ except ImportError:
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-MAX_STATE_SIZE = 2 ** 20
+MAX_STATE_SIZE = 2**20
 
 ENV_NAMES = [
     "bigfish",
@@ -58,8 +58,8 @@ EXPLORATION_LEVEL_SEEDS = {
     "maze_fixed_size": 158988835,
     "maze_aisc": 158988835,
     "maze_yellowline": 158988835,
-    "maze_redline_yellowgem":158988835,
-    "maze_yellowstar_redgem":158988835,
+    "maze_redline_yellowgem": 158988835,
+    "maze_yellowstar_redgem": 158988835,
     "heist": 876640971,
     "heist_afh": 876640971,
     "heist_aisc_many_chests": 876640971,
@@ -79,7 +79,7 @@ DISTRIBUTION_MODE_DICT = {
 
 
 def create_random_seed():
-    rand_seed = random.SystemRandom().randint(0, 2 ** 31 - 1)
+    rand_seed = random.SystemRandom().randint(0, 2**31 - 1)
     try:
         # force MPI processes to definitely choose different random seeds
         from mpi4py import MPI
@@ -118,12 +118,17 @@ class BaseProcgenEnv(CEnv):
 
         lib_dir = os.path.join(SCRIPT_DIR, "data", "prebuilt")
         if os.path.exists(lib_dir):
-            assert any([os.path.exists(os.path.join(lib_dir, name)) for name in ["libenv.so", "libenv.dylib", "env.dll"]]), "package is installed, but the prebuilt environment library is missing"
+            assert any(
+                [
+                    os.path.exists(os.path.join(lib_dir, name))
+                    for name in ["libenv.so", "libenv.dylib", "env.dll"]
+                ]
+            ), "package is installed, but the prebuilt environment library is missing"
             assert not debug, "debug has no effect for pre-compiled library"
         else:
             # only compile if we don't find a pre-built binary
             lib_dir = build(debug=debug)
-        
+
         self.combos = self.get_combos()
 
         if render_mode is None:
@@ -143,8 +148,9 @@ class BaseProcgenEnv(CEnv):
         if level_seeds is not None:
             level_seeds_str = ",".join(str(s) for s in level_seeds)
             # Only validate level_seeds_mode when level_seeds is provided
-            assert level_seeds_mode in ("sequential", "container", "random"), \
+            assert level_seeds_mode in ("sequential", "container", "random"), (
                 f'level_seeds_mode must be "sequential", "container", or "random", got "{level_seeds_mode}"'
+            )
             seed_container_mode = level_seeds_mode == "container"
             seed_random_mode = level_seeds_mode == "random"
 
@@ -176,6 +182,7 @@ class BaseProcgenEnv(CEnv):
             c_func_defs=[
                 "int get_state(libenv_env *, int, char *, int);",
                 "void set_state(libenv_env *, int, char *, int);",
+                "void reset_remaining_timeout(libenv_env *, int, int);",
             ],
         )
         # don't use the dict space for actions
@@ -196,6 +203,17 @@ class BaseProcgenEnv(CEnv):
             state = states[env_idx]
             self.call_c_func("set_state", env_idx, state, len(state))
 
+    def reset_remaining_timeout(self, env_idx: int, remaining_steps: int) -> None:
+        if env_idx < 0 or env_idx >= self.num:
+            raise IndexError(f"env_idx must be in [0, {self.num}), got {env_idx}")
+        if remaining_steps <= 0:
+            raise ValueError(f"remaining_steps must be positive, got {remaining_steps}")
+        self.call_c_func(
+            "reset_remaining_timeout",
+            int(env_idx),
+            int(remaining_steps),
+        )
+
     def get_combos(self):
         return [
             ("LEFT", "DOWN"),
@@ -215,7 +233,9 @@ class BaseProcgenEnv(CEnv):
             ("E",),
         ]
 
-    def keys_to_act(self, keys_list: Sequence[Sequence[str]]) -> List[Optional[np.ndarray]]:
+    def keys_to_act(
+        self, keys_list: Sequence[Sequence[str]]
+    ) -> List[Optional[np.ndarray]]:
         """
         Convert list of keys being pressed to actions, used in interactive mode
         """
@@ -248,6 +268,7 @@ class ProcgenGym3Env(BaseProcgenEnv):
     """
     gym3 interface for Procgen
     """
+
     def __init__(
         self,
         num,
@@ -271,14 +292,14 @@ class ProcgenGym3Env(BaseProcgenEnv):
     ):
         self.corruption_type = corruption_type
         self.corruption_severity = corruption_severity
-        assert (
-            distribution_mode in DISTRIBUTION_MODE_DICT
-        ), f'"{distribution_mode}" is not a valid distribution mode.'
+        assert distribution_mode in DISTRIBUTION_MODE_DICT, (
+            f'"{distribution_mode}" is not a valid distribution mode.'
+        )
 
         if distribution_mode == "exploration":
-            assert (
-                env_name in EXPLORATION_LEVEL_SEEDS
-            ), f"{env_name} does not support exploration mode"
+            assert env_name in EXPLORATION_LEVEL_SEEDS, (
+                f"{env_name} does not support exploration mode"
+            )
 
             distribution_mode = DISTRIBUTION_MODE_DICT["hard"]
             assert "num_levels" not in kwargs, "exploration mode overrides num_levels"
@@ -289,38 +310,50 @@ class ProcgenGym3Env(BaseProcgenEnv):
             distribution_mode = DISTRIBUTION_MODE_DICT[distribution_mode]
 
         options = {
-                "center_agent": bool(center_agent),
-                "use_generated_assets": bool(use_generated_assets),
-                "use_monochrome_assets": bool(use_monochrome_assets),
-                "restrict_themes": bool(restrict_themes),
-                "use_backgrounds": bool(use_backgrounds),
-                "paint_vel_info": bool(paint_vel_info),
-                "distribution_mode": distribution_mode,
-                "random_percent": int(random_percent),
-                "key_penalty": int(key_penalty),
-                "step_penalty": int(step_penalty),
-                "rand_region": int(rand_region),
-                "continue_after_coin": bool(continue_after_coin),
-            }
+            "center_agent": bool(center_agent),
+            "use_generated_assets": bool(use_generated_assets),
+            "use_monochrome_assets": bool(use_monochrome_assets),
+            "restrict_themes": bool(restrict_themes),
+            "use_backgrounds": bool(use_backgrounds),
+            "paint_vel_info": bool(paint_vel_info),
+            "distribution_mode": distribution_mode,
+            "random_percent": int(random_percent),
+            "key_penalty": int(key_penalty),
+            "step_penalty": int(step_penalty),
+            "rand_region": int(rand_region),
+            "continue_after_coin": bool(continue_after_coin),
+        }
         if timeout is not None:
             options["timeout"] = int(timeout)
         super().__init__(num, env_name, options, **kwargs)
-    
+
     def observe(self):
         """override!"""
         obs = super().observe()
         if self.corruption_type is not None:
             rgb = obs[1]["rgb"]
-            rgb = [corrupt(img, severity=self.corruption_severity, corruption_name=self.corruption_type) for img in rgb]
+            rgb = [
+                corrupt(
+                    img,
+                    severity=self.corruption_severity,
+                    corruption_name=self.corruption_type,
+                )
+                for img in rgb
+            ]
             rgb = np.array(rgb)
             obs[1]["rgb"] = rgb
         return obs
 
 
+class ProcgenBaselinesVecEnv(gym3.ToBaselinesVecEnv):
+    def reset_remaining_timeout(self, env_idx: int, remaining_steps: int) -> None:
+        self.env.reset_remaining_timeout(env_idx, remaining_steps)
 
 
 def ProcgenEnv(num_envs, env_name, **kwargs):
     """
     Baselines VecEnv interface for Procgen
     """
-    return gym3.ToBaselinesVecEnv(ProcgenGym3Env(num=num_envs, env_name=env_name, **kwargs))
+    return ProcgenBaselinesVecEnv(
+        ProcgenGym3Env(num=num_envs, env_name=env_name, **kwargs)
+    )

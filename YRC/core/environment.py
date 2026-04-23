@@ -259,6 +259,8 @@ class CoordEnv(gym.Env):
                 ),
             }
         )
+        self.timeout_reset_base_steps = None
+        self.timeout_reset_applied = np.zeros(self.num_envs, dtype=bool)
 
     def set_costs(self, test_eval_info):
         length = test_eval_info["episode_length_mean"]
@@ -295,14 +297,30 @@ class CoordEnv(gym.Env):
     def reset(self):
         self.prev_action = None
         self.env_obs = self.base_env.reset()
+        self.timeout_reset_applied[:] = False
         self._reset_agents(np.array([True] * self.num_envs))
         return self.get_obs()
+
+    def enable_timeout_reset(self, remaining_steps: int) -> None:
+        if not hasattr(self.base_env, "reset_remaining_timeout"):
+            raise AttributeError(
+                "Base environment does not support reset_remaining_timeout"
+            )
+        if remaining_steps <= 0:
+            raise ValueError(f"remaining_steps must be positive, got {remaining_steps}")
+        self.timeout_reset_base_steps = int(remaining_steps)
+        self.timeout_reset_applied[:] = False
+
+    def disable_timeout_reset(self) -> None:
+        self.timeout_reset_base_steps = None
+        self.timeout_reset_applied[:] = False
 
     def _reset_agents(self, done):
         self.weak_agent.reset(done)
         self.strong_agent.reset(done)
 
     def step(self, action):
+        self._maybe_reset_remaining_timeout(action)
         env_action = self._compute_env_action(action)
         self.env_obs, env_reward, done, env_info = self.base_env.step(env_action)
 
@@ -316,9 +334,23 @@ class CoordEnv(gym.Env):
 
         reward = self._get_reward(env_reward, action, done)
         self._reset_agents(done)
+        self.timeout_reset_applied[np.asarray(done, dtype=bool)] = False
         self.prev_action = action
 
         return self.get_obs(), reward, done, info
+
+    def _maybe_reset_remaining_timeout(self, action):
+        if self.timeout_reset_base_steps is None:
+            return
+
+        strong_indices = np.flatnonzero(
+            (np.asarray(action) == self.STRONG) & (~self.timeout_reset_applied)
+        )
+        for idx in strong_indices:
+            self.base_env.reset_remaining_timeout(
+                int(idx), self.timeout_reset_base_steps
+            )
+            self.timeout_reset_applied[idx] = True
 
     def _compute_env_action(self, action):
         # NOTE: this method only works with non-recurrent agent models

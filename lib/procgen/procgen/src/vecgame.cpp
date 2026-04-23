@@ -613,4 +613,14 @@ extern "C" {
         // next time VecGame::observe() is called, the correct data will be in the buffers
         venv->games.at(env_idx)->observe();
     }
+
+    LIBENV_API void reset_remaining_timeout(
+        libenv_env *handle,
+        int env_idx,
+        int remaining_steps
+    ) {
+        auto venv = (VecGame *)(handle);
+        venv->wait_for_stepping_threads();
+        venv->games.at(env_idx)->reset_remaining_timeout(remaining_steps);
+    }
 }
