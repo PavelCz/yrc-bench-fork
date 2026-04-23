@@ -17,12 +17,11 @@ import flags
 import YRC.core.configs.utils as config_utils
 import YRC.core.environment as env_core
 import YRC.core.policy as policy_factory
+from YRC.core import Evaluator
 from YRC.core.eval_script_utils import init_eval_wandb_run, save_npz_results
+from YRC.core.level_seeds import load_level_seed_splits
 from YRC.coverage.coverage_search import update_policy_params
 from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
-
-
-RETURN_ATOL = 1e-5
 
 
 @dataclass
@@ -34,19 +33,6 @@ class PointRecord:
     level_ood_pred: List[bool]
     first_help_timesteps: List[Optional[int]]
     raw_returns: List[float]
-
-
-@dataclass
-class SanityRolloutResult:
-    level_seeds: List[int]
-    level_ood_pred: List[bool]
-    first_help_timesteps: List[Optional[int]]
-    raw_returns: List[float]
-    pre_help_actions_by_seed: Dict[int, List[int]]
-
-    @property
-    def seed_to_return(self) -> Dict[int, float]:
-        return dict(zip(self.level_seeds, self.raw_returns))
 
 
 def resolve_action_greedy(config):
@@ -84,10 +70,6 @@ def get_info_value(info, key, index, default=None):
     return default
 
 
-def get_info_values(info, key, num_envs, default=None):
-    return [get_info_value(info, key, i, default) for i in range(num_envs)]
-
-
 def get_completed_level_seed(info, index):
     level_seed = get_info_value(info, "prev_level_seed", index)
     if level_seed is None:
@@ -122,10 +104,10 @@ def normalize_optional_timestep(value: Any) -> Optional[int]:
 
 
 def mean_or_nan(values: Iterable[float]) -> float:
-    values = list(values)
-    if not values:
+    values = np.asarray(list(values), dtype=float)
+    if values.size == 0 or np.isnan(values).all():
         return float("nan")
-    return float(np.mean(values))
+    return float(np.nanmean(values))
 
 
 def default_procgen_timeout(env_name: str) -> int:
@@ -142,12 +124,21 @@ def resolve_base_timeout(config) -> int:
     return default_procgen_timeout(config.environment.common.env_name)
 
 
-def reset_timeout_cap(pre_help_steps: int, base_timeout: int) -> int:
-    if pre_help_steps < 0:
-        raise ValueError(f"pre_help_steps must be non-negative, got {pre_help_steps}")
-    if base_timeout <= 0:
-        raise ValueError(f"base_timeout must be positive, got {base_timeout}")
-    return int(pre_help_steps + base_timeout)
+def resolve_afhp_metric(config) -> str:
+    metric = getattr(config.evaluation, "threshold_sampler", None)
+    if metric == "step_afhp":
+        return "step_afhp"
+    if metric == "level_afhp":
+        return "level_afhp"
+    raise ValueError(f"Unsupported threshold sampler: {metric!r}")
+
+
+def extract_afhp_from_summary(summary: Dict[str, Any], afhp_metric: str) -> float:
+    if afhp_metric == "step_afhp":
+        return float(summary["action_1_frac"]) * 100.0
+    if afhp_metric == "level_afhp":
+        return float(summary["level_afhp"]) * 100.0
+    raise ValueError(f"Unsupported AFHP metric: {afhp_metric!r}")
 
 
 def extract_point_record(pt_meta: Dict[str, Any], index: int, split: str = "test"):
@@ -199,113 +190,47 @@ def help_seeds(record: PointRecord) -> List[int]:
     return [record.level_seeds[i] for i in help_indices(record)]
 
 
-def values_by_seed(
-    seeds: List[int],
-    values: List[Any],
-    *,
-    label: str,
-    point_index: int,
-) -> Dict[int, Any]:
-    counts = Counter(seeds)
-    duplicates = {seed: count for seed, count in counts.items() if count > 1}
-    if duplicates:
-        raise AssertionError(
-            f"Point {point_index}: cannot compare {label} by seed because "
-            f"some seeds are duplicated: {duplicates}"
-        )
-    return dict(zip(seeds, values))
-
-
-def load_test_dispatch_seeds(config) -> Optional[List[int]]:
-    level_seeds_file = getattr(config.environment, "level_seeds_file", None)
-    if level_seeds_file is None:
-        return None
-
-    level_seeds_path = Path(level_seeds_file)
-    if not level_seeds_path.exists():
-        print(
-            "Warning: configured level seeds file does not exist, using NPZ "
-            f"completion order as dispatch order: {level_seeds_path}"
-        )
-        return None
-
-    with level_seeds_path.open("r") as f:
-        seed_data = json.load(f)
-
-    seed_splits = seed_data.get("seeds", seed_data)
-    for split_name in ("ood_eval", "test", "eval"):
-        split_seeds = seed_splits.get(split_name)
-        if split_seeds:
-            seeds = [int(seed) for seed in split_seeds]
-            print(
-                f"Using dispatch seed order from {level_seeds_path} "
-                f"split {split_name!r} ({len(seeds)} seeds)"
-            )
-            return seeds
-
-    available = ", ".join(sorted(seed_splits)) or "none"
-    print(
-        "Warning: level seeds file has no ood_eval/test/eval split; using NPZ "
-        f"completion order as dispatch order. Available splits: {available}"
-    )
-    return None
-
-
-def dispatch_seeds_for_record(
+def build_strong_reval_point(
     record: PointRecord,
-    test_dispatch_seeds: Optional[List[int]],
-) -> List[int]:
-    if test_dispatch_seeds is None:
-        return record.level_seeds
-
-    expected_counts = Counter(record.level_seeds)
-    dispatch = [seed for seed in test_dispatch_seeds if seed in expected_counts]
-    if Counter(dispatch) != expected_counts:
-        print(
-            f"Warning: original dispatch seed file does not cover point {record.index} "
-            "exactly; falling back to NPZ seed order for this point."
-        )
-        return record.level_seeds
-    return dispatch
-
-
-def build_point_comparison(
-    record: PointRecord,
-    sanity_seed_to_return: Dict[int, float],
     strong_seed_to_return: Dict[int, float],
-    reset_seed_results: Dict[int, Dict[str, Any]],
 ) -> Dict[str, Any]:
     indices = help_indices(record)
     seeds = [record.level_seeds[i] for i in indices]
-
     original_help_returns = [record.raw_returns[i] for i in indices]
-    sanity_returns = [sanity_seed_to_return[seed] for seed in seeds]
-    strong_returns = [strong_seed_to_return[seed] for seed in seeds]
-    reset_returns = [reset_seed_results[seed]["return"] for seed in seeds]
-    first_help_timesteps = [record.first_help_timesteps[i] for i in indices]
-
+    strong_returns = [strong_seed_to_return.get(seed, float("nan")) for seed in seeds]
     return {
+        "help_seeds": seeds,
         "original_help_performance": mean_or_nan(original_help_returns),
-        "sanity_performance": mean_or_nan(sanity_returns),
         "strong_performance": mean_or_nan(strong_returns),
-        "reset_timeout_performance": mean_or_nan(reset_returns),
-        "comparison_meta": {
+    }
+
+
+def build_full_budget_point_result(
+    record: PointRecord,
+    summary: Dict[str, Any],
+    afhp_metric: str,
+) -> Dict[str, Any]:
+    achieved_afhp = extract_afhp_from_summary(summary, afhp_metric)
+    performance = float(summary["env_return_mean"])
+    return {
+        "afhp": achieved_afhp,
+        "performance": performance,
+        "meta": {
             "point_idx": record.index,
             "threshold": record.threshold,
-            "split": record.split,
-            "help_requested": bool(seeds),
-            "help_seeds": seeds,
-            "first_help_timesteps": first_help_timesteps,
-            "original_help_returns": original_help_returns,
-            "sanity_returns": sanity_returns,
-            "strong_from_start_returns": strong_returns,
-            "reset_timeout_returns": reset_returns,
-            "reset_timeout_caps": [
-                reset_seed_results[seed]["timeout_cap"] for seed in seeds
-            ],
-            "assertions_passed": True,
+            "achieved_afhp": achieved_afhp,
+            "performance": performance,
+            "summary": summary,
         },
     }
+
+
+def strong_reval_output_path(npz_path: Path) -> Path:
+    return npz_path.with_name(f"{npz_path.stem}_strong_reval.npz")
+
+
+def full_budget_output_path(npz_path: Path) -> Path:
+    return npz_path.with_name(f"{npz_path.stem}_full_budget_eval.npz")
 
 
 def normalize_saved_device(config_dict: Dict[str, Any]) -> None:
@@ -421,73 +346,17 @@ def load_coordination_model_if_needed(policy, config):
             policy.initialize_mahalanobis_detector(config)
 
 
-def reset_policy_state(policy, num_envs: int) -> None:
-    for i in range(num_envs):
-        if hasattr(policy, "reset_rolling_average_buffer"):
-            policy.reset_rolling_average_buffer(i)
-        if hasattr(policy, "reset_episode"):
-            policy.reset_episode(i)
-
-
-def act_coordination_policy(policy, obs, greedy):
-    try:
-        action, _, _ = policy.act(obs, greedy=greedy, return_scores_and_recons=True)
-    except TypeError:
-        action = policy.act(obs, greedy=greedy)
-    return action
-
-
 def rollout(policy, env, num_episodes, expected_seeds=None, greedy=False):
-    """
-    Rollout the policy on a raw environment and collect episode returns.
-    Uses the supplied greedy flag for action selection.
-    """
     returns = []
     num_completed = 0
-    target_episodes = num_episodes
     cumulative_rewards = [0.0] * env.num_envs
     completed_seeds = []
     seed_to_return = {}
 
-    print(f"  Calling reset() - this will start the first {env.num_envs} episodes")
     obs = env.reset()
-    print(f"  Environment reset complete. Obs shape: {obs.shape}")
-
-    step_count = 0
-    last_debug_step = -1000
-    stuck_counter = 0
-    last_num_completed = 0
-    done = None
-    info = {}
     seeds_exhausted = np.array([False] * env.num_envs)
 
-    while num_completed < target_episodes:
-        if step_count % 100 == 0:
-            print(
-                f"  Step {step_count}: Completed {num_completed}/{target_episodes} episodes",
-                end="\r",
-            )
-
-        if num_completed == last_num_completed:
-            stuck_counter += 1
-            if stuck_counter > 5000 and step_count > last_debug_step + 1000:
-                print(
-                    f"\n  DEBUG: No progress for {stuck_counter} steps at {num_completed}/{target_episodes}"
-                )
-                print(f"  DEBUG: done array = {done}")
-                print(
-                    f"  DEBUG: cumulative_rewards = {[f'{r:.1f}' for r in cumulative_rewards]}"
-                )
-                print(
-                    "  DEBUG: level_seeds = "
-                    f"{get_info_values(info, 'level_seed', env.num_envs, 'N/A')}"
-                )
-                print(f"  DEBUG: seeds_exhausted = {seeds_exhausted}")
-                last_debug_step = step_count
-        else:
-            stuck_counter = 0
-            last_num_completed = num_completed
-
+    while num_completed < num_episodes:
         action = policy.act(obs, greedy=greedy)
         next_obs, reward, done, info = env.step(action)
 
@@ -495,26 +364,23 @@ def rollout(policy, env, num_episodes, expected_seeds=None, greedy=False):
             cumulative_rewards[i] += reward[i]
             if done[i]:
                 level_seed = get_completed_level_seed(info, i)
-                if num_completed < target_episodes:
-                    returns.append(float(cumulative_rewards[i]))
+                if num_completed < num_episodes:
+                    episode_return = float(cumulative_rewards[i])
+                    returns.append(episode_return)
                     num_completed += 1
                     if level_seed is not None:
                         completed_seeds.append(level_seed)
-                        seed_to_return[level_seed] = float(cumulative_rewards[i])
-
+                        seed_to_return[level_seed] = episode_return
                 cumulative_rewards[i] = 0.0
 
         seeds_exhausted |= get_seeds_exhausted(info, env.num_envs)
-        obs = next_obs
-        step_count += 1
-
-        if seeds_exhausted.all() and num_completed < target_episodes:
+        if seeds_exhausted.all() and num_completed < num_episodes:
             raise RuntimeError(
                 "Sequential level seeds exhausted before rollout completed: "
-                f"{num_completed}/{target_episodes} episodes finished."
+                f"{num_completed}/{num_episodes} episodes finished."
             )
+        obs = next_obs
 
-    print()
     validate_completed_seeds(completed_seeds, expected_seeds)
     return returns, seed_to_return
 
@@ -523,8 +389,6 @@ def validate_completed_seeds(completed_seeds, expected_seeds):
     if expected_seeds is None:
         return
 
-    from collections import Counter
-
     completed_set = set(completed_seeds)
     expected_set = set(expected_seeds)
     missing_seeds = expected_set - completed_set
@@ -532,304 +396,54 @@ def validate_completed_seeds(completed_seeds, expected_seeds):
     seed_counts = Counter(completed_seeds)
     duplicates = {seed: count for seed, count in seed_counts.items() if count > 1}
 
-    print("\n  Validation summary:")
-    print(f"    - Expected seeds: {len(expected_seeds)}")
-    print(f"    - Completed seeds: {len(completed_set)}")
-    print(f"    - Total episodes: {len(completed_seeds)}")
-    print(
-        "    - All expected seeds completed exactly once: "
-        f"{missing_seeds == set() and duplicates == {} and unexpected_seeds == set()}"
-    )
-
-    if missing_seeds:
-        print(
-            f"\n  ERROR: {len(missing_seeds)} expected seeds did not complete: "
-            f"{sorted(list(missing_seeds))[:10]}..."
-        )
-    if duplicates:
-        print(f"\n  ERROR: Some seeds completed multiple times: {duplicates}")
-    if unexpected_seeds:
-        print(
-            f"\n  WARNING: {len(unexpected_seeds)} unexpected seeds completed: "
-            f"{sorted(list(unexpected_seeds))[:10]}..."
-        )
     if missing_seeds or duplicates or unexpected_seeds:
-        raise RuntimeError("Seed validation failed during strong re-evaluation.")
+        raise RuntimeError(
+            "Seed validation failed during evaluation. "
+            f"missing={sorted(missing_seeds)[:10]}, "
+            f"unexpected={sorted(unexpected_seeds)[:10]}, "
+            f"duplicates={duplicates}"
+        )
 
 
-def rollout_coordination_sanity(
-    policy,
-    env,
+def load_eval_seeds(config) -> List[int]:
+    seed_splits = load_level_seed_splits(config, required_splits=("ood_eval",))
+    return [int(seed) for seed in seed_splits["ood_eval"]]
+
+
+def evaluate_full_budget_point(
     record: PointRecord,
-    greedy=False,
-    defer_to_oracle=False,
-):
-    update_policy_params(policy, record.threshold)
-    policy.eval()
-
-    episode_log = {
-        "cumulative_reward": [0.0] * env.num_envs,
-        "episode_length": [0] * env.num_envs,
-    }
-    current_level_ood_gt = [False] * env.num_envs
-    current_level_ood_pred = [False] * env.num_envs
-    first_help_timestep = [None] * env.num_envs
-    pre_help_actions = [[] for _ in range(env.num_envs)]
-    completed_pre_help_actions: Dict[int, List[int]] = {}
-
-    obs = env.reset()
-    reset_policy_state(policy, env.num_envs)
-
-    completed_seeds = []
-    completed_preds = []
-    completed_first_help = []
-    completed_returns = []
-    num_completed = 0
-    step_count = 0
-    info = {}
-    seeds_exhausted = np.array([False] * env.num_envs)
-
-    while num_completed < len(record.level_seeds):
-        if step_count % 100 == 0:
-            print(
-                f"  Sanity step {step_count}: Completed {num_completed}/{len(record.level_seeds)} episodes",
-                end="\r",
-            )
-
-        obs["episode_timestep"] = episode_log["episode_length"]
-        obs["level_ood_gt"] = np.array(current_level_ood_gt, dtype=bool)
-        action = act_coordination_policy(policy, obs, greedy)
-        original_action = action.copy()
-
-        for i in range(env.num_envs):
-            if original_action[i] == env.STRONG:
-                current_level_ood_pred[i] = True
-            if defer_to_oracle:
-                action[i] = int(current_level_ood_pred[i])
-
-        next_obs, reward, done, info = env.step(action)
-
-        for i in range(env.num_envs):
-            episode_log["cumulative_reward"][i] += float(reward[i])
-            episode_log["episode_length"][i] += 1
-
-            if original_action[i] == env.STRONG and first_help_timestep[i] is None:
-                first_help_timestep[i] = episode_log["episode_length"][i]
-            elif first_help_timestep[i] is None:
-                env_action = get_info_value(info, "env_action", i)
-                if env_action is not None:
-                    pre_help_actions[i].append(int(env_action))
-
-            if done[i]:
-                level_seed = get_completed_level_seed(info, i)
-                if level_seed is not None and num_completed < len(record.level_seeds):
-                    completed_seeds.append(level_seed)
-                    completed_preds.append(current_level_ood_pred[i])
-                    completed_first_help.append(first_help_timestep[i])
-                    completed_returns.append(float(episode_log["cumulative_reward"][i]))
-                    completed_pre_help_actions[level_seed] = list(pre_help_actions[i])
-                    num_completed += 1
-
-                episode_log["cumulative_reward"][i] = 0.0
-                episode_log["episode_length"][i] = 0
-                current_level_ood_pred[i] = False
-                first_help_timestep[i] = None
-                pre_help_actions[i] = []
-                if hasattr(policy, "reset_rolling_average_buffer"):
-                    policy.reset_rolling_average_buffer(i)
-                if hasattr(policy, "reset_episode"):
-                    policy.reset_episode(i)
-
-            current_level_ood_gt[i] = bool(
-                get_info_value(info, "randomize_goal", i, False)
-            )
-
-        seeds_exhausted |= get_seeds_exhausted(info, env.num_envs)
-        if seeds_exhausted.all() and num_completed < len(record.level_seeds):
-            raise RuntimeError(
-                "Sequential level seeds exhausted before sanity rerun completed: "
-                f"{num_completed}/{len(record.level_seeds)} episodes finished."
-            )
-        obs = next_obs
-        step_count += 1
-
-    print()
-    return SanityRolloutResult(
-        level_seeds=completed_seeds,
-        level_ood_pred=completed_preds,
-        first_help_timesteps=completed_first_help,
-        raw_returns=completed_returns,
-        pre_help_actions_by_seed=completed_pre_help_actions,
-    )
-
-
-def validate_sanity_matches(record: PointRecord, sanity: SanityRolloutResult):
-    original_seed_counts = Counter(record.level_seeds)
-    sanity_seed_counts = Counter(sanity.level_seeds)
-    if sanity_seed_counts != original_seed_counts:
-        raise AssertionError(
-            f"Point {record.index}: completed seed set changed.\n"
-            f"Missing: {list((original_seed_counts - sanity_seed_counts).elements())[:10]}\n"
-            f"Unexpected: {list((sanity_seed_counts - original_seed_counts).elements())[:10]}"
-        )
-
-    if sanity.level_seeds != record.level_seeds:
-        print(
-            f"  - Seed completion order changed for point {record.index}; "
-            "validating per-seed behavior instead"
-        )
-
-    original_pred_by_seed = values_by_seed(
-        record.level_seeds,
-        record.level_ood_pred,
-        label="original help decisions",
-        point_index=record.index,
-    )
-    sanity_pred_by_seed = values_by_seed(
-        sanity.level_seeds,
-        sanity.level_ood_pred,
-        label="sanity help decisions",
-        point_index=record.index,
-    )
-    mismatches = [
-        seed
-        for seed, expected in original_pred_by_seed.items()
-        if expected != sanity_pred_by_seed[seed]
-    ]
-    if mismatches:
-        raise AssertionError(
-            f"Point {record.index}: help decisions changed for "
-            f"{len(mismatches)} seeds. First mismatches: {mismatches[:10]}"
-        )
-
-    original_first_help_by_seed = values_by_seed(
-        record.level_seeds,
-        record.first_help_timesteps,
-        label="original first help timesteps",
-        point_index=record.index,
-    )
-    sanity_first_help_by_seed = values_by_seed(
-        sanity.level_seeds,
-        sanity.first_help_timesteps,
-        label="sanity first help timesteps",
-        point_index=record.index,
-    )
-    for seed, expected_pred in original_pred_by_seed.items():
-        expected_ts = original_first_help_by_seed[seed]
-        actual_ts = sanity_first_help_by_seed[seed]
-        if expected_pred and expected_ts != actual_ts:
-            raise AssertionError(
-                f"Point {record.index}: first help timestep changed for seed {seed}: "
-                f"original={expected_ts}, sanity={actual_ts}"
-            )
-
-    original_return_by_seed = values_by_seed(
-        record.level_seeds,
-        record.raw_returns,
-        label="original returns",
-        point_index=record.index,
-    )
-    sanity_return_by_seed = values_by_seed(
-        sanity.level_seeds,
-        sanity.raw_returns,
-        label="sanity returns",
-        point_index=record.index,
-    )
-    return_diffs = {
-        seed: abs(original_return_by_seed[seed] - sanity_return_by_seed[seed])
-        for seed in original_return_by_seed
-    }
-    max_seed = max(return_diffs, key=return_diffs.get)
-    if return_diffs[max_seed] > RETURN_ATOL:
-        raise AssertionError(
-            f"Point {record.index}: sanity returns differ from original. "
-            f"Max diff {return_diffs[max_seed]:.6g} at seed {max_seed} "
-            f"(original={original_return_by_seed[max_seed]}, "
-            f"sanity={sanity_return_by_seed[max_seed]})."
-        )
-
-
-def replay_actions_then_expert(env, strong_policy, pre_help_actions, *, greedy=False):
-    obs = env.reset()
-    cumulative_reward = 0.0
-    done = np.array([False])
-    info = [{}]
-
-    for pre_action in pre_help_actions:
-        obs, reward, done, info = env.step(np.array([pre_action], dtype=np.int64))
-        cumulative_reward += float(reward[0])
-        if done[0]:
-            raise RuntimeError(
-                "Episode ended while replaying pre-help actions before expert takeover."
-            )
-
-    while not done[0]:
-        action = strong_policy.act(obs, greedy=greedy)
-        obs, reward, done, info = env.step(action)
-        cumulative_reward += float(reward[0])
-
-    return {
-        "return": cumulative_reward,
-        "level_seed": get_completed_level_seed(info, 0),
-    }
-
-
-def evaluate_reset_timeout_seed(
+    *,
+    coord_policy,
+    evaluator: Evaluator,
     create_env_fn: Callable,
     config,
-    split: str,
-    seed: int,
-    pre_help_actions: List[int],
-    strong_policy,
+    weak_agent,
+    strong_agent,
+    eval_seeds: List[int],
+    test_eval_info: Dict[str, Any],
     base_timeout: int,
-    greedy: bool,
+    afhp_metric: str,
 ):
-    timeout_cap = reset_timeout_cap(len(pre_help_actions), base_timeout)
-    env = create_raw_env(
+    update_policy_params(coord_policy, record.threshold)
+    coord_env = create_coord_env(
         create_env_fn,
         config,
-        split,
-        [seed],
-        num_envs=1,
-        max_steps=timeout_cap,
+        record.split,
+        eval_seeds,
+        weak_agent,
+        strong_agent,
+        test_eval_info,
     )
-    try:
-        result = replay_actions_then_expert(
-            env, strong_policy, pre_help_actions, greedy=greedy
-        )
-    finally:
-        env.close()
-
-    completed_seed = result["level_seed"]
-    if completed_seed is not None and completed_seed != seed:
-        raise AssertionError(
-            f"Reset-timeout replay completed seed {completed_seed}, expected {seed}"
-        )
-    result["timeout_cap"] = timeout_cap
-    result["pre_help_steps"] = len(pre_help_actions)
-    return result
-
-
-def empty_output(num_points: int):
-    return {
-        "strong_performances": np.full(num_points, np.nan),
-        "original_help_performances": np.full(num_points, np.nan),
-        "sanity_performances": np.full(num_points, np.nan),
-        "reset_timeout_performances": np.full(num_points, np.nan),
-        "comparison_meta": np.array(
-            [
-                {
-                    "point_idx": i,
-                    "help_requested": False,
-                    "help_seeds": [],
-                    "assertions_passed": False,
-                    "skip_reason": "no_seeds",
-                }
-                for i in range(num_points)
-            ],
-            dtype=object,
-        ),
-    }
+    coord_env.enable_timeout_reset(base_timeout)
+    summary = evaluator.eval(
+        coord_policy,
+        {record.split: coord_env},
+        [record.split],
+        num_episodes=len(eval_seeds),
+        threshold=record.threshold,
+        close_envs=True,
+    )[record.split]
+    return build_full_budget_point_result(record, summary, afhp_metric)
 
 
 def main():
@@ -849,13 +463,11 @@ def main():
 
     config = load_reval_config(args, npz_path)
     greedy = resolve_action_greedy(config)
-    print(f"Using greedy action selection: {greedy}")
-
     start_time = time.time()
+
     use_wandb = os.environ.get("DISABLE_WANDB", "0") != "1"
     wandb_run = None
     job_name = getattr(args, "name", None) or npz_path.stem
-
     if use_wandb:
         wandb_run = init_eval_wandb_run(
             config,
@@ -867,7 +479,8 @@ def main():
                 "config_file": args.config,
                 "exp_name": config.exp_name,
                 "greedy": greedy,
-                "rich_comparison": True,
+                "full_budget_eval": True,
+                "seed_split": "ood_eval",
             },
             project_fallback="yrc-bench-strong-reval",
             tolerate_failure=True,
@@ -877,52 +490,32 @@ def main():
 
     print(f"\nLoading results from {npz_path}...")
     data = np.load(npz_path, allow_pickle=True)
-    afhps = data["afhps"]
-    original_performances = data["performances"]
+    afhps = np.asarray(data["afhps"], dtype=float)
+    original_performances = np.asarray(data["performances"], dtype=float)
     meta = data["meta"]
-
-    print("\nData summary:")
-    print(f"  - Number of points: {len(afhps)}")
-    print(f"  - AFHP range: {min(afhps):.2f}% - {max(afhps):.2f}%")
-    print(
-        f"  - Performance range: {min(original_performances):.2f} - {max(original_performances):.2f}"
-    )
-
-    split = "test"
     point_records = [
-        extract_point_record(pt_meta, i, split=split) for i, pt_meta in enumerate(meta)
+        extract_point_record(pt_meta, i, split="test") for i, pt_meta in enumerate(meta)
     ]
-    test_dispatch_seeds = load_test_dispatch_seeds(config)
+
     all_help_seeds = sorted(
         {seed for record in point_records for seed in help_seeds(record)}
     )
-    all_point_seeds = sorted(
-        {seed for record in point_records for seed in record.level_seeds}
-    )
-    print(f"Found {len(all_point_seeds)} unique seeds across all evaluation points")
-    print(f"Found {len(all_help_seeds)} unique help-requested seeds")
+    eval_seeds = load_eval_seeds(config)
+    base_timeout = resolve_base_timeout(config)
+    afhp_metric = resolve_afhp_metric(config)
 
-    if len(all_point_seeds) == 0:
-        print("\nWarning: no seeds found in any evaluation point. Saving empty output.")
-        output_path = npz_path.with_name(f"{npz_path.stem}_strong_reval.npz")
-        save_npz_results(
-            output_path,
-            afhps=afhps,
-            original_performances=original_performances,
-            meta=meta,
-            announce=True,
-            **empty_output(len(meta)),
-        )
-        return
+    print("\nData summary:")
+    print(f"  - Number of points: {len(point_records)}")
+    print(f"  - Eval seeds: {len(eval_seeds)} from ood_eval")
+    print(f"  - Unique help-requested seeds: {len(all_help_seeds)}")
+    print(f"  - Full-budget AFHP metric: {afhp_metric}")
+    print(f"  - Timeout reset budget: {base_timeout}")
 
     benchmark = config.general.benchmark
     module = importlib.import_module(f"YRC.envs.{benchmark}")
     create_env_fn = getattr(module, "create_env")
     load_policy_fn = getattr(module, "load_policy")
 
-    print(f"\nBenchmark: {benchmark}")
-    print(f"Loading weak agent from {config.agents.weak}...")
-    print(f"Loading strong agent from {strong_agent_path}...")
     dummy_env = create_raw_env(create_env_fn, config, "train", None)
     weak_agent = load_policy_fn(config.agents.weak, dummy_env)
     strong_agent = load_policy_fn(strong_agent_path, dummy_env)
@@ -932,7 +525,7 @@ def main():
     policy_env = create_coord_env(
         create_env_fn,
         config,
-        split,
+        "test",
         None,
         weak_agent,
         strong_agent,
@@ -944,48 +537,10 @@ def main():
     finally:
         policy_env.close()
 
-    base_timeout = resolve_base_timeout(config)
-    print(f"Base timeout for reset-on-help comparison: {base_timeout}")
-    defer_to_oracle = bool(getattr(config.evaluation, "defer_to_oracle", False))
-    print(f"Same-setup sanity rerun defer_to_oracle: {defer_to_oracle}")
-
-    sanity_results = []
-    print("\nRunning per-point same-setup sanity reruns...")
-    print("=" * 60)
-    for record in point_records:
-        print(
-            f"\n[{record.index + 1}/{len(point_records)}] Point {record.index} "
-            f"(AFHP={afhps[record.index]:.2f}%, threshold={record.threshold:.6g})"
-        )
-
-        coord_env = create_coord_env(
-            create_env_fn,
-            config,
-            split,
-            dispatch_seeds_for_record(record, test_dispatch_seeds),
-            weak_agent,
-            strong_agent,
-            test_eval_info,
-        )
-        try:
-            sanity = rollout_coordination_sanity(
-                coord_policy,
-                coord_env,
-                record,
-                greedy=greedy,
-                defer_to_oracle=defer_to_oracle,
-            )
-        finally:
-            coord_env.close()
-
-        validate_sanity_matches(record, sanity)
-        sanity_results.append(sanity)
-        print("  - Sanity assertions passed")
-
     strong_seed_to_return = {}
     if all_help_seeds:
         print(f"\nEvaluating expert from beginning on {len(all_help_seeds)} seeds...")
-        strong_env = create_raw_env(create_env_fn, config, split, all_help_seeds)
+        strong_env = create_raw_env(create_env_fn, config, "test", all_help_seeds)
         try:
             _, strong_seed_to_return = rollout(
                 strong_agent,
@@ -998,134 +553,120 @@ def main():
             strong_env.close()
 
     original_help_performances = []
-    sanity_performances = []
     strong_performances = []
-    reset_timeout_performances = []
-    comparison_meta = []
-
-    print("\nRunning reset-timeout comparisons and building output curves...")
-    print("=" * 60)
-    for record, sanity in zip(point_records, sanity_results):
+    print("\nBuilding legacy strong reval output...")
+    for record in point_records:
+        point_result = build_strong_reval_point(record, strong_seed_to_return)
+        original_help_performances.append(point_result["original_help_performance"])
+        strong_performances.append(point_result["strong_performance"])
         print(
-            f"\n[{record.index + 1}/{len(point_records)}] Point {record.index} "
-            f"(AFHP={afhps[record.index]:.2f}%, threshold={record.threshold:.6g})"
+            f"  - Point {record.index}: "
+            f"help_seeds={len(point_result['help_seeds'])}, "
+            f"original_help={point_result['original_help_performance']:.2f}, "
+            f"expert_start={point_result['strong_performance']:.2f}"
         )
 
-        reset_seed_results = {}
-        for seed in help_seeds(record):
-            reset_seed_results[seed] = evaluate_reset_timeout_seed(
-                create_env_fn,
-                config,
-                split,
-                seed,
-                sanity.pre_help_actions_by_seed[seed],
-                strong_agent,
-                base_timeout,
-                greedy,
-            )
-
-        point_comparison = build_point_comparison(
-            record,
-            sanity.seed_to_return,
-            strong_seed_to_return,
-            reset_seed_results,
-        )
-        original_help_performances.append(point_comparison["original_help_performance"])
-        sanity_performances.append(point_comparison["sanity_performance"])
-        strong_performances.append(point_comparison["strong_performance"])
-        reset_timeout_performances.append(point_comparison["reset_timeout_performance"])
-        comparison_meta.append(point_comparison["comparison_meta"])
-
-        print(f"  - Help seeds: {len(help_seeds(record))}/{len(record.level_seeds)}")
-        print(
-            "  - Means: "
-            f"original_help={original_help_performances[-1]:.2f}, "
-            f"sanity={sanity_performances[-1]:.2f}, "
-            f"expert_start={strong_performances[-1]:.2f}, "
-            f"reset_timeout={reset_timeout_performances[-1]:.2f}"
-        )
-
-        if use_wandb and wandb_run:
-            wandb.log(
-                {
-                    "point_idx": record.index,
-                    "point_afhp": float(afhps[record.index]),
-                    "num_help_seeds": len(help_seeds(record)),
-                    "original_help_performance": original_help_performances[-1],
-                    "sanity_performance": sanity_performances[-1],
-                    "strong_performance": strong_performances[-1],
-                    "reset_timeout_performance": reset_timeout_performances[-1],
-                }
-            )
-
-    total_time = time.time() - start_time
-    valid_strong_perfs = [p for p in strong_performances if not np.isnan(p)]
-    print("\n" + "=" * 60)
-    print("Re-evaluation completed!")
-    print(f"  - Total time: {total_time:.2f}s")
-    print(f"  - Unique seeds evaluated: {len(all_point_seeds)}")
-    print(f"  - Unique help seeds evaluated by expert: {len(all_help_seeds)}")
-    print(f"  - Points processed: {len(meta)}")
-    print(f"  - Points with help requested: {len(valid_strong_perfs)}")
-
-    if valid_strong_perfs:
-        avg_original_help = float(
-            np.nanmean(np.array(original_help_performances, dtype=float))
-        )
-        avg_sanity = float(np.nanmean(np.array(sanity_performances, dtype=float)))
-        avg_strong = float(np.nanmean(np.array(strong_performances, dtype=float)))
-        avg_reset = float(np.nanmean(np.array(reset_timeout_performances, dtype=float)))
-
-        print("\nPerformance summary (for points with help):")
-        print(f"  - Average original help performance: {avg_original_help:.2f}")
-        print(f"  - Average sanity performance: {avg_sanity:.2f}")
-        print(f"  - Average expert-from-start performance: {avg_strong:.2f}")
-        print(f"  - Average reset-timeout performance: {avg_reset:.2f}")
-
-    output_path = npz_path.with_name(f"{npz_path.stem}_strong_reval.npz")
+    strong_output = strong_reval_output_path(npz_path)
     save_npz_results(
-        output_path,
+        strong_output,
         afhps=afhps,
         original_performances=original_performances,
         strong_performances=np.array(strong_performances, dtype=float),
         original_help_performances=np.array(original_help_performances, dtype=float),
-        sanity_performances=np.array(sanity_performances, dtype=float),
-        reset_timeout_performances=np.array(reset_timeout_performances, dtype=float),
-        comparison_meta=np.array(comparison_meta, dtype=object),
         meta=meta,
         announce=True,
     )
 
-    if use_wandb and wandb_run:
-        log_data = {
-            "total_time": total_time,
-            "total_points": len(meta),
-            "unique_seeds_evaluated": len(all_point_seeds),
-            "unique_help_seeds": len(all_help_seeds),
-            "points_with_help": len(valid_strong_perfs),
-        }
-        if valid_strong_perfs:
-            log_data.update(
-                {
-                    "avg_original_help_performance": avg_original_help,
-                    "avg_sanity_performance": avg_sanity,
-                    "avg_strong_performance": avg_strong,
-                    "avg_reset_timeout_performance": avg_reset,
-                }
-            )
-        wandb.log(log_data)
+    evaluator = Evaluator(config, config.environment)
+    full_budget_afhps = []
+    full_budget_performances = []
+    full_budget_meta = []
+    print("\nRunning full-budget eval over ood_eval seeds...")
+    for record in point_records:
+        point_result = evaluate_full_budget_point(
+            record,
+            coord_policy=coord_policy,
+            evaluator=evaluator,
+            create_env_fn=create_env_fn,
+            config=config,
+            weak_agent=weak_agent,
+            strong_agent=strong_agent,
+            eval_seeds=eval_seeds,
+            test_eval_info=test_eval_info,
+            base_timeout=base_timeout,
+            afhp_metric=afhp_metric,
+        )
+        full_budget_afhps.append(point_result["afhp"])
+        full_budget_performances.append(point_result["performance"])
+        full_budget_meta.append(point_result["meta"])
+        print(
+            f"  - Point {record.index}: "
+            f"threshold={record.threshold:.6g}, "
+            f"full_budget_afhp={point_result['afhp']:.2f}, "
+            f"full_budget_perf={point_result['performance']:.2f}"
+        )
 
+    full_budget_output = full_budget_output_path(npz_path)
+    save_npz_results(
+        full_budget_output,
+        thresholds=np.array(
+            [record.threshold for record in point_records], dtype=float
+        ),
+        original_afhps=afhps,
+        original_performances=original_performances,
+        full_budget_afhps=np.array(full_budget_afhps, dtype=float),
+        full_budget_performances=np.array(full_budget_performances, dtype=float),
+        full_budget_meta=np.array(full_budget_meta, dtype=object),
+        run_metadata=np.array(
+            {
+                "seed_split": "ood_eval",
+                "num_eval_seeds": len(eval_seeds),
+                "afhp_metric": afhp_metric,
+                "base_timeout": base_timeout,
+            },
+            dtype=object,
+        ),
+        announce=True,
+    )
+
+    total_time = time.time() - start_time
+    avg_original_help = mean_or_nan(original_help_performances)
+    avg_strong = mean_or_nan(strong_performances)
+    avg_full_budget_afhp = mean_or_nan(full_budget_afhps)
+    avg_full_budget_perf = mean_or_nan(full_budget_performances)
+
+    print("\n" + "=" * 60)
+    print("Finished strong reval + full-budget eval")
+    print(f"  - Total time: {total_time:.2f}s")
+    print(f"  - Strong reval output: {strong_output}")
+    print(f"  - Full-budget output: {full_budget_output}")
+    print(f"  - Average original help performance: {avg_original_help:.2f}")
+    print(f"  - Average expert-from-start performance: {avg_strong:.2f}")
+    print(f"  - Average full-budget AFHP: {avg_full_budget_afhp:.2f}")
+    print(f"  - Average full-budget performance: {avg_full_budget_perf:.2f}")
+
+    if use_wandb and wandb_run:
+        wandb.log(
+            {
+                "total_time": total_time,
+                "num_points": len(point_records),
+                "num_eval_seeds": len(eval_seeds),
+                "num_help_seeds": len(all_help_seeds),
+                "avg_original_help_performance": avg_original_help,
+                "avg_strong_performance": avg_strong,
+                "avg_full_budget_afhp": avg_full_budget_afhp,
+                "avg_full_budget_performance": avg_full_budget_perf,
+            }
+        )
         artifact = wandb.Artifact(
             f"strong_reval_results_{job_name}",
             type="evaluation_results",
-            description=f"Strong agent re-evaluation results for {job_name}",
+            description=f"Strong reval and full-budget evaluation results for {job_name}",
         )
-        artifact.add_file(str(output_path))
+        artifact.add_file(str(strong_output))
+        artifact.add_file(str(full_budget_output))
         wandb.log_artifact(artifact)
         wandb.finish()
-
-    print(f"Time taken: {total_time:.1f} seconds")
-    print(f"Total unique seeds evaluated: {len(all_point_seeds)}")
 
 
 if __name__ == "__main__":

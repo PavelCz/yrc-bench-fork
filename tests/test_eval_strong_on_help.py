@@ -1,30 +1,37 @@
+import importlib
 import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
-import pytest
+import torch
+
+if importlib.util.find_spec("gymnasium") is None:
+    import gym
+else:
+    import gymnasium as gym
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import eval_strong_on_help as reval
 from eval_strong_on_help import (
     PointRecord,
-    SanityRolloutResult,
-    build_point_comparison,
+    build_full_budget_point_result,
+    build_strong_reval_point,
     default_procgen_timeout,
+    extract_afhp_from_summary,
     extract_point_record,
-    dispatch_seeds_for_record,
-    replay_actions_then_expert,
-    reset_timeout_cap,
+    full_budget_output_path,
+    load_eval_seeds,
     load_reval_config,
-    load_test_dispatch_seeds,
     make_env_config,
-    rollout_coordination_sanity,
-    validate_sanity_matches,
+    resolve_afhp_metric,
+    strong_reval_output_path,
 )
+from lib.procgen.procgen.env import BaseProcgenEnv
 from YRC.core.configs.config import ConfigDict
+from YRC.core.environment import CoordEnv
 
 
 def test_extract_point_record_normalizes_help_fields():
@@ -114,7 +121,7 @@ def test_make_env_config_clones_configdict_without_deepcopy_protocol():
     assert original_env_config.common.max_steps is None
 
 
-def test_build_point_comparison_no_help_returns_nan_values():
+def test_build_strong_reval_point_no_help_returns_nan_values():
     record = PointRecord(
         index=0,
         threshold=1.0,
@@ -125,17 +132,14 @@ def test_build_point_comparison_no_help_returns_nan_values():
         raw_returns=[1.0, 2.0],
     )
 
-    comparison = build_point_comparison(record, {}, {}, {})
+    comparison = build_strong_reval_point(record, {})
 
+    assert comparison["help_seeds"] == []
     assert np.isnan(comparison["original_help_performance"])
-    assert np.isnan(comparison["sanity_performance"])
     assert np.isnan(comparison["strong_performance"])
-    assert np.isnan(comparison["reset_timeout_performance"])
-    assert comparison["comparison_meta"]["help_requested"] is False
-    assert comparison["comparison_meta"]["help_seeds"] == []
 
 
-def test_build_point_comparison_aligns_help_seed_outputs():
+def test_build_strong_reval_point_aligns_help_seed_outputs():
     record = PointRecord(
         index=2,
         threshold=0.3,
@@ -146,25 +150,54 @@ def test_build_point_comparison_aligns_help_seed_outputs():
         raw_returns=[1.0, 2.0, 4.0],
     )
 
-    comparison = build_point_comparison(
+    comparison = build_strong_reval_point(
         record,
-        sanity_seed_to_return={202: 2.0, 303: 4.0},
         strong_seed_to_return={202: 8.0, 303: 10.0},
-        reset_seed_results={
-            202: {"return": 9.0, "timeout_cap": 504},
-            303: {"return": 11.0, "timeout_cap": 500},
-        },
     )
 
+    assert comparison["help_seeds"] == [202, 303]
     assert comparison["original_help_performance"] == 3.0
-    assert comparison["sanity_performance"] == 3.0
     assert comparison["strong_performance"] == 9.0
-    assert comparison["reset_timeout_performance"] == 10.0
-    assert comparison["comparison_meta"]["help_seeds"] == [202, 303]
-    assert comparison["comparison_meta"]["reset_timeout_caps"] == [504, 500]
 
 
-def test_load_test_dispatch_seeds_uses_ood_eval_split(tmp_path):
+def test_build_full_budget_point_result_uses_env_return_mean_and_threshold():
+    record = PointRecord(
+        index=1,
+        threshold=0.42,
+        split="test",
+        level_seeds=[1],
+        level_ood_pred=[True],
+        first_help_timesteps=[3],
+        raw_returns=[2.0],
+    )
+    summary = {
+        "action_1_frac": 0.25,
+        "level_afhp": 0.5,
+        "return_mean": 1.0,
+        "env_return_mean": 8.0,
+    }
+
+    result = build_full_budget_point_result(record, summary, "step_afhp")
+
+    assert result["afhp"] == 25.0
+    assert result["performance"] == 8.0
+    assert result["meta"]["threshold"] == 0.42
+    assert result["meta"]["point_idx"] == 1
+
+
+def test_extract_afhp_from_summary_matches_requested_metric():
+    summary = {"action_1_frac": 0.125, "level_afhp": 0.75}
+
+    assert extract_afhp_from_summary(summary, "step_afhp") == 12.5
+    assert extract_afhp_from_summary(summary, "level_afhp") == 75.0
+
+
+def test_resolve_afhp_metric_uses_threshold_sampler():
+    config = SimpleNamespace(evaluation=SimpleNamespace(threshold_sampler="step_afhp"))
+    assert resolve_afhp_metric(config) == "step_afhp"
+
+
+def test_load_eval_seeds_uses_ood_eval_split(tmp_path):
     seeds_file = tmp_path / "seeds.json"
     seeds_file.write_text(
         json.dumps(
@@ -180,185 +213,104 @@ def test_load_test_dispatch_seeds_uses_ood_eval_split(tmp_path):
         environment=SimpleNamespace(level_seeds_file=str(seeds_file))
     )
 
-    assert load_test_dispatch_seeds(config) == [100206, 101041, 100888]
+    assert load_eval_seeds(config) == [100206, 101041, 100888]
 
 
-def test_dispatch_seeds_for_record_preserves_original_seed_file_order():
-    record = PointRecord(
-        index=0,
-        threshold=0.5,
-        split="test",
-        level_seeds=[30, 10, 20],
-        level_ood_pred=[False, True, False],
-        first_help_timesteps=[None, 3, None],
-        raw_returns=[3.0, 1.0, 2.0],
-    )
+def test_output_path_helpers_keep_split_artifacts_separate(tmp_path):
+    npz_path = tmp_path / "results_test.npz"
 
-    dispatch = dispatch_seeds_for_record(record, [10, 20, 30, 40])
-
-    assert dispatch == [10, 20, 30]
+    assert strong_reval_output_path(npz_path).name == "results_test_strong_reval.npz"
+    assert full_budget_output_path(npz_path).name == "results_test_full_budget_eval.npz"
 
 
-def test_validate_sanity_matches_accepts_reordered_completion():
-    record = PointRecord(
-        index=0,
-        threshold=0.5,
-        split="test",
-        level_seeds=[101, 202],
-        level_ood_pred=[False, True],
-        first_help_timesteps=[None, 3],
-        raw_returns=[1.0, 2.0],
-    )
-    sanity = SanityRolloutResult(
-        level_seeds=[202, 101],
-        level_ood_pred=[True, False],
-        first_help_timesteps=[3, None],
-        raw_returns=[2.0, 1.0],
-        pre_help_actions_by_seed={202: [0, 1], 101: [2]},
-    )
-
-    validate_sanity_matches(record, sanity)
-
-
-def test_timeout_defaults_and_reset_cap_include_help_action():
+def test_default_procgen_timeout_matches_coinrun_and_maze_defaults():
     assert default_procgen_timeout("coinrun") == 1000
     assert default_procgen_timeout("maze_afh") == 500
-    assert reset_timeout_cap(pre_help_steps=4, base_timeout=500) == 504
 
 
-def test_validate_sanity_matches_rejects_changed_help_timestep():
-    record = PointRecord(
-        index=1,
-        threshold=0.5,
-        split="test",
-        level_seeds=[101],
-        level_ood_pred=[True],
-        first_help_timesteps=[3],
-        raw_returns=[1.0],
-    )
-    sanity = SanityRolloutResult(
-        level_seeds=[101],
-        level_ood_pred=[True],
-        first_help_timesteps=[4],
-        raw_returns=[1.0],
-        pre_help_actions_by_seed={101: [0, 1, 2]},
-    )
+def test_base_procgen_env_reset_remaining_timeout_calls_c_func():
+    env = object.__new__(BaseProcgenEnv)
+    env.num = 3
+    calls = []
 
-    with pytest.raises(AssertionError, match="first help timestep changed"):
-        validate_sanity_matches(record, sanity)
+    def fake_call_c_func(name, env_idx, remaining_steps):
+        calls.append((name, env_idx, remaining_steps))
+
+    env.call_c_func = fake_call_c_func
+
+    env.reset_remaining_timeout(2, 500)
+
+    assert calls == [("reset_remaining_timeout", 2, 500)]
 
 
-class FakeReplayEnv:
+class FakeBaseEnv:
     def __init__(self):
         self.num_envs = 1
-        self.actions = []
-        self.step_count = 0
+        self.action_space = gym.spaces.Discrete(15)
+        self.observation_space = gym.spaces.Box(
+            low=0.0, high=1.0, shape=(1,), dtype=np.float32
+        )
+        self.obs_shape = self.observation_space.shape
+        self.reset_timeout_calls = []
+        self.episode_step = 0
 
     def reset(self):
-        self.step_count = 0
-        return np.array([[0.0]], dtype=np.float32)
+        self.episode_step = 0
+        return np.zeros((1, 1), dtype=np.float32)
 
-    def step(self, action):
-        action_value = int(np.asarray(action)[0])
-        self.actions.append(action_value)
-        self.step_count += 1
-        obs = np.array([[float(self.step_count)]], dtype=np.float32)
-        reward = np.array([float(action_value)], dtype=np.float32)
-        done = np.array([self.step_count >= 3])
-        info = [{"prev_level_seed": 123}] if done[0] else [{"level_seed": 123}]
+    def reset_remaining_timeout(self, env_idx, remaining_steps):
+        self.reset_timeout_calls.append((env_idx, remaining_steps, self.episode_step))
+
+    def step(self, env_action):
+        self.episode_step += 1
+        done = np.array([self.episode_step >= 2], dtype=bool)
+        obs = np.full((1, 1), float(self.episode_step), dtype=np.float32)
+        reward = np.array([1.0], dtype=np.float32)
+        info = [{"env_reward": 1.0, "env_action": int(env_action[0])}]
+        if done[0]:
+            self.episode_step = 0
         return obs, reward, done, info
 
+    def close(self):
+        return None
 
-class FakeStrongPolicy:
+
+class FakeAgent:
+    hidden_dim = 2
+    model = SimpleNamespace(logit_dim=3)
+
+    def __init__(self, env_action):
+        self.env_action = env_action
+
+    def reset(self, done):
+        del done
+
     def act(self, obs, greedy=False):
-        return np.array([9], dtype=np.int64)
+        del greedy
+        batch = len(obs)
+        return np.full(batch, self.env_action, dtype=np.int64)
+
+    def get_hidden(self, obs):
+        return torch.zeros((len(obs), self.hidden_dim), dtype=torch.float32)
+
+    def forward(self, obs):
+        return torch.zeros((len(obs), self.model.logit_dim), dtype=torch.float32)
 
 
-def test_replay_actions_then_expert_hands_off_at_help_point():
-    env = FakeReplayEnv()
-
-    result = replay_actions_then_expert(
-        env,
-        FakeStrongPolicy(),
-        pre_help_actions=[1, 2],
-        greedy=True,
+def test_coord_env_timeout_reset_fires_once_per_episode():
+    config = SimpleNamespace(
+        act_greedy=False,
+        strong_query_cost_ratio=0.0,
+        switch_agent_cost_ratio=0.0,
     )
+    base_env = FakeBaseEnv()
+    env = CoordEnv(config, base_env, FakeAgent(1), FakeAgent(2))
+    env.set_costs({"episode_length_mean": 10.0, "reward_mean": 10.0})
+    env.enable_timeout_reset(500)
 
-    assert env.actions == [1, 2, 9]
-    assert result["return"] == 12.0
-    assert result["level_seed"] == 123
+    env.reset()
+    env.step(np.array([env.STRONG], dtype=np.int64))
+    env.step(np.array([env.STRONG], dtype=np.int64))
+    env.step(np.array([env.STRONG], dtype=np.int64))
 
-
-class FakeCoordEnv:
-    STRONG = 1
-
-    def __init__(self):
-        self.num_envs = 1
-        self.actions = []
-        self.step_count = 0
-
-    def reset(self):
-        self.step_count = 0
-        return {"env_obs": np.array([[0.0]], dtype=np.float32)}
-
-    def step(self, action):
-        action_value = int(np.asarray(action)[0])
-        self.actions.append(action_value)
-        self.step_count += 1
-        obs = {"env_obs": np.array([[float(self.step_count)]], dtype=np.float32)}
-        reward = np.array([float(action_value)], dtype=np.float32)
-        done = np.array([self.step_count >= 2])
-        info = [
-            {
-                "env_action": action_value + 10,
-                "level_seed": 456,
-                "prev_level_seed": 456 if done[0] else -1,
-                "randomize_goal": False,
-            }
-        ]
-        return obs, reward, done, info
-
-
-class FakeCoordPolicy:
-    def __init__(self):
-        self.calls = 0
-
-    def eval(self):
-        pass
-
-    def act(self, obs, greedy=False, return_scores_and_recons=False):
-        del obs, greedy
-        action = np.array([1 if self.calls == 0 else 0], dtype=np.int64)
-        self.calls += 1
-        if return_scores_and_recons:
-            return action, None, None
-        return action
-
-
-def test_sanity_rollout_defer_to_oracle_keeps_strong_after_first_help(
-    monkeypatch,
-):
-    monkeypatch.setattr(reval, "update_policy_params", lambda policy, threshold: None)
-    record = PointRecord(
-        index=0,
-        threshold=0.5,
-        split="test",
-        level_seeds=[456],
-        level_ood_pred=[True],
-        first_help_timesteps=[1],
-        raw_returns=[2.0],
-    )
-    env = FakeCoordEnv()
-
-    sanity = rollout_coordination_sanity(
-        FakeCoordPolicy(),
-        env,
-        record,
-        defer_to_oracle=True,
-    )
-
-    assert env.actions == [1, 1]
-    assert sanity.level_seeds == [456]
-    assert sanity.level_ood_pred == [True]
-    assert sanity.first_help_timesteps == [1]
-    assert sanity.raw_returns == [2.0]
+    assert base_env.reset_timeout_calls == [(0, 500, 0), (0, 500, 0)]

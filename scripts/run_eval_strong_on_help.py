@@ -59,7 +59,10 @@ def main():
 
     # Build log directory: <log_base>/strong_reval/<prefix>/<date>
     log_dir = (
-        Path(paths["log_base"]) / "strong_reval" / args.prefix / date.today().isoformat()
+        Path(paths["log_base"])
+        / "strong_reval"
+        / args.prefix
+        / date.today().isoformat()
     )
     print(f"Log dir: {log_dir}")
 
@@ -77,9 +80,7 @@ def main():
         return 1
 
     # Process all NPZ files
-    stats = process_npz_files(
-        args, npz_files, checkpoint_base_path, log_dir, wandb_run
-    )
+    stats = process_npz_files(args, npz_files, checkpoint_base_path, log_dir, wandb_run)
 
     # Display summary
     display_summary(args, npz_files, stats)
@@ -415,8 +416,15 @@ def process_single_npz(
         return
 
     # Check if output already exists
-    output_path = npz_path.with_name(f"{npz_path.stem}_strong_reval.npz")
-    if should_skip_existing(output_path, args, npz_path, stats, wandb_run):
+    strong_output_path, full_budget_path = output_paths(npz_path)
+    if should_skip_existing(
+        strong_output_path,
+        full_budget_path,
+        args,
+        npz_path,
+        stats,
+        wandb_run,
+    ):
         return
 
     # Build job name and submit
@@ -424,7 +432,13 @@ def process_single_npz(
 
     if args.dry_run:
         display_job_info(
-            job_name, npz_path, strong_path, config_path, output_path, args
+            job_name,
+            npz_path,
+            strong_path,
+            config_path,
+            strong_output_path,
+            full_budget_path,
+            args,
         )
         stats["submitted"] += 1
     else:
@@ -511,10 +525,26 @@ def get_config_path(args, method_name, npz_path, stats, wandb_run):
     return effective_config
 
 
-def should_skip_existing(output_path, args, npz_path, stats, wandb_run):
+def output_paths(npz_path):
+    strong_output_path = npz_path.with_name(f"{npz_path.stem}_strong_reval.npz")
+    full_budget_path = npz_path.with_name(f"{npz_path.stem}_full_budget_eval.npz")
+    return strong_output_path, full_budget_path
+
+
+def should_skip_existing(
+    strong_output_path,
+    full_budget_path,
+    args,
+    npz_path,
+    stats,
+    wandb_run,
+):
     """Check if output already exists and should be skipped."""
-    if output_path.exists() and not args.overwrite:
-        print(f"  ⏭️  Skipping {npz_path.name} - output already exists: {output_path}")
+    if strong_output_path.exists() and full_budget_path.exists() and not args.overwrite:
+        print(
+            f"  ⏭️  Skipping {npz_path.name} - outputs already exist: "
+            f"{strong_output_path}, {full_budget_path}"
+        )
         stats["skipped"] += 1
         if wandb_run:
             log_to_wandb(
@@ -524,13 +554,22 @@ def should_skip_existing(output_path, args, npz_path, stats, wandb_run):
     return False
 
 
-def display_job_info(job_name, npz_path, strong_path, config_path, output_path, args):
+def display_job_info(
+    job_name,
+    npz_path,
+    strong_path,
+    config_path,
+    strong_output_path,
+    full_budget_path,
+    args,
+):
     """Display job information in dry run mode."""
     print(f"=== {job_name} ===")
     print(f"  NPZ file: {npz_path}")
     print(f"  Strong:   {strong_path}")
     print(f"  Config:   {config_path}")
-    print(f"  Output:   {output_path}")
+    print(f"  Strong reval output: {strong_output_path}")
+    print(f"  Full-budget output:  {full_budget_path}")
     print(f"  Overwrite: {args.overwrite}")
     print(f"  Greedy:    {args.greedy}")
     print()
