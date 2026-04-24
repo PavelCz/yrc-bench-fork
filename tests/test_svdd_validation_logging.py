@@ -3,6 +3,7 @@ from pathlib import Path
 
 import torch
 
+from YRC.algorithms.ood import OODAlgorithm
 from lib.pyod.pyod.models.deep_svdd import DeepSVDD
 
 
@@ -148,3 +149,12 @@ def test_run_gather_rollouts_exports_prefixed_rollout_output_dir():
 
     assert output_dir == Path("/rollouts/rollouts-neurips/coinrun")
     assert 'export SM_OUTPUT_DIR="/rollouts/rollouts-neurips/coinrun"' in command
+
+
+def test_ood_algorithm_stacks_rollouts_without_full_config_coord_policy():
+    algorithm = OODAlgorithm(config=object(), env=None)
+    rollout_obs = [torch.tensor([1.0]), torch.tensor([2.0])]
+
+    stacked = algorithm._stack_rollout_obs(rollout_obs, "rollout_obs", "obs")
+
+    assert torch.equal(stacked, torch.tensor([[1.0], [2.0]]))

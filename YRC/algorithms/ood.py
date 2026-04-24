@@ -31,10 +31,11 @@ class OODAlgorithm(Algorithm):
         # Initialize OOD detector
         policy.initialize_ood_detector(args, envs["train"])
 
-        rollout_obs = self._stack_rollout_obs(rollout_obs, "rollout_obs")
+        feature_type = policy.feature_type
+        rollout_obs = self._stack_rollout_obs(rollout_obs, "rollout_obs", feature_type)
         if val_rollout_obs is not None:
             val_rollout_obs = self._stack_rollout_obs(
-                val_rollout_obs, "val_rollout_obs"
+                val_rollout_obs, "val_rollout_obs", feature_type
             )
 
         # Train OOD detector
@@ -94,7 +95,7 @@ class OODAlgorithm(Algorithm):
             logging.info("Saving trained model.")
             policy.save_model("trained", self.save_dir)
 
-    def _stack_rollout_obs(self, rollout_obs, name):
+    def _stack_rollout_obs(self, rollout_obs, name, feature_type):
         # OODPolicy expects a single tensor, while rollout loading keeps samples as
         # a list to reduce peak memory before training starts.
         if not isinstance(rollout_obs, list):
@@ -103,7 +104,6 @@ class OODAlgorithm(Algorithm):
                 f"{type(rollout_obs)}, something might be wrong."
             )
 
-        feature_type = self.args.coord_policy.feature_type
         if get_global_variable("benchmark") == "minigrid" and feature_type not in [
             "hidden",
             "dist",
