@@ -126,8 +126,8 @@ def main():
     parser.add_argument(
         "--server",
         choices=list(SERVER_PATHS.keys()),
-        default="snoopy",
-        help="Server to use for paths (default: snoopy)",
+        default="chai",
+        help="Server to use for paths (default: chai)",
     )
     parser.add_argument(
         "--env", required=True, choices=ENVS, help="Environment to train on"
