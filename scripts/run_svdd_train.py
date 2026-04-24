@@ -3,8 +3,8 @@
 Script to run DeepSVDD training jobs in parallel via SLURM sbatch.
 """
 
-import subprocess
 import os
+import subprocess
 from pathlib import Path
 
 from common import ENVS, SERVER_PATHS, get_checkpoints
@@ -42,10 +42,12 @@ EXP_ID_TO_SEED = {
 FEATURE_TYPES = ["obs", "hidden"]
 
 
-def get_rollout_dir(env: str, exp_id: int) -> str:
+def get_rollout_dir(
+    env: str, exp_id: int, rollouts_base_path: str, rollouts_prefix: str
+) -> str:
     """Get the rollout directory path."""
-    # train_svdd.py resolves relative rollout dirs against SM_OUTPUT_DIR/experiments.
-    return f"gather_{env}_exp{exp_id}"
+    rollout_name = f"gather_{env}_exp{exp_id}"
+    return str(Path(rollouts_base_path) / rollouts_prefix / env / rollout_name)
 
 
 def resolve_rollout_path_for_check(rollout_dir: str) -> Path:
@@ -178,6 +180,12 @@ def main():
         help="Override rollout directory path, or pass a specific rollout .pt file",
     )
     parser.add_argument(
+        "--rollouts-prefix",
+        help=(
+            "Rollout batch folder under the server rollouts base. Defaults to --prefix."
+        ),
+    )
+    parser.add_argument(
         "--rollout-max-levels",
         type=int,
         default=TRAIN_DEFAULTS["rollout_max_levels"],
@@ -212,7 +220,9 @@ def main():
     # Get server-specific paths
     paths = SERVER_PATHS[args.server]
     checkpoint_base_path = paths["checkpoint_base"]
+    rollouts_base_path = paths["rollouts_base"]
     seeds_base_path = paths["seeds_base"]
+    rollouts_prefix = args.rollouts_prefix or args.prefix
 
     if args.dry_run:
         print(f"Server: {args.server}")
@@ -220,6 +230,7 @@ def main():
         print(f"Environment: {args.env}")
         print(f"Feature type: {args.feature_type}")
         print(f"Prefix: {args.prefix}")
+        print(f"Rollouts prefix: {rollouts_prefix}")
         print(f"Experiment IDs: {args.exp_ids}")
         print(f"Rollout max levels: {args.rollout_max_levels}")
         print(f"SVDD validation levels: {args.svdd_val_levels}")
@@ -240,7 +251,9 @@ def main():
         if args.rollout_dir:
             rollout_dir = args.rollout_dir
         else:
-            rollout_dir = get_rollout_dir(args.env, exp_id)
+            rollout_dir = get_rollout_dir(
+                args.env, exp_id, rollouts_base_path, rollouts_prefix
+            )
         level_seeds_file = Path(seeds_base_path) / f"{exp_id}.json"
 
         # Get seed for this experiment ID

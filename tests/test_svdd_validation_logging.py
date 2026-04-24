@@ -98,7 +98,7 @@ def test_run_svdd_train_command_passes_seed_file_and_validation_levels():
     assert "-rollout_max_levels 128" in command
 
 
-def test_run_svdd_train_default_rollout_dir_matches_gather_output():
+def test_run_svdd_train_default_rollout_dir_matches_gather_output_layout():
     scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
     sys.path.insert(0, str(scripts_dir))
     try:
@@ -106,6 +106,45 @@ def test_run_svdd_train_default_rollout_dir_matches_gather_output():
     finally:
         sys.path.pop(0)
 
-    rollout_dir = run_svdd_train.get_rollout_dir("coinrun", 0)
+    rollout_dir = run_svdd_train.get_rollout_dir(
+        "coinrun", 0, "/rollouts", "rollouts-neurips"
+    )
 
-    assert rollout_dir == "gather_coinrun_exp0"
+    assert rollout_dir == "/rollouts/rollouts-neurips/coinrun/gather_coinrun_exp0"
+
+
+def test_run_gather_rollouts_exports_prefixed_rollout_output_dir():
+    scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+    sys.path.insert(0, str(scripts_dir))
+    try:
+        import run_gather_rollouts
+    finally:
+        sys.path.pop(0)
+
+    output_dir = run_gather_rollouts.get_rollout_output_dir(
+        "/rollouts", "rollouts-neurips", "coinrun"
+    )
+    command = run_gather_rollouts.build_sbatch_command(
+        "job",
+        {
+            "wandb_mode": "offline",
+            "config": "configs/procgen_gather.yaml",
+            "name": "gather_coinrun_exp0",
+            "experiment_group": "rollouts-neurips_coinrun_exp0",
+            "env_name": "coinrun",
+            "random_percent": 0,
+            "sim": "sim.pth",
+            "weak": "weak.pth",
+            "strong": "strong.pth",
+            "use_bg": True,
+            "seed": 6033,
+            "level_seeds_file": "seeds/0.json",
+            "query_cost": 0,
+            "rollout_levels": None,
+            "rollout_chunk_size": None,
+            "output_dir": str(output_dir),
+        },
+    )
+
+    assert output_dir == Path("/rollouts/rollouts-neurips/coinrun")
+    assert 'export SM_OUTPUT_DIR="/rollouts/rollouts-neurips/coinrun"' in command
