@@ -96,3 +96,16 @@ def test_run_svdd_train_command_passes_seed_file_and_validation_levels():
     assert "-level_seeds_file seeds/0.json" in command
     assert "-svdd_val_levels 64" in command
     assert "-rollout_max_levels 128" in command
+
+
+def test_run_svdd_train_default_rollout_dir_matches_gather_output():
+    scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+    sys.path.insert(0, str(scripts_dir))
+    try:
+        import run_svdd_train
+    finally:
+        sys.path.pop(0)
+
+    rollout_dir = run_svdd_train.get_rollout_dir("coinrun", 0)
+
+    assert rollout_dir == "gather_coinrun_exp0"

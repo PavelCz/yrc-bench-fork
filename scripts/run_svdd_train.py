@@ -4,6 +4,7 @@ Script to run DeepSVDD training jobs in parallel via SLURM sbatch.
 """
 
 import subprocess
+import os
 from pathlib import Path
 
 from common import ENVS, SERVER_PATHS, get_checkpoints
@@ -41,11 +42,17 @@ EXP_ID_TO_SEED = {
 FEATURE_TYPES = ["obs", "hidden"]
 
 
-def get_rollout_dir(env: str, exp_id: int, rollouts_base_path: str) -> str:
+def get_rollout_dir(env: str, exp_id: int) -> str:
     """Get the rollout directory path."""
-    # Format: {rollouts_base}/{env}/gather_{env}_exp{id}/
-    rollout_name = f"gather_{env}_exp{exp_id}"
-    return str(Path(rollouts_base_path) / env / rollout_name)
+    # train_svdd.py resolves relative rollout dirs against SM_OUTPUT_DIR/experiments.
+    return f"gather_{env}_exp{exp_id}"
+
+
+def resolve_rollout_path_for_check(rollout_dir: str) -> Path:
+    rollout_path = Path(rollout_dir)
+    if rollout_path.is_absolute():
+        return rollout_path
+    return Path(os.getenv("SM_OUTPUT_DIR", "experiments")) / rollout_path
 
 
 def build_sbatch_command(job_name: str, train_args: dict) -> str:
@@ -205,7 +212,6 @@ def main():
     # Get server-specific paths
     paths = SERVER_PATHS[args.server]
     checkpoint_base_path = paths["checkpoint_base"]
-    rollouts_base_path = paths["rollouts_base"]
     seeds_base_path = paths["seeds_base"]
 
     if args.dry_run:
@@ -234,7 +240,7 @@ def main():
         if args.rollout_dir:
             rollout_dir = args.rollout_dir
         else:
-            rollout_dir = get_rollout_dir(args.env, exp_id, rollouts_base_path)
+            rollout_dir = get_rollout_dir(args.env, exp_id)
         level_seeds_file = Path(seeds_base_path) / f"{exp_id}.json"
 
         # Get seed for this experiment ID
@@ -248,8 +254,12 @@ def main():
                 missing = True
 
         # Check rollout directory exists
-        if not Path(rollout_dir).exists():
-            print(f"Warning: exp{exp_id} rollout directory not found: {rollout_dir}")
+        resolved_rollout_path = resolve_rollout_path_for_check(rollout_dir)
+        if not resolved_rollout_path.exists():
+            print(
+                f"Warning: exp{exp_id} rollout directory not found: "
+                f"{resolved_rollout_path}"
+            )
             missing = True
         if not level_seeds_file.exists():
             print(
@@ -274,6 +284,7 @@ def main():
             print(f"  Weak:   {checkpoints['weak']}")
             print(f"  Strong: {checkpoints['strong']}")
             print(f"  Rollout dir: {rollout_dir}")
+            print(f"  Resolved rollout path: {resolved_rollout_path}")
             print(f"  Rollout max levels: {args.rollout_max_levels}")
             print(f"  Level seeds: {level_seeds_file}")
             print(f"  SVDD validation levels: {args.svdd_val_levels}")
