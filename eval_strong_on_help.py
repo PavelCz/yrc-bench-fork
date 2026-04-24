@@ -128,7 +128,7 @@ def resolve_afhp_metric(config) -> str:
     metric = getattr(config.evaluation, "threshold_sampler", None)
     if metric == "step_afhp":
         return "step_afhp"
-    if metric == "level_afhp":
+    if metric in {"level_afhp", "ood_percentage", "ood_pred_percentage"}:
         return "level_afhp"
     raise ValueError(f"Unsupported threshold sampler: {metric!r}")
 

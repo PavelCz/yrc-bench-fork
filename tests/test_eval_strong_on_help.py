@@ -197,6 +197,13 @@ def test_resolve_afhp_metric_uses_threshold_sampler():
     assert resolve_afhp_metric(config) == "step_afhp"
 
 
+def test_resolve_afhp_metric_maps_legacy_ood_percentage_to_level_afhp():
+    config = SimpleNamespace(
+        evaluation=SimpleNamespace(threshold_sampler="ood_percentage")
+    )
+    assert resolve_afhp_metric(config) == "level_afhp"
+
+
 def test_load_eval_seeds_uses_ood_eval_split(tmp_path):
     seeds_file = tmp_path / "seeds.json"
     seeds_file.write_text(
