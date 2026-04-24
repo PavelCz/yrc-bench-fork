@@ -19,10 +19,10 @@ The results in the paper were collected with experiments ids 0,1,2,3 (= 4 indepe
 
 ### Training pipeline
 
-First, `generate_level_seeds.py` creates the seeds that will be reused so all methods are evaluated on the same levels.
+First, `generate_level_seeds.py` creates the seeds that will be reused so all methods are evaluated on the same levels. See [docs/level_seed_splits.md](docs/level_seed_splits.md) for how `policy_train`, `ood_train`, `validation`, and `ood_eval` are used through the pipeline.
 
 
-Similary, generate_ensemble_seeds.py creates seeds for ensemble policies that are disjoint from the training seeds.
+Similarly, `generate_ensemble_seeds.py` creates seeds for ensemble policies that are disjoint from the training seeds.
 
 Train RL policies by running the following for `coinrun` and `maze`, for all 4 experiment ids:
 
