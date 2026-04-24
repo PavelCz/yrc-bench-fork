@@ -31,6 +31,7 @@ class AutoencoderAlgorithm(Algorithm):
         policy: LightningAEPolicy,
         envs: Optional[Dict[str, Any]],
         rollout_obs: List[torch.Tensor],
+        val_rollout_obs: Optional[List[torch.Tensor]] = None,
         evaluator: Optional[Any] = None,
         train_split: Optional[str] = None,
         eval_splits: Optional[List[str]] = None,

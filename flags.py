@@ -494,6 +494,16 @@ def make():
             "the largest artifact and uses the first N levels."
         ),
     )
+    parser.add_argument(
+        "-svdd_val_levels",
+        "--training.svdd_val_levels",
+        type=int,
+        help=(
+            "number of validation split levels to collect for the SVDD detector "
+            "validation loss curve. If omitted, train_svdd.py skips validation "
+            "loss logging."
+        ),
+    )
 
     parser.add_argument(
         "-val_rollout_dir",

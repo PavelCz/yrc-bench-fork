@@ -12,7 +12,6 @@ from YRC.core.utils import to_tensor
 from typing import Optional
 
 
-
 class OODPolicy(Policy):
     def __init__(self, config, env):
         self.args = config.coord_policy
@@ -30,30 +29,32 @@ class OODPolicy(Policy):
         # Store training scores for percentile computation (used in AFHP eval)
         self._train_scores = None
         self._train_episode_max_scores = None
-        
+
         # Rolling average setup
-        self.rolling_average: Optional[str] = getattr(self.args, 'rolling_average', None)
+        self.rolling_average: Optional[str] = getattr(
+            self.args, "rolling_average", None
+        )
         if self.rolling_average == "none":
             self.rolling_average = None
-        
+
         if (
             self.rolling_average is not None
             and self.rolling_average != "mean"
             and self.rolling_average != "median"
         ):
             raise ValueError(f"Rolling average {self.rolling_average} not supported")
-        
-        self.rolling_average_size: int = getattr(self.args, 'rolling_average_size', 10)
+
+        self.rolling_average_size: int = getattr(self.args, "rolling_average_size", 10)
         self.rolling_average_buffers = []
-        
+
         if self.rolling_average is not None:
             for _ in range(env.num_envs):
                 self.rolling_average_buffers.append(
                     collections.deque(
-                        self.rolling_average_size * [float("-inf")], self.rolling_average_size
+                        self.rolling_average_size * [float("-inf")],
+                        self.rolling_average_size,
                     )
                 )
-
 
     def update_params(self, params):
         self.params = dc(params)
@@ -64,22 +65,23 @@ class OODPolicy(Policy):
             )
         self.clf.threshold_ = params["threshold"]
 
-    def fit(self, x, x_threshold, y=None):
+    def fit(self, x, x_threshold, y=None, x_val=None):
         if self.clf_name == "DeepSVDD":
             # We don't want to move the complete datasets to the GPU, we move the
             # the batches separately.
             # x = x.to(self.device)
             # x_threshold = x_threshold.to(self.device)
-            self.clf.fit(X=x, X_threshold=x_threshold, y=y)
+            self.clf.fit(X=x, X_threshold=x_threshold, y=y, X_val=x_val)
         elif self.clf_name == "AutoEncoder":
             x = x.cpu()
             # Flatten the observations.
             x = x.reshape(x.shape[0], -1)
 
-            x_threshold = x_threshold.cpu()
-            x_threshold = x_threshold.reshape(x_threshold.shape[0], -1)
+            val_data = x_val if x_val is not None else x_threshold
+            val_data = val_data.cpu()
+            val_data = val_data.reshape(val_data.shape[0], -1)
 
-            self.clf.set_loaders(x, x_threshold)
+            self.clf.set_loaders(x, val_data)
             self.clf.fit(x, y)
         else:
             raise ValueError(f"Unknown OOD detector type: {self.clf_name}")
@@ -128,25 +130,29 @@ class OODPolicy(Policy):
 
     def act(self, obs, greedy=False, return_scores_and_recons=False):
         score = self._compute_scores(obs)
-        
+
         # Store original scores before applying rolling average
         score_original = score.copy() if self.rolling_average is not None else None
-        
+
         # Apply rolling average if enabled
         if self.rolling_average is not None:
             for i in range(len(self.rolling_average_buffers)):
                 self.rolling_average_buffers[i].append(score[i])
-                
+
                 if self.rolling_average == "mean":
                     score[i] = np.mean(self.rolling_average_buffers[i])
                 elif self.rolling_average == "median":
                     score[i] = np.median(self.rolling_average_buffers[i])
                 else:
-                    raise NotImplementedError(f"Unrecognized rolling average: {self.rolling_average}")
-        
+                    raise NotImplementedError(
+                        f"Unrecognized rolling average: {self.rolling_average}"
+                    )
+
         # Store the scores for potential retrieval (used by evaluator for histograms)
         self.last_scores_original = score_original
-        self.last_scores_rolling_avg = score if self.rolling_average is not None else None
+        self.last_scores_rolling_avg = (
+            score if self.rolling_average is not None else None
+        )
 
         action = 1 - (score < self.clf.threshold_).astype(int)
         if 0 not in action and 1 not in action:
@@ -214,35 +220,46 @@ class OODPolicy(Policy):
         dummy_obs = env.reset()
         feature_type_to_shapes = {
             "obs": lambda dummy_obs: (
-                dummy_obs['env_obs']['image'] if get_global_variable("benchmark") in ["cliport", "minigrid"] else
-                dummy_obs['env_obs']
+                dummy_obs["env_obs"]["image"]
+                if get_global_variable("benchmark") in ["cliport", "minigrid"]
+                else dummy_obs["env_obs"]
             ).shape,
-            "hidden": lambda dummy_obs: dummy_obs['weak_features'].shape,
+            "hidden": lambda dummy_obs: dummy_obs["weak_features"].shape,
             "hidden_obs": lambda dummy_obs: (
-                    (
-                        dummy_obs['env_obs']['image'] if get_global_variable("benchmark") in ["cliport", "minigrid"] else dummy_obs['env_obs']
-                    ).shape + dummy_obs['weak_features'].shape[1:]
+                (
+                    dummy_obs["env_obs"]["image"]
+                    if get_global_variable("benchmark") in ["cliport", "minigrid"]
+                    else dummy_obs["env_obs"]
+                ).shape
+                + dummy_obs["weak_features"].shape[1:]
             ),
-            "dist": lambda dummy_obs: dummy_obs['weak_logit'].shape,
+            "dist": lambda dummy_obs: dummy_obs["weak_logit"].shape,
             "hidden_dist": lambda dummy_obs: (
-                    dummy_obs['weak_features'].shape + dummy_obs['weak_logit'].shape[1:]
+                dummy_obs["weak_features"].shape + dummy_obs["weak_logit"].shape[1:]
             ),
             "obs_dist": lambda dummy_obs: (
-                    (
-                        dummy_obs['env_obs']['image'] if get_global_variable("benchmark") in ["cliport", "minigrid"] else dummy_obs['env_obs']
-                    ).shape + dummy_obs['weak_logit'].shape[1:]
+                (
+                    dummy_obs["env_obs"]["image"]
+                    if get_global_variable("benchmark") in ["cliport", "minigrid"]
+                    else dummy_obs["env_obs"]
+                ).shape
+                + dummy_obs["weak_logit"].shape[1:]
             ),
             "obs_hidden_dist": lambda dummy_obs: (
-                    (
-                        dummy_obs['env_obs']['image'] if get_global_variable("benchmark") in ["cliport", "minigrid"] else dummy_obs['env_obs']
-                    ).shape + dummy_obs['weak_features'].shape[1:] + dummy_obs['weak_logit'].shape[1:]
+                (
+                    dummy_obs["env_obs"]["image"]
+                    if get_global_variable("benchmark") in ["cliport", "minigrid"]
+                    else dummy_obs["env_obs"]
+                ).shape
+                + dummy_obs["weak_features"].shape[1:]
+                + dummy_obs["weak_logit"].shape[1:]
             ),
         }
 
         dummy_obs_shape = feature_type_to_shapes[self.feature_type](dummy_obs)
 
         if self.args.method == "DeepSVDD":
-            self.clf_name = 'DeepSVDD'
+            self.clf_name = "DeepSVDD"
             self.clf = deep_svdd.DeepSVDD(
                 n_features=args.feature_size,
                 use_ae=args.use_ae,
@@ -256,7 +273,7 @@ class OODPolicy(Policy):
             )
             self.clf.model_.to(self.device)
         elif self.args.method == "AutoEncoder":
-            self.clf_name = 'AutoEncoder'
+            self.clf_name = "AutoEncoder"
             clf = AutoEncoderWithVal(
                 contamination=args.contamination,
                 epoch_num=args.epoch,
@@ -271,27 +288,27 @@ class OODPolicy(Policy):
     def save_model(self, name, save_dir):
         save_path = os.path.join(save_dir, f"{name}.joblib")
         state_dict = {
-            'clf': self.clf,
-            'class_name': self.__class__.__name__,
-            'config': {
-                'contamination': self.clf.contamination,
+            "clf": self.clf,
+            "class_name": self.__class__.__name__,
+            "config": {
+                "contamination": self.clf.contamination,
             },
-            'clf_name': self.clf_name,
+            "clf_name": self.clf_name,
         }
         if isinstance(self.clf, deep_svdd.DeepSVDD):
-            state_dict['config']['use_ae'] = self.clf.use_ae
+            state_dict["config"]["use_ae"] = self.clf.use_ae
         dump(state_dict, save_path)
         logging.info(f"Saved model to {save_path}")
 
     def load_model(self, load_dir):
         state_dict = load(f"{load_dir}")
-        self.clf = state_dict['clf']
-        self.clf_name = state_dict['clf_name']
+        self.clf = state_dict["clf"]
+        self.clf_name = state_dict["clf_name"]
 
         return self
 
     def reset_rolling_average_buffer(self, index: int) -> None:
-        """Reset the rolling average buffer for a given index. The index corresponds 
+        """Reset the rolling average buffer for a given index. The index corresponds
         to the environment index.
         """
         if self.rolling_average is not None:

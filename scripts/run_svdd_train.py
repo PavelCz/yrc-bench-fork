@@ -27,6 +27,7 @@ TRAIN_DEFAULTS = {
     "num_rollouts": 64,
     "query_cost": 0,
     "rollout_max_levels": None,
+    "svdd_val_levels": 64,
 }
 
 # Seed mapping for each experiment ID
@@ -64,6 +65,8 @@ def build_sbatch_command(job_name: str, train_args: dict) -> str:
         f"-cp_feature {train_args['feature_type']}",
         f"-rollout_dir {train_args['rollout_dir']}",
         f"-num_rollouts {train_args['num_rollouts']}",
+        f"-level_seeds_file {train_args['level_seeds_file']}",
+        f"-svdd_val_levels {train_args['svdd_val_levels']}",
         "-wandb",
         f"-query_cost {train_args['query_cost']}",
         f"-seed {train_args['seed']}",
@@ -176,6 +179,15 @@ def main():
             "artifact. Omit to use the full largest artifact."
         ),
     )
+    parser.add_argument(
+        "--svdd-val-levels",
+        type=int,
+        default=TRAIN_DEFAULTS["svdd_val_levels"],
+        help=(
+            "Number of fixed validation levels to collect for the SVDD "
+            "validation loss curve (default: 64)."
+        ),
+    )
     # Override checkpoints if needed
     parser.add_argument("--sim", help="Override sim weak checkpoint path")
     parser.add_argument("--weak", help="Override weak checkpoint path")
@@ -186,11 +198,15 @@ def main():
     if not Path(args.config).exists():
         print(f"Error: Config file not found: {args.config}")
         return 1
+    if args.svdd_val_levels <= 0:
+        print(f"Error: --svdd-val-levels must be positive, got {args.svdd_val_levels}")
+        return 1
 
     # Get server-specific paths
     paths = SERVER_PATHS[args.server]
     checkpoint_base_path = paths["checkpoint_base"]
     rollouts_base_path = paths["rollouts_base"]
+    seeds_base_path = paths["seeds_base"]
 
     if args.dry_run:
         print(f"Server: {args.server}")
@@ -200,6 +216,7 @@ def main():
         print(f"Prefix: {args.prefix}")
         print(f"Experiment IDs: {args.exp_ids}")
         print(f"Rollout max levels: {args.rollout_max_levels}")
+        print(f"SVDD validation levels: {args.svdd_val_levels}")
         print()
 
     # Loop over experiment IDs
@@ -218,6 +235,7 @@ def main():
             rollout_dir = args.rollout_dir
         else:
             rollout_dir = get_rollout_dir(args.env, exp_id, rollouts_base_path)
+        level_seeds_file = Path(seeds_base_path) / f"{exp_id}.json"
 
         # Get seed for this experiment ID
         seed = EXP_ID_TO_SEED.get(exp_id, exp_id)
@@ -232,6 +250,11 @@ def main():
         # Check rollout directory exists
         if not Path(rollout_dir).exists():
             print(f"Warning: exp{exp_id} rollout directory not found: {rollout_dir}")
+            missing = True
+        if not level_seeds_file.exists():
+            print(
+                f"Warning: exp{exp_id} level seeds file not found: {level_seeds_file}"
+            )
             missing = True
 
         if missing:
@@ -252,9 +275,10 @@ def main():
             print(f"  Strong: {checkpoints['strong']}")
             print(f"  Rollout dir: {rollout_dir}")
             print(f"  Rollout max levels: {args.rollout_max_levels}")
+            print(f"  Level seeds: {level_seeds_file}")
+            print(f"  SVDD validation levels: {args.svdd_val_levels}")
             print(f"  Seed: {seed}")
             print()
-            continue
 
         train_args = {
             "config": args.config,
@@ -267,11 +291,13 @@ def main():
             "query_cost": args.query_cost,
             "rollout_dir": rollout_dir,
             "rollout_max_levels": args.rollout_max_levels,
+            "level_seeds_file": str(level_seeds_file),
+            "svdd_val_levels": args.svdd_val_levels,
             "seed": seed,
             **checkpoints,
         }
 
-        submit_job(job_name, train_args, dry_run=False)
+        submit_job(job_name, train_args, dry_run=args.dry_run)
 
     return 0
 

@@ -2,9 +2,9 @@ import numpy as np
 import logging
 from YRC.core import Algorithm
 from YRC.core.configs.global_configs import get_global_variable
-from YRC.models.utils import AutoEncoderWithVal
 from typing import List
 import torch
+
 
 class OODAlgorithm(Algorithm):
     def __init__(self, config, env):
@@ -18,6 +18,7 @@ class OODAlgorithm(Algorithm):
         policy,
         envs,
         rollout_obs: List[torch.Tensor],
+        val_rollout_obs: List[torch.Tensor] = None,
         evaluator=None,
         train_split=None,
         eval_splits=None,
@@ -30,35 +31,18 @@ class OODAlgorithm(Algorithm):
         # Initialize OOD detector
         policy.initialize_ood_detector(args, envs["train"])
 
-        # TODO: There is some asymmetry here. rollout_obs is a list of tensors in the
-        # algorithms that I (pavel) implemented, in order to fit them into memory more
-        # easily. OODPolicy expects a single tensor that is a stack of the list.
-        # Potentially, we should re-write the OODPolicy to accept a list of tensors
-        # to get the same memory benefits.
-        if isinstance(rollout_obs, list):
-            if get_global_variable(
-                "benchmark"
-            ) == "minigrid" and self.feature_type not in [
-                "hidden",
-                "dist",
-                "hidden_dist",
-            ]:
-                rollout_obs = rollout_obs[1::3]
-                rollout_obs = torch.cat(rollout_obs, dim=0)
-            else:
-                rollout_obs = torch.stack(rollout_obs)
-        else:
-            raise ValueError(
-                "Expected rollout_obs to be a list of tensors, got "
-                f"{type(rollout_obs)}, something might be wrong."
+        rollout_obs = self._stack_rollout_obs(rollout_obs, "rollout_obs")
+        if val_rollout_obs is not None:
+            val_rollout_obs = self._stack_rollout_obs(
+                val_rollout_obs, "val_rollout_obs"
             )
 
         # Train OOD detector
         # x_threshold is currently being used to determine 'training' scores.
         # This could eventually be used to determine scores on an in-distribution
-        # validation set that is different from the training set. Not sure if we 
+        # validation set that is different from the training set. Not sure if we
         # want to do this.
-        policy.fit(x=rollout_obs, x_threshold=rollout_obs)
+        policy.fit(x=rollout_obs, x_threshold=rollout_obs, x_val=val_rollout_obs)
 
         # clf: AutoEncoderWithVal = policy.clf
         # val_scores = clf.val_score_list
@@ -109,3 +93,22 @@ class OODAlgorithm(Algorithm):
 
             logging.info("Saving trained model.")
             policy.save_model("trained", self.save_dir)
+
+    def _stack_rollout_obs(self, rollout_obs, name):
+        # OODPolicy expects a single tensor, while rollout loading keeps samples as
+        # a list to reduce peak memory before training starts.
+        if not isinstance(rollout_obs, list):
+            raise ValueError(
+                f"Expected {name} to be a list of tensors, got "
+                f"{type(rollout_obs)}, something might be wrong."
+            )
+
+        feature_type = self.args.coord_policy.feature_type
+        if get_global_variable("benchmark") == "minigrid" and feature_type not in [
+            "hidden",
+            "dist",
+            "hidden_dist",
+        ]:
+            rollout_obs = rollout_obs[1::3]
+            return torch.cat(rollout_obs, dim=0)
+        return torch.stack(rollout_obs)
