@@ -7,7 +7,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from common import ENVS, SERVER_PATHS, get_checkpoints
+from common import ENVS, EXP_ID_TO_SEED, SERVER_PATHS, get_checkpoints
 
 
 # Conda environment
@@ -29,13 +29,6 @@ TRAIN_DEFAULTS = {
     "query_cost": 0,
     "rollout_max_levels": None,
     "svdd_val_levels": 64,
-}
-
-# Seed mapping for each experiment ID
-EXP_ID_TO_SEED = {
-    0: 6033,
-    1: 1,
-    2: 2,
 }
 
 # Feature type choices

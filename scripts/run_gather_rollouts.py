@@ -6,7 +6,7 @@ Script to run gather_rollouts jobs in parallel via SLURM sbatch.
 import subprocess
 from pathlib import Path
 
-from common import get_checkpoints
+from common import ENVS, EXP_ID_TO_SEED, SERVER_PATHS, get_checkpoints
 
 
 # Conda environment
@@ -30,30 +30,6 @@ GATHER_DEFAULTS = {
     "query_cost": 0,
     "rollout_chunk_size": None,
 }
-
-# Seed mapping for each experiment ID
-EXP_ID_TO_SEED = {
-    0: 6033,
-    1: 1,
-    2: 2,
-}
-
-# Server-specific paths
-SERVER_PATHS = {
-    "chai": {
-        "checkpoint_base": "/nas/ucb/czempin/data/goal-misgen/policy/icml",
-        "rollouts_base": "/nas/ucb/czempin/data/goal-misgen/rollouts",
-        "seeds_base": "/nas/ucb/czempin/data/goal-misgen/seeds/icml",
-    },
-    "snoopy": {
-        "checkpoint_base": "/scr/pavel/data/goal-misgen/policy/icml",
-        "rollouts_base": "/scr/pavel/data/goal-misgen/rollouts",
-        "seeds_base": "/scr/pavel/data/goal-misgen/seeds/icml",
-    },
-}
-
-# Environment choices
-ENVS = ["coinrun", "maze"]
 
 
 def parse_rollout_levels_arg(value: str):

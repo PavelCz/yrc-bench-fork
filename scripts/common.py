@@ -5,6 +5,11 @@ from typing import Optional
 
 EXPECTED_TIMESTEPS = 200015872
 ENVS = ["maze", "coinrun"]
+EXP_ID_TO_SEED = {
+    0: 6033,
+    1: 1,
+    2: 2,
+}
 
 SERVER_PATHS = {
     "chai": {
