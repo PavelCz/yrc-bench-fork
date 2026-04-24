@@ -47,6 +47,20 @@ def _deep_copy_info(info: Dict) -> Dict:
     return copied
 
 
+def _episode_randomize_goal(
+    info: Dict[str, Any], done: bool, current_value: bool
+) -> bool:
+    if done and "prev_level/randomize_goal" in info:
+        return bool(info["prev_level/randomize_goal"])
+    return bool(current_value)
+
+
+def _step_invisible_coin_collected(info: Dict[str, Any], done: bool) -> bool:
+    if done and bool(info.get("prev_level/invisible_coin_collected", False)):
+        return True
+    return bool(info.get("invisible_coin_collected", False))
+
+
 class Evaluator:
     LOGGED_ACTION = 1
 
@@ -327,10 +341,10 @@ class Evaluator:
                 if "env_reward" in info[i]:
                     episode_log["cumulative_env_reward"][i] += info[i]["env_reward"]
 
-                # Track if the invisible coin was collected in this step
-                if "invisible_coin_collected" in info[i]:
-                    if info[i]["invisible_coin_collected"] == 1:
-                        current_invisible_coin_collected[i] = True
+                # Procgen resets before returning terminal info, so terminal
+                # episode outcome fields are exposed under prev_level/*.
+                if _step_invisible_coin_collected(info[i], bool(done[i])):
+                    current_invisible_coin_collected[i] = True
 
                 episode_log["cumulative_reward"][i] += reward[i]
                 episode_log["episode_length"][i] += 1
@@ -406,6 +420,9 @@ class Evaluator:
                     )
 
                 if done[i]:
+                    episode_level_ood_gt = _episode_randomize_goal(
+                        info[i], bool(done[i]), current_level_ood_gt[i]
+                    )
                     # Only log to evaluation metrics if within max_episodes limit
                     if num_episodes < max_episodes:
                         log["level_ood_pred"].append(current_level_ood_pred[i])
@@ -417,7 +434,7 @@ class Evaluator:
                         log[f"action_{self.LOGGED_ACTION}"].append(
                             episode_log[f"action_{self.LOGGED_ACTION}"][i]
                         )
-                        log["level_ood_gt"].append(current_level_ood_gt[i])
+                        log["level_ood_gt"].append(episode_level_ood_gt)
 
                         # Log episode outcome information
                         log["invisible_coin_collected"].append(
@@ -451,10 +468,8 @@ class Evaluator:
                         ],  # This is the done state that caused the episode to end
                     }
                     level_info = {
-                        "randomize_goal": current_level_ood_gt[
-                            i
-                        ],  # This will be updated below, but we capture the current value
-                        "level_ood_gt": current_level_ood_gt[i],
+                        "randomize_goal": episode_level_ood_gt,
+                        "level_ood_gt": episode_level_ood_gt,
                         "level_ood_pred": current_level_ood_pred[i],
                     }
 
