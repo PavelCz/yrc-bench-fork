@@ -10,7 +10,6 @@ compared to using the strong agent from the beginning.
 from __future__ import annotations
 
 import argparse
-import os
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -18,10 +17,27 @@ from typing import Dict, List, Optional, Set, Tuple
 
 import matplotlib
 import numpy as np
-import seaborn as sns
 from scipy import interpolate
 
 plt = None
+sns = None
+
+
+def configure_matplotlib_backend(save_path: Optional[str]) -> None:
+    """Select a backend before pyplot or seaborn is imported."""
+    if save_path:
+        matplotlib.use("Agg", force=True)
+        return
+
+    try:
+        matplotlib.use("TkAgg", force=True)
+    except ImportError as exc:
+        raise RuntimeError(
+            "Could not load Matplotlib's TkAgg backend for interactive display. "
+            "Use --save PATH, or verify that Tk works with: "
+            'python -c \'import matplotlib; matplotlib.use("TkAgg", force=True); '
+            "import matplotlib.pyplot as plt; print(matplotlib.get_backend())'"
+        ) from exc
 
 
 # Method display names mapping (same as icml_plot.py)
@@ -483,11 +499,15 @@ def plot_strong_reval_diff(
         plot_absolute: If True, plot absolute performances instead of differences
         plot_strong_only: If True, only plot strong agent performance (not differences)
     """
-    global plt
+    global plt, sns
     if plt is None:
         import matplotlib.pyplot as pyplot
 
         plt = pyplot
+    if sns is None:
+        import seaborn as seaborn
+
+        sns = seaborn
 
     results = extract_strong_reval_results(
         eval_dir, prefix_filter, env_filter, exp_id_filter
@@ -693,9 +713,12 @@ def plot_strong_reval_diff(
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"Saved figure to {save_path}")
-    elif "agg" in matplotlib.get_backend().lower():
-        print("No interactive Matplotlib backend is available; rerun with --save PATH.")
-        plt.close()
+    elif matplotlib.get_backend().lower() == "agg":
+        raise RuntimeError(
+            "Matplotlib is using a non-interactive Agg backend even though no "
+            "--save path was provided. This means the backend was selected "
+            "before plotting. Use --save PATH, or set MPLBACKEND=TkAgg and rerun."
+        )
     else:
         plt.show()
 
@@ -776,15 +799,14 @@ def main():
 
     args = parser.parse_args()
 
-    if args.save or not os.environ.get("DISPLAY"):
-        matplotlib.use("Agg")
-        if not args.save and not os.environ.get("DISPLAY"):
-            print("No DISPLAY detected; use --save to write the plot to a file.")
+    configure_matplotlib_backend(args.save)
 
-    global plt
+    global plt, sns
     import matplotlib.pyplot as pyplot
+    import seaborn as seaborn
 
     plt = pyplot
+    sns = seaborn
 
     eval_dir = Path(args.eval_dir)
 
