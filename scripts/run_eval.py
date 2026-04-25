@@ -47,6 +47,18 @@ EVAL_DEFAULTS = {
 # Default number of ensemble members (excluding weak agent which is added automatically)
 DEFAULT_NUM_ENSEMBLE_MEMBERS = 4
 
+EVAL_ENVS = [*ENVS, "coinrun_proxy_fail"]
+
+# Some evaluation environments intentionally reuse training artifacts from a
+# base environment. `coinrun_proxy_fail` changes the Procgen reward/termination
+# behavior at evaluation time, but its weak/strong checkpoints, SVDD models,
+# ensemble members, and YAML configs are still the normal coinrun artifacts.
+# Keep `args.env` for the environment passed to eval_afhp.py; use this alias
+# only for filesystem lookup paths.
+ARTIFACT_ENVS = {
+    "coinrun_proxy_fail": "coinrun",
+}
+
 
 def get_svdd_feature_type(method: str) -> str:
     """Get the SVDD feature type from method name."""
@@ -128,6 +140,7 @@ def build_sbatch_command(
         "python eval_afhp.py",
         f"-c {eval_args['config']}",
         f"-n {eval_args['name']}",
+        f"-en {eval_args['env_name']}",
         "-defer_to_oracle",
         f"-experiment_group {eval_args['experiment_group']}",
         f"-video_episodes_to_collect {eval_args['video_episodes_to_collect']}",
@@ -235,7 +248,7 @@ def main():
         help="SLURM QOS to use (default: default)",
     )
     parser.add_argument(
-        "--env", required=True, choices=ENVS, help="Environment to evaluate"
+        "--env", required=True, choices=EVAL_ENVS, help="Environment to evaluate"
     )
     parser.add_argument(
         "--method",
@@ -311,9 +324,14 @@ def main():
     seeds_base_path = paths["seeds_base"]
     svdd_base_path = paths["svdd_base"]
 
-    # Get config file path
+    # `args.env` is the actual Procgen environment to instantiate. `artifact_env`
+    # is only the namespace used for existing experiment artifacts on disk.
+    artifact_env = ARTIFACT_ENVS.get(args.env, args.env)
+
+    # Configs are artifact-scoped: proxy-fail evaluation reuses coinrun configs
+    # and overrides the actual env through -en below.
     config_file = METHOD_CONFIGS[args.method]
-    config_path = f"configs/eval/{args.env}/{config_file}"
+    config_path = f"configs/eval/{artifact_env}/{config_file}"
 
     # Validate config file exists
     if not Path(config_path).exists():
@@ -332,14 +350,18 @@ def main():
         print(f"Server: {args.server}")
         print(f"Config: {config_path}")
         print(f"Environment: {args.env}")
+        if artifact_env != args.env:
+            print(f"Artifact env: {artifact_env}")
         print(f"Method: {args.method}")
         print(f"Prefix: {args.prefix}")
         print()
 
     # Loop over experiment IDs
     for exp_id in args.exp_ids:
-        # Get checkpoints for this experiment
-        checkpoints = get_checkpoints(args.env, exp_id, checkpoint_base_path)
+        # Checkpoints and method-specific models are artifact-scoped. Job names
+        # and experiment groups below stay env-scoped so outputs are labeled by
+        # the actual evaluation environment.
+        checkpoints = get_checkpoints(artifact_env, exp_id, checkpoint_base_path)
         if args.sim:
             checkpoints["sim"] = args.sim
         if args.weak:
@@ -355,7 +377,7 @@ def main():
         cp_feature = None
         if args.method in SVDD_METHODS:
             svdd_model_path = get_svdd_model_path(
-                args.env, exp_id, args.method, svdd_base_path
+                artifact_env, exp_id, args.method, svdd_base_path
             )
             cp_feature = "obs" if args.method == "svdd-image" else "hidden"
 
@@ -363,7 +385,7 @@ def main():
         ensemble_members = None
         if args.method in ENSEMBLE_METHODS:
             ensemble_members = get_ensemble_member_paths(
-                args.env, exp_id, checkpoint_base_path, args.num_ensemble_members
+                artifact_env, exp_id, checkpoint_base_path, args.num_ensemble_members
             )
 
         # Validate checkpoints and seeds file exist
@@ -380,7 +402,7 @@ def main():
             missing = True
 
         if args.method in SVDD_METHODS and svdd_model_path is None:
-            svdd_policy_name = get_svdd_policy_name(args.env, exp_id, args.method)
+            svdd_policy_name = get_svdd_policy_name(artifact_env, exp_id, args.method)
             print(
                 f"Warning: exp{exp_id} SVDD model not found at {svdd_base_path}/{svdd_policy_name}/trained.joblib"
             )
@@ -389,10 +411,10 @@ def main():
         if args.method in ENSEMBLE_METHODS and ensemble_members:
             for i, member_path in enumerate(ensemble_members):
                 if member_path is None:
-                    env_folder = get_env_folder(args.env)
+                    env_folder = get_env_folder(artifact_env)
                     print(
                         f"Warning: exp{exp_id} ensemble member m{i} not found at "
-                        f"{checkpoint_base_path}/{env_folder}/ensembles/icml2_ensemble_{args.env}_exp{exp_id}_m{i}/"
+                        f"{checkpoint_base_path}/{env_folder}/ensembles/icml2_ensemble_{artifact_env}_exp{exp_id}_m{i}/"
                     )
                     missing = True
 
@@ -424,6 +446,10 @@ def main():
         eval_args = {
             "config": config_path,
             "name": job_name,
+            # build_sbatch_command emits this as `-en`, so eval_afhp.py creates
+            # the requested environment even when config/artifact lookup used an
+            # alias such as coinrun.
+            "env_name": args.env,
             "experiment_group": experiment_group,
             "num_levels": args.num_levels,
             "video_episodes_to_collect": args.video_episodes,
