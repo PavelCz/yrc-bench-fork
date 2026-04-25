@@ -26,6 +26,7 @@ from eval_strong_on_help import (
     load_eval_seeds,
     load_reval_config,
     make_env_config,
+    resolve_action_greedy,
     resolve_afhp_metric,
     strong_reval_output_path,
 )
@@ -119,6 +120,24 @@ def test_make_env_config_clones_configdict_without_deepcopy_protocol():
     assert original_env_config.common.num_envs == 4
     assert original_env_config.common.num_threads == 4
     assert original_env_config.common.max_steps is None
+
+
+def test_resolve_action_greedy_ignores_standalone_policy_greedy_flag():
+    config = SimpleNamespace(
+        policy=SimpleNamespace(greedy=True),
+        coord_env=SimpleNamespace(act_greedy=False),
+    )
+
+    assert resolve_action_greedy(config) is False
+
+
+def test_resolve_action_greedy_uses_coord_env_act_greedy():
+    config = SimpleNamespace(
+        policy=SimpleNamespace(greedy=False),
+        coord_env=SimpleNamespace(act_greedy=True),
+    )
+
+    assert resolve_action_greedy(config) is True
 
 
 def test_build_strong_reval_point_no_help_returns_nan_values():

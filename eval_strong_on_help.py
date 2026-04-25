@@ -36,13 +36,6 @@ class PointRecord:
 
 
 def resolve_action_greedy(config):
-    policy_config = getattr(config, "policy", None)
-    greedy = (
-        getattr(policy_config, "greedy", None) if policy_config is not None else None
-    )
-    if greedy is not None:
-        return bool(greedy)
-
     coord_env_config = getattr(config, "coord_env", None)
     coord_env_greedy = (
         getattr(coord_env_config, "act_greedy", None)
