@@ -31,7 +31,14 @@ POLICIES = ["sim", "weak", "strong"]
 
 DEFAULT_CONFIGS = {
     "coinrun": "configs/eval/coinrun/max_prob.yaml",
+    "coinrun_proxy_fail": "configs/eval/coinrun/max_prob.yaml",
     "maze": "configs/eval/maze/max_prob.yaml",
+}
+
+EVAL_ENVS = [*ENVS, "coinrun_proxy_fail"]
+
+CHECKPOINT_ENVS = {
+    "coinrun_proxy_fail": "coinrun",
 }
 
 EVAL_DEFAULTS = {
@@ -61,6 +68,7 @@ def build_sbatch_command(
         f"-n {eval_args['name']}",
         f"-experiment_group {eval_args['experiment_group']}",
         f"-eval_split {eval_args['eval_split']}",
+        f"-en {eval_args['env_name']}",
         f"--model_file {eval_args['model_file']}",
         f"-num_rollouts {eval_args['num_rollouts']}",
         f"-level_seeds_file {eval_args['level_seeds_file']}",
@@ -151,11 +159,9 @@ def parse_args():
         help="SLURM QOS to use (default: default)",
     )
     parser.add_argument(
-        "--env", required=True, choices=ENVS, help="Environment to evaluate"
+        "--env", required=True, choices=EVAL_ENVS, help="Environment to evaluate"
     )
-    parser.add_argument(
-        "--prefix", required=True, help="Experiment group prefix"
-    )
+    parser.add_argument("--prefix", required=True, help="Experiment group prefix")
     parser.add_argument(
         "--exp-ids",
         type=int,
@@ -268,8 +274,13 @@ def main():
         print(f"Prefix: {args.prefix}")
         print()
 
+    checkpoint_env = CHECKPOINT_ENVS.get(args.env, args.env)
+    if args.dry_run and checkpoint_env != args.env:
+        print(f"Checkpoint env: {checkpoint_env}")
+        print()
+
     for exp_id in args.exp_ids:
-        checkpoints = get_checkpoints(args.env, exp_id, checkpoint_base_path)
+        checkpoints = get_checkpoints(checkpoint_env, exp_id, checkpoint_base_path)
         if args.sim:
             checkpoints["sim"] = args.sim
         if args.weak:
@@ -310,6 +321,7 @@ def main():
                 "config": config_path,
                 "name": job_name,
                 "experiment_group": experiment_group,
+                "env_name": args.env,
                 "model_file": model_file,
                 "level_seeds_file": str(level_seeds_file),
                 "num_rollouts": args.num_rollouts,
