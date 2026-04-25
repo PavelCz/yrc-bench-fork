@@ -10,18 +10,18 @@ compared to using the strong agent from the beginning.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 import matplotlib
-import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 from scipy import interpolate
 
-matplotlib.use("TkAgg")
+plt = None
 
 
 # Method display names mapping (same as icml_plot.py)
@@ -132,32 +132,33 @@ def extract_strong_reval_results(
                 if method_exp_id != exp_id:
                     continue
 
-            # Find the most recent run
-            latest_run = None
-            latest_time = None
-
+            # Find the most recent run that contains both required artifacts.
+            # The newest directory can be a partial sync or an original eval-only run.
+            original_npz = None
+            strong_reval_npz = None
             for run_dir in method_dir.iterdir():
                 if not run_dir.is_dir():
                     continue
 
-                # Check modification time
-                mtime = run_dir.stat().st_mtime
-                if latest_time is None or mtime > latest_time:
-                    latest_time = mtime
-                    latest_run = run_dir
+                run_original_npz = None
+                run_strong_reval_npz = None
+                for npz_file in run_dir.glob("*.npz"):
+                    if npz_file.name.endswith("_strong_reval.npz"):
+                        run_strong_reval_npz = npz_file
+                    elif npz_file.name.startswith(
+                        "eval_seed_"
+                    ) and npz_file.name.endswith("_test.npz"):
+                        run_original_npz = npz_file
 
-            if latest_run is None:
-                continue
+                if run_original_npz is None or run_strong_reval_npz is None:
+                    continue
 
-            # Look for both original and strong_reval npz files
-            original_npz = None
-            strong_reval_npz = None
-
-            for npz_file in latest_run.glob("*.npz"):
-                if npz_file.name.endswith("_strong_reval.npz"):
-                    strong_reval_npz = npz_file
-                elif npz_file.name.startswith("eval_seed_") and npz_file.name.endswith("_test.npz"):
-                    original_npz = npz_file
+                if (
+                    original_npz is None
+                    or run_dir.stat().st_mtime > original_npz.parent.stat().st_mtime
+                ):
+                    original_npz = run_original_npz
+                    strong_reval_npz = run_strong_reval_npz
 
             # Only include if we have both files
             if original_npz and strong_reval_npz:
@@ -175,45 +176,45 @@ def load_performance_data(
     Returns:
         Tuple of (afhps, original_performances, performance_asked, strong_performances)
     """
-    # Load original evaluation data
     orig_data = np.load(original_npz, allow_pickle=True)
-    
-    # Extract data
+
     performances = orig_data["performances"]
     meta = orig_data["meta"]
-    
-    # Calculate AFHPs and performance_asked for each checkpoint
+
+    # Load strong re-evaluation data early so we can use its aligned
+    # original_help_performances field when present.
+    strong_data = np.load(strong_reval_npz, allow_pickle=True)
+    strong_performances = np.asarray(strong_data["strong_performances"], dtype=float)
+    saved_original_help = strong_data.get("original_help_performances", None)
+
     calculated_afhps = []
     performance_asked = []
-    
+
     for idx, pt_meta in enumerate(meta):
         summary = pt_meta["summary"]["test"]
-        level_seeds = summary.get("level_seeds", [])
         level_ood_pred = summary.get("level_ood_pred", [])
         raw_returns = summary.get("raw_returns", [])
-        
+
         # Calculate AFHP as percentage of episodes where help was asked
         if len(level_ood_pred) > 0:
             afhp = sum(level_ood_pred) / len(level_ood_pred) * 100
         else:
             afhp = 0.0
         calculated_afhps.append(afhp)
-        
-        # Get returns only for episodes where help was asked
-        asked_returns = [
-            ret for seed, pred, ret in zip(level_seeds, level_ood_pred, raw_returns)
-            if pred
-        ]
-        
-        if asked_returns:
-            performance_asked.append(np.mean(asked_returns))
+
+        if saved_original_help is not None and idx < len(saved_original_help):
+            performance_asked.append(float(saved_original_help[idx]))
         else:
-            performance_asked.append(np.nan)
-    
-    # Load strong re-evaluation data
-    strong_data = np.load(strong_reval_npz, allow_pickle=True)
-    strong_performances = strong_data["strong_performances"]
-    
+            # Get returns only for episodes where help was asked
+            asked_returns = [
+                ret for pred, ret in zip(level_ood_pred, raw_returns) if pred
+            ]
+
+            if asked_returns:
+                performance_asked.append(np.mean(asked_returns))
+            else:
+                performance_asked.append(np.nan)
+
     # CRITICAL VALIDATION: Ensure arrays are properly aligned
     print("\n  === Array Length Validation ===")
     print("  Original data:")
@@ -222,96 +223,127 @@ def load_performance_data(
     print(f"    - Number of calculated AFHPs: {len(calculated_afhps)}")
     print("  Strong re-eval data:")
     print(f"    - Number of strong performances: {len(strong_performances)}")
-    
+
     # Check if arrays have the same length
     if len(performances) != len(strong_performances):
         print("  ERROR: Performance array length mismatch!")
         print(f"    Original: {len(performances)}, Strong: {len(strong_performances)}")
         raise ValueError("Cannot compare performances - arrays have different lengths!")
-    
+
     if len(calculated_afhps) != len(strong_performances):
         print("  ERROR: AFHP/performance array length mismatch!")
-        print(f"    AFHPs: {len(calculated_afhps)}, Strong performances: {len(strong_performances)}")
+        print(
+            f"    AFHPs: {len(calculated_afhps)}, Strong performances: {len(strong_performances)}"
+        )
         raise ValueError("Cannot align AFHPs with performances!")
-    
+
     # Calculate AFHPs from strong re-evaluation data for validation
     strong_meta = strong_data.get("meta", [])
     strong_calculated_afhps = []
-    
+
     if len(strong_meta) > 0:
         for idx, pt_meta in enumerate(strong_meta):
             summary = pt_meta["summary"]["test"]
             level_ood_pred = summary.get("level_ood_pred", [])
-            
+
             # Calculate AFHP from strong data
             if len(level_ood_pred) > 0:
                 afhp = sum(level_ood_pred) / len(level_ood_pred) * 100
             else:
                 afhp = 0.0
             strong_calculated_afhps.append(afhp)
-        
+
         # Validate that AFHPs match between original and strong data
         if len(calculated_afhps) == len(strong_calculated_afhps):
             afhp_diff = np.array(calculated_afhps) - np.array(strong_calculated_afhps)
             max_diff = np.abs(afhp_diff).max()
-            
+
             if max_diff > 0.01:  # Allow small floating point differences
                 print("  WARNING: AFHP mismatch between original and strong data!")
                 print(f"  Maximum difference: {max_diff:.4f}%")
                 print(f"  Original AFHPs: {calculated_afhps[:5]}... (showing first 5)")
-                print(f"  Strong AFHPs:   {strong_calculated_afhps[:5]}... (showing first 5)")
+                print(
+                    f"  Strong AFHPs:   {strong_calculated_afhps[:5]}... (showing first 5)"
+                )
             else:
-                print(f"  ✓ AFHPs match between original and strong data (max diff: {max_diff:.6f}%)")
+                print(
+                    f"  ✓ AFHPs match between original and strong data (max diff: {max_diff:.6f}%)"
+                )
         else:
-            print(f"  WARNING: Different number of checkpoints in original ({len(calculated_afhps)}) vs strong ({len(strong_calculated_afhps)}) data!")
+            print(
+                f"  WARNING: Different number of checkpoints in original ({len(calculated_afhps)}) vs strong ({len(strong_calculated_afhps)}) data!"
+            )
     else:
         print("  INFO: No meta data in strong re-eval file to validate AFHPs")
-    
+
     # Also check AFHPs from stored arrays if they exist
     orig_stored_afhps = orig_data.get("afhps", None)
     if orig_stored_afhps is not None and len(orig_stored_afhps) > 0:
-        print(f"  Original stored AFHP range: {orig_stored_afhps.min():.2f}% - {orig_stored_afhps.max():.2f}%")
+        print(
+            f"  Original stored AFHP range: {orig_stored_afhps.min():.2f}% - {orig_stored_afhps.max():.2f}%"
+        )
         # Compare stored vs calculated
         if len(orig_stored_afhps) == len(calculated_afhps):
-            stored_vs_calc_diff = np.abs(orig_stored_afhps - np.array(calculated_afhps)).max()
+            stored_vs_calc_diff = np.abs(
+                orig_stored_afhps - np.array(calculated_afhps)
+            ).max()
             if stored_vs_calc_diff > 0.01:
-                print(f"  WARNING: Stored AFHPs differ from calculated AFHPs in original data (max diff: {stored_vs_calc_diff:.2f}%)")
+                print(
+                    f"  WARNING: Stored AFHPs differ from calculated AFHPs in original data (max diff: {stored_vs_calc_diff:.2f}%)"
+                )
                 # Show some examples
                 n_examples = min(5, len(orig_stored_afhps))
                 print(f"  Examples (first {n_examples}):")
                 print(f"    Stored:     {orig_stored_afhps[:n_examples]}")
                 print(f"    Calculated: {calculated_afhps[:n_examples]}")
                 # Check if it's a factor of 100 issue
-                factor_check = np.array(calculated_afhps[:n_examples]) / (orig_stored_afhps[:n_examples] + 1e-10)
+                factor_check = np.array(calculated_afhps[:n_examples]) / (
+                    orig_stored_afhps[:n_examples] + 1e-10
+                )
                 if np.all(np.abs(factor_check - 100) < 1):
                     print(
                         "  → Stored values appear to be fractions (0-1) instead of "
                         "percentages (0-100)"
                     )
-    
+
     # Use calculated AFHPs instead of the ones from the file
     afhps = np.array(calculated_afhps)
-    
+
     print(f"  AFHP range (calculated): {afhps.min():.2f}% - {afhps.max():.2f}%")
-    
+
     # Additional validation: Check if performance values are reasonable
     print("\n  === Performance Value Validation ===")
-    print(f"  Original performances: min={performances.min():.2f}, max={performances.max():.2f}")
-    
+    print(
+        f"  Original performances: min={performances.min():.2f}, max={performances.max():.2f}"
+    )
+
     # Handle NaN values in performance_asked
     n_nan_asked = np.sum(np.isnan(performance_asked))
     if n_nan_asked > 0:
-        print(f"  Performance asked: min={np.nanmin(performance_asked):.2f}, max={np.nanmax(performance_asked):.2f} ({n_nan_asked} NaN values)")
+        print(
+            f"  Performance asked: min={np.nanmin(performance_asked):.2f}, max={np.nanmax(performance_asked):.2f} ({n_nan_asked} NaN values)"
+        )
     else:
-        print(f"  Performance asked: min={np.min(performance_asked):.2f}, max={np.max(performance_asked):.2f}")
-    
+        print(
+            f"  Performance asked: min={np.min(performance_asked):.2f}, max={np.max(performance_asked):.2f}"
+        )
+
     # Handle NaN values in strong_performances
     n_nan_strong = np.sum(np.isnan(strong_performances))
-    if n_nan_strong > 0:
-        print(f"  Strong performances: min={np.nanmin(strong_performances):.2f}, max={np.nanmax(strong_performances):.2f} ({n_nan_strong} NaN values)")
+    if n_nan_strong == len(strong_performances):
+        print(
+            "  Strong performances: all values are NaN. This strong reval "
+            "artifact cannot contribute points to the plot."
+        )
+    elif n_nan_strong > 0:
+        print(
+            f"  Strong performances: min={np.nanmin(strong_performances):.2f}, max={np.nanmax(strong_performances):.2f} ({n_nan_strong} NaN values)"
+        )
     else:
-        print(f"  Strong performances: min={np.min(strong_performances):.2f}, max={np.max(strong_performances):.2f}")
-    
+        print(
+            f"  Strong performances: min={np.min(strong_performances):.2f}, max={np.max(strong_performances):.2f}"
+        )
+
     # Check if NaN positions match
     if n_nan_asked > 0 or n_nan_strong > 0:
         nan_mask_asked = np.isnan(performance_asked)
@@ -325,7 +357,7 @@ def load_performance_data(
             print("  WARNING: NaN positions don't match between arrays!")
             print(f"    NaN in performance_asked: {np.where(nan_mask_asked)[0]}")
             print(f"    NaN in strong_performances: {np.where(nan_mask_strong)[0]}")
-    
+
     # Verify that strong performances are per-checkpoint averages for help-requested episodes
     if len(strong_meta) > 0:
         # Spot check a few checkpoints to ensure alignment
@@ -335,8 +367,10 @@ def load_performance_data(
             orig_afhp = calculated_afhps[i]
             strong_perf = strong_performances[i]
             perf_asked = performance_asked[i]
-            print(f"  Checkpoint {i}: AFHP={orig_afhp:.2f}%, Perf(asked)={perf_asked:.2f}, Strong={strong_perf:.2f}")
-    
+            print(
+                f"  Checkpoint {i}: AFHP={orig_afhp:.2f}%, Perf(asked)={perf_asked:.2f}, Strong={strong_perf:.2f}"
+            )
+
     return afhps, performances, np.array(performance_asked), strong_performances
 
 
@@ -347,12 +381,12 @@ def calculate_minmax_bands(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Calculate min-max quantile bands from multiple curves.
-    
+
     Args:
         x_arrays: List of x-value arrays for each experiment
         y_arrays: List of y-value arrays for each experiment
         quantiles: Tuple of (lower_quantile, upper_quantile), default (0.25, 0.75)
-        
+
     Returns:
         Tuple of (common_x, y_median, y_lower_quantile, y_upper_quantile)
     """
@@ -361,7 +395,7 @@ def calculate_minmax_bands(
     for x_arr in x_arrays:
         all_x_values.update(x_arr.tolist())
     common_x = np.array(sorted(all_x_values))
-    
+
     # Create interpolation functions for each experiment
     interp_funcs = []
     for x, y in zip(x_arrays, y_arrays):
@@ -369,41 +403,40 @@ def calculate_minmax_bands(
         valid_mask = ~np.isnan(y)
         if np.sum(valid_mask) < 2:
             continue
-            
+
         x_valid = x[valid_mask]
         y_valid = y[valid_mask]
-        
+
         sort_idx = np.argsort(x_valid)
         x_sorted = x_valid[sort_idx]
         y_sorted = y_valid[sort_idx]
-        
+
         f = interpolate.interp1d(
-            x_sorted, y_sorted, kind="linear", 
-            bounds_error=False, fill_value=np.nan
+            x_sorted, y_sorted, kind="linear", bounds_error=False, fill_value=np.nan
         )
         interp_funcs.append(f)
-    
+
     # Calculate statistics at each x value
     y_medians = []
     y_lower_quantiles = []
     y_upper_quantiles = []
-    
+
     for x_val in common_x:
         # Collect y values from all experiments at this x
         y_values = []
-        
+
         for f in interp_funcs:
             y_val = f(x_val)
             if not np.isnan(y_val):
                 y_values.append(y_val)
-        
+
         if len(y_values) > 0:
             # Calculate median and quantiles
             y_values = np.array(y_values)
             median = np.median(y_values)
             lower_q = np.quantile(y_values, quantiles[0])
             upper_q = np.quantile(y_values, quantiles[1])
-            
+
             y_medians.append(median)
             y_lower_quantiles.append(lower_q)
             y_upper_quantiles.append(upper_q)
@@ -412,8 +445,13 @@ def calculate_minmax_bands(
             y_medians.append(np.nan)
             y_lower_quantiles.append(np.nan)
             y_upper_quantiles.append(np.nan)
-    
-    return common_x, np.array(y_medians), np.array(y_lower_quantiles), np.array(y_upper_quantiles)
+
+    return (
+        common_x,
+        np.array(y_medians),
+        np.array(y_lower_quantiles),
+        np.array(y_upper_quantiles),
+    )
 
 
 def plot_strong_reval_diff(
@@ -445,6 +483,12 @@ def plot_strong_reval_diff(
         plot_absolute: If True, plot absolute performances instead of differences
         plot_strong_only: If True, only plot strong agent performance (not differences)
     """
+    global plt
+    if plt is None:
+        import matplotlib.pyplot as pyplot
+
+        plt = pyplot
+
     results = extract_strong_reval_results(
         eval_dir, prefix_filter, env_filter, exp_id_filter
     )
@@ -470,6 +514,7 @@ def plot_strong_reval_diff(
     # Set up plot
     plt.figure(figsize=(10, 8))
     colors = sns.color_palette("husl", len(valid_methods))
+    plotted_any = False
 
     for method_idx, method in enumerate(valid_methods):
         exp_data = results[method]
@@ -485,12 +530,12 @@ def plot_strong_reval_diff(
 
         for exp_id in exp_ids:
             original_npz, strong_reval_npz = exp_data[exp_id]
-            
+
             try:
-                afhps, performances, performance_asked, strong_performances = load_performance_data(
-                    original_npz, strong_reval_npz
+                afhps, performances, performance_asked, strong_performances = (
+                    load_performance_data(original_npz, strong_reval_npz)
                 )
-                
+
                 # Calculate what to plot based on options
                 if plot_strong_only:
                     # Only plot strong agent performance
@@ -508,13 +553,15 @@ def plot_strong_reval_diff(
                 else:
                     # Plot difference: performance_asked - strong_performances
                     diff = performance_asked - strong_performances
-                    
+
                     # Only keep valid (non-NaN) points
-                    valid_mask = ~(np.isnan(performance_asked) | np.isnan(strong_performances))
+                    valid_mask = ~(
+                        np.isnan(performance_asked) | np.isnan(strong_performances)
+                    )
                     if np.sum(valid_mask) > 0:
                         x_arrays.append(afhps[valid_mask])
                         y_arrays.append(diff[valid_mask])
-                
+
             except Exception as e:
                 print(f"Warning: Failed to load data for {method} exp{exp_id}: {e}")
                 continue
@@ -535,7 +582,7 @@ def plot_strong_reval_diff(
                     sort_idx = np.argsort(x)
                     alpha = 0.7 + (i / len(x_arrays)) * 0.3
                     exp_label = f"{label} exp{exp_id}"
-                    
+
                     plt.plot(
                         x[sort_idx],
                         y[sort_idx],
@@ -546,6 +593,7 @@ def plot_strong_reval_diff(
                         markersize=3 if method == "wait" else None,
                         linewidth=1.5,
                     )
+                    plotted_any = True
             else:
                 # Single experiment
                 x, y = x_arrays[0], y_arrays[0]
@@ -558,21 +606,26 @@ def plot_strong_reval_diff(
                     marker="o" if method == "wait" else None,
                     markersize=4,
                 )
+                plotted_any = True
         else:
             # Multiple experiments, aggregate using quantile bands
             common_x, y_median, y_lower_q, y_upper_q = calculate_minmax_bands(
                 x_arrays, y_arrays, quantiles=(0.25, 0.75)
             )
-            
+
             # Filter out NaN values
             valid_mask = ~np.isnan(y_median)
             common_x = common_x[valid_mask]
             y_median = y_median[valid_mask]
             y_lower_q = y_lower_q[valid_mask]
             y_upper_q = y_upper_q[valid_mask]
-            
+
+            if len(common_x) == 0:
+                print(f"Warning: Aggregated data for {method} is all NaN, skipping...")
+                continue
+
             n_exps = len(x_arrays)
-            
+
             # Plot median line
             plt.plot(
                 common_x,
@@ -581,7 +634,7 @@ def plot_strong_reval_diff(
                 color=colors[method_idx],
                 linewidth=2,
             )
-            
+
             # Plot quantile band
             plt.fill_between(
                 common_x,
@@ -590,23 +643,40 @@ def plot_strong_reval_diff(
                 color=colors[method_idx],
                 alpha=0.2,
             )
+            plotted_any = True
+
+    if not plotted_any:
+        env_str = env_filter if env_filter else "all"
+        prefix_str = ",".join(prefix_filter) if prefix_filter else "all"
+        print(
+            "No valid non-NaN strong reval points were found for "
+            f"env={env_str}, prefix={prefix_str}. Check whether the selected "
+            "prefix has completed *_strong_reval.npz artifacts with help "
+            "seeds."
+        )
+        plt.close()
+        return
 
     # Add reference line at y=0 (only for difference plots)
     if not plot_strong_only and not plot_absolute:
-        plt.axhline(y=0, color="black", linestyle="--", alpha=0.5, label="No difference")
+        plt.axhline(
+            y=0, color="black", linestyle="--", alpha=0.5, label="No difference"
+        )
 
     # Labels and title
     env_str = env_filter if env_filter else "all"
     prefix_str = ",".join(prefix_filter) if prefix_filter else "all"
 
     plt.xlabel("Ask-For-Help Percentage (AFHP)")
-    
+
     if plot_strong_only:
         plt.ylabel("Average Return (Strong Agent from Start)")
         default_title = f"Strong Agent Performance on Help-Requested Episodes ({env_str}, prefix={prefix_str})"
     elif plot_absolute:
         plt.ylabel("Average Return (Coordination Policy)")
-        default_title = f"Coordination Policy Performance ({env_str}, prefix={prefix_str})"
+        default_title = (
+            f"Coordination Policy Performance ({env_str}, prefix={prefix_str})"
+        )
     else:
         plt.ylabel("Performance Difference (Coordination - Strong from Start)")
         default_title = f"Performance Loss from Mid-Episode Switching ({env_str}, prefix={prefix_str})"
@@ -615,7 +685,7 @@ def plot_strong_reval_diff(
         plt.title(title)
     else:
         plt.title(default_title)
-    
+
     plt.legend(loc="best")
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
@@ -623,6 +693,9 @@ def plot_strong_reval_diff(
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"Saved figure to {save_path}")
+    elif "agg" in matplotlib.get_backend().lower():
+        print("No interactive Matplotlib backend is available; rerun with --save PATH.")
+        plt.close()
     else:
         plt.show()
 
@@ -702,6 +775,16 @@ def main():
     )
 
     args = parser.parse_args()
+
+    if args.save or not os.environ.get("DISPLAY"):
+        matplotlib.use("Agg")
+        if not args.save and not os.environ.get("DISPLAY"):
+            print("No DISPLAY detected; use --save to write the plot to a file.")
+
+    global plt
+    import matplotlib.pyplot as pyplot
+
+    plt = pyplot
 
     eval_dir = Path(args.eval_dir)
 
