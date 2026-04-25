@@ -151,6 +151,21 @@ def test_run_gather_rollouts_exports_prefixed_rollout_output_dir():
     assert 'export SM_OUTPUT_DIR="/rollouts/rollouts-neurips/coinrun"' in command
 
 
+def test_run_gather_rollouts_allows_level_seed_file_override():
+    scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+    sys.path.insert(0, str(scripts_dir))
+    try:
+        import run_gather_rollouts
+    finally:
+        sys.path.pop(0)
+
+    level_seeds_file = run_gather_rollouts.get_level_seeds_file(
+        0, "/canonical/seeds", Path("/extra/seeds/0.json")
+    )
+
+    assert level_seeds_file == Path("/extra/seeds/0.json")
+
+
 def test_ood_algorithm_stacks_rollouts_without_full_config_coord_policy():
     algorithm = OODAlgorithm(config=object(), env=None)
     rollout_obs = [torch.tensor([1.0]), torch.tensor([2.0])]

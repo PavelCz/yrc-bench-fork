@@ -5,6 +5,7 @@ Script to run gather_rollouts jobs in parallel via SLURM sbatch.
 
 import subprocess
 from pathlib import Path
+from typing import Optional
 
 from common import ENVS, EXP_ID_TO_SEED, SERVER_PATHS, get_checkpoints
 
@@ -57,6 +58,14 @@ def format_rollout_levels_label(num_levels) -> str:
 
 def get_rollout_output_dir(rollouts_base_path: str, prefix: str, env: str) -> Path:
     return Path(rollouts_base_path) / prefix / env
+
+
+def get_level_seeds_file(
+    exp_id: int, seeds_base_path: str, level_seeds_file: Optional[Path] = None
+) -> Path:
+    if level_seeds_file is not None:
+        return level_seeds_file
+    return Path(seeds_base_path) / f"{exp_id}.json"
 
 
 def build_sbatch_command(job_name: str, gather_args: dict) -> str:
@@ -161,6 +170,24 @@ def main():
         ),
     )
     parser.add_argument(
+        "--level-seeds-file",
+        type=Path,
+        default=None,
+        help=(
+            "Override the level seed JSON file. This is useful for alternate "
+            "OOD-train-only seed files and requires exactly one --exp-ids value."
+        ),
+    )
+    parser.add_argument(
+        "--level-seeds-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Override the directory containing {exp_id}.json level seed files. "
+            "Defaults to the selected server's seeds_base path."
+        ),
+    )
+    parser.add_argument(
         "--random-percent",
         type=int,
         default=GATHER_DEFAULTS["random_percent"],
@@ -196,6 +223,11 @@ def main():
     parser.add_argument("--strong", help="Override strong checkpoint path")
     args = parser.parse_args()
 
+    if args.level_seeds_file is not None and args.level_seeds_dir is not None:
+        parser.error("Pass either --level-seeds-file or --level-seeds-dir, not both.")
+    if args.level_seeds_file is not None and len(args.exp_ids) != 1:
+        parser.error("--level-seeds-file requires exactly one --exp-ids value.")
+
     # Validate config file exists
     if not Path(args.config).exists():
         print(f"Error: Config file not found: {args.config}")
@@ -205,7 +237,7 @@ def main():
     paths = SERVER_PATHS[args.server]
     checkpoint_base_path = paths["checkpoint_base"]
     rollouts_base_path = paths["rollouts_base"]
-    seeds_base_path = paths["seeds_base"]
+    seeds_base_path = str(args.level_seeds_dir or paths["seeds_base"])
     rollout_output_dir = get_rollout_output_dir(
         rollouts_base_path, args.prefix, args.env
     )
@@ -216,6 +248,10 @@ def main():
         print(f"Environment: {args.env}")
         print(f"Prefix: {args.prefix}")
         print(f"Rollout output dir: {rollout_output_dir}")
+        if args.level_seeds_file is not None:
+            print(f"Level seeds file override: {args.level_seeds_file}")
+        else:
+            print(f"Level seeds dir: {seeds_base_path}")
         print(f"Experiment IDs: {args.exp_ids}")
         rollout_level_counts = [
             "all" if num_levels is None else num_levels
@@ -243,7 +279,9 @@ def main():
             checkpoints["strong"] = args.strong
 
         # Get level seeds file path
-        level_seeds_file = Path(seeds_base_path) / f"{exp_id}.json"
+        level_seeds_file = get_level_seeds_file(
+            exp_id, seeds_base_path, args.level_seeds_file
+        )
 
         # Validate checkpoints and seeds file exist
         missing = False
