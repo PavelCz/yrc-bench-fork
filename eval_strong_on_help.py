@@ -238,6 +238,20 @@ def normalize_saved_device(config_dict: Dict[str, Any]) -> None:
             general["device"] = 0
 
 
+def resolve_cli_greedy_override(args) -> bool:
+    policy_args = getattr(args, "policy", None)
+    greedy = getattr(policy_args, "greedy", None) if policy_args is not None else None
+    if greedy is None:
+        greedy = getattr(args, "greedy", None)
+    return bool(greedy) if greedy is not None else False
+
+
+def apply_reval_protocol_overrides(config_dict: Dict[str, Any], args) -> None:
+    greedy = resolve_cli_greedy_override(args)
+    config_dict.setdefault("coord_env", {})["act_greedy"] = greedy
+    config_dict.setdefault("policy", {})["greedy"] = greedy
+
+
 def load_reval_config(args, npz_path: Path):
     args.eval_mode = False
     args.overwrite = True
@@ -250,6 +264,7 @@ def load_reval_config(args, npz_path: Path):
         config_dict["eval_mode"] = False
         config_dict["overwrite"] = True
         config_dict["use_wandb"] = bool(getattr(args, "use_wandb", False))
+        apply_reval_protocol_overrides(config_dict, args)
         normalize_saved_device(config_dict)
         return config_utils.load(json.dumps(config_dict), flags=None)
 

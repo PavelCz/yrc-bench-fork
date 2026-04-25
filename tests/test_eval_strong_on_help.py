@@ -68,6 +68,8 @@ def test_load_reval_config_prefers_sibling_config_without_cli_overrides(
         json.dumps(
             {
                 "general": {"device": "cuda:0"},
+                "coord_env": {"act_greedy": True},
+                "policy": {"greedy": True},
                 "evaluation": {"defer_to_oracle": True},
                 "eval_mode": True,
                 "overwrite": False,
@@ -94,10 +96,48 @@ def test_load_reval_config_prefers_sibling_config_without_cli_overrides(
     loaded_config = json.loads(calls[0][0])
     assert calls[0][1] is None
     assert loaded_config["general"]["device"] == 0
+    assert loaded_config["coord_env"]["act_greedy"] is False
+    assert loaded_config["policy"]["greedy"] is False
     assert loaded_config["evaluation"]["defer_to_oracle"] is True
     assert loaded_config["eval_mode"] is False
     assert loaded_config["overwrite"] is True
     assert loaded_config["use_wandb"] is False
+
+
+def test_load_reval_config_honors_cli_greedy_override_for_reval_protocol(
+    tmp_path,
+    monkeypatch,
+):
+    npz_path = tmp_path / "eval_results.npz"
+    sibling_config = tmp_path / "config.json"
+    sibling_config.write_text(
+        json.dumps(
+            {
+                "coord_env": {"act_greedy": False},
+                "policy": {"greedy": False},
+            }
+        )
+    )
+    calls = []
+
+    def fake_load(payload, flags=None):
+        calls.append((payload, flags))
+        return payload
+
+    monkeypatch.setattr(reval.config_utils, "load", fake_load)
+    args = SimpleNamespace(
+        config="fallback.yaml",
+        eval_mode=True,
+        overwrite=False,
+        use_wandb=False,
+        policy=SimpleNamespace(greedy=True),
+    )
+
+    load_reval_config(args, npz_path)
+
+    loaded_config = json.loads(calls[0][0])
+    assert loaded_config["coord_env"]["act_greedy"] is True
+    assert loaded_config["policy"]["greedy"] is True
 
 
 def test_make_env_config_clones_configdict_without_deepcopy_protocol():
