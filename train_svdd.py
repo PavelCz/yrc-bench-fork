@@ -1,6 +1,6 @@
 """Train OOD/SVDD-style coordination policies from collected rollouts."""
 
-from YRC.core.utils import load_rollouts_from_file
+from YRC.core.utils import load_rollout_dataset_from_file
 from YRC.core.level_seeds import load_level_seed_splits
 from YRC.core.rollout_helper import RolloutHelper
 import flags
@@ -17,6 +17,7 @@ from YRC.core.configs import ConfigDict
 from types import SimpleNamespace
 from typing import List, Optional
 import torch
+from torch.utils.data import Dataset
 import time
 from gather_rollouts import make_gather_env_and_agent
 
@@ -86,6 +87,14 @@ def process_rollout_features(config, envs, rollout_obs) -> Optional[List[torch.T
     if rollout_obs is None:
         return None
 
+    if isinstance(rollout_obs, Dataset):
+        if config.coord_policy.feature_type in ["obs", "hidden"]:
+            return rollout_obs
+        raise ValueError(
+            "Streaming rollout training currently supports feature_type='obs' and "
+            f"feature_type='hidden', got {config.coord_policy.feature_type!r}."
+        )
+
     if config.coord_policy.feature_type == "obs":
         return rollout_obs
     if config.coord_policy.feature_type == "hidden":
@@ -136,11 +145,17 @@ def main():
         output_dir = experiment_dir.parent
         rollout_dir = output_dir / config.training.rollout_dir
         rollout_max_levels = getattr(config.training, "rollout_max_levels", None)
-        rollout_obs = load_rollouts_from_file(
+        streaming_rollouts = getattr(config.training, "streaming_rollouts", None)
+        rollout_chunk_cache_size = getattr(
+            config.training, "rollout_chunk_cache_size", None
+        )
+        rollout_obs = load_rollout_dataset_from_file(
             rollout_dir,
             config,
             max_levels=rollout_max_levels,
             prefer_largest=True,
+            streaming_rollouts=streaming_rollouts or "auto",
+            chunk_cache_size=rollout_chunk_cache_size or 2,
         )
         print(f"Rollouts loaded in {time.time() - start:.2f}s")
 

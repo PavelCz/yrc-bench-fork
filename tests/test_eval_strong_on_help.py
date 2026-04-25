@@ -26,6 +26,7 @@ from eval_strong_on_help import (
     load_eval_seeds,
     load_reval_config,
     make_env_config,
+    resolve_action_greedy,
     resolve_afhp_metric,
     strong_reval_output_path,
 )
@@ -67,6 +68,8 @@ def test_load_reval_config_prefers_sibling_config_without_cli_overrides(
         json.dumps(
             {
                 "general": {"device": "cuda:0"},
+                "coord_env": {"act_greedy": True},
+                "policy": {"greedy": True},
                 "evaluation": {"defer_to_oracle": True},
                 "eval_mode": True,
                 "overwrite": False,
@@ -93,10 +96,48 @@ def test_load_reval_config_prefers_sibling_config_without_cli_overrides(
     loaded_config = json.loads(calls[0][0])
     assert calls[0][1] is None
     assert loaded_config["general"]["device"] == 0
+    assert loaded_config["coord_env"]["act_greedy"] is False
+    assert loaded_config["policy"]["greedy"] is False
     assert loaded_config["evaluation"]["defer_to_oracle"] is True
     assert loaded_config["eval_mode"] is False
     assert loaded_config["overwrite"] is True
     assert loaded_config["use_wandb"] is False
+
+
+def test_load_reval_config_honors_cli_greedy_override_for_reval_protocol(
+    tmp_path,
+    monkeypatch,
+):
+    npz_path = tmp_path / "eval_results.npz"
+    sibling_config = tmp_path / "config.json"
+    sibling_config.write_text(
+        json.dumps(
+            {
+                "coord_env": {"act_greedy": False},
+                "policy": {"greedy": False},
+            }
+        )
+    )
+    calls = []
+
+    def fake_load(payload, flags=None):
+        calls.append((payload, flags))
+        return payload
+
+    monkeypatch.setattr(reval.config_utils, "load", fake_load)
+    args = SimpleNamespace(
+        config="fallback.yaml",
+        eval_mode=True,
+        overwrite=False,
+        use_wandb=False,
+        policy=SimpleNamespace(greedy=True),
+    )
+
+    load_reval_config(args, npz_path)
+
+    loaded_config = json.loads(calls[0][0])
+    assert loaded_config["coord_env"]["act_greedy"] is True
+    assert loaded_config["policy"]["greedy"] is True
 
 
 def test_make_env_config_clones_configdict_without_deepcopy_protocol():
@@ -119,6 +160,24 @@ def test_make_env_config_clones_configdict_without_deepcopy_protocol():
     assert original_env_config.common.num_envs == 4
     assert original_env_config.common.num_threads == 4
     assert original_env_config.common.max_steps is None
+
+
+def test_resolve_action_greedy_ignores_standalone_policy_greedy_flag():
+    config = SimpleNamespace(
+        policy=SimpleNamespace(greedy=True),
+        coord_env=SimpleNamespace(act_greedy=False),
+    )
+
+    assert resolve_action_greedy(config) is False
+
+
+def test_resolve_action_greedy_uses_coord_env_act_greedy():
+    config = SimpleNamespace(
+        policy=SimpleNamespace(greedy=False),
+        coord_env=SimpleNamespace(act_greedy=True),
+    )
+
+    assert resolve_action_greedy(config) is True
 
 
 def test_build_strong_reval_point_no_help_returns_nan_values():

@@ -5,6 +5,7 @@ import torch
 
 from YRC.core.configs import ConfigDict
 from YRC.core.rollout_storage import (
+    IndexedChunkedRolloutDataset,
     is_rollout_chunk_manifest,
     load_chunked_rollouts,
 )
@@ -189,6 +190,83 @@ def load_rollouts_from_file(
         print_dict_diff(config.as_dict(), rollouts_config_loaded)
 
     return rollout_obs
+
+
+def load_rollout_dataset_from_file(
+    rollout_dir: Path,
+    config: Optional[ConfigDict] = None,
+    max_levels: Optional[int] = None,
+    prefer_largest: bool = False,
+    streaming_rollouts: str = "auto",
+    chunk_cache_size: int = 2,
+):
+    """Load rollout observations eagerly or as an indexed streaming dataset.
+
+    Legacy ``.pt`` rollout artifacts are always loaded eagerly. Chunked rollout
+    manifests stream when ``streaming_rollouts`` is ``"auto"`` or ``"true"``.
+    """
+    streaming_rollouts = _normalize_streaming_rollouts(streaming_rollouts)
+    rollouts_config_path, rollouts_data_path = resolve_rollout_paths(
+        rollout_dir, prefer_largest=prefer_largest
+    )
+    print(f"Loading rollout dataset from {rollouts_data_path}")
+
+    with rollouts_config_path.open("r") as f:
+        rollouts_config_loaded = json.load(f)
+
+    max_observations = _get_max_observations_for_levels(rollouts_data_path, max_levels)
+    if max_levels is not None:
+        print(
+            f"Using first {max_levels} rollout levels"
+            + (
+                f" ({max_observations} observations)"
+                if max_observations is not None
+                else ""
+            )
+        )
+
+    should_stream = (
+        is_rollout_chunk_manifest(rollouts_data_path)
+        and streaming_rollouts in {"auto", "true"}
+    )
+    if should_stream:
+        rollout_obs = IndexedChunkedRolloutDataset(
+            rollouts_data_path,
+            max_observations=max_observations,
+            chunk_cache_size=chunk_cache_size,
+        )
+        print(
+            "Using indexed streaming rollout dataset "
+            f"({len(rollout_obs)} observations, chunk cache size {chunk_cache_size})"
+        )
+    elif is_rollout_chunk_manifest(rollouts_data_path):
+        rollout_obs = load_chunked_rollouts(
+            rollouts_data_path, max_observations=max_observations
+        )
+    else:
+        with rollouts_data_path.open("rb") as f:
+            rollout_obs = torch.load(f)
+        if max_observations is not None:
+            rollout_obs = rollout_obs[:max_observations]
+
+    if config is not None:
+        print_dict_diff(config.as_dict(), rollouts_config_loaded)
+
+    return rollout_obs
+
+
+def _normalize_streaming_rollouts(value) -> str:
+    if value is None:
+        return "auto"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    value = str(value).lower()
+    if value not in {"auto", "true", "false"}:
+        raise ValueError(
+            "streaming_rollouts must be one of 'auto', 'true', or 'false', "
+            f"got {value!r}"
+        )
+    return value
 
 
 def resolve_rollout_paths(rollout_path: Path, prefer_largest: bool = False):

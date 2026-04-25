@@ -3,10 +3,11 @@
 Script to run DeepSVDD training jobs in parallel via SLURM sbatch.
 """
 
+import os
 import subprocess
 from pathlib import Path
 
-from common import ENVS, SERVER_PATHS, get_checkpoints
+from common import ENVS, EXP_ID_TO_SEED, SERVER_PATHS, get_checkpoints
 
 
 # Conda environment
@@ -30,22 +31,23 @@ TRAIN_DEFAULTS = {
     "svdd_val_levels": 64,
 }
 
-# Seed mapping for each experiment ID
-EXP_ID_TO_SEED = {
-    0: 6033,
-    1: 1,
-    2: 2,
-}
-
 # Feature type choices
 FEATURE_TYPES = ["obs", "hidden"]
 
 
-def get_rollout_dir(env: str, exp_id: int, rollouts_base_path: str) -> str:
+def get_rollout_dir(
+    env: str, exp_id: int, rollouts_base_path: str, rollouts_prefix: str
+) -> str:
     """Get the rollout directory path."""
-    # Format: {rollouts_base}/{env}/gather_{env}_exp{id}/
     rollout_name = f"gather_{env}_exp{exp_id}"
-    return str(Path(rollouts_base_path) / env / rollout_name)
+    return str(Path(rollouts_base_path) / rollouts_prefix / env / rollout_name)
+
+
+def resolve_rollout_path_for_check(rollout_dir: str) -> Path:
+    rollout_path = Path(rollout_dir)
+    if rollout_path.is_absolute():
+        return rollout_path
+    return Path(os.getenv("SM_OUTPUT_DIR", "experiments")) / rollout_path
 
 
 def build_sbatch_command(job_name: str, train_args: dict) -> str:
@@ -126,8 +128,8 @@ def main():
     parser.add_argument(
         "--server",
         choices=list(SERVER_PATHS.keys()),
-        default="snoopy",
-        help="Server to use for paths (default: snoopy)",
+        default="chai",
+        help="Server to use for paths (default: chai)",
     )
     parser.add_argument(
         "--env", required=True, choices=ENVS, help="Environment to train on"
@@ -171,6 +173,12 @@ def main():
         help="Override rollout directory path, or pass a specific rollout .pt file",
     )
     parser.add_argument(
+        "--rollouts-prefix",
+        help=(
+            "Rollout batch folder under the server rollouts base. Defaults to --prefix."
+        ),
+    )
+    parser.add_argument(
         "--rollout-max-levels",
         type=int,
         default=TRAIN_DEFAULTS["rollout_max_levels"],
@@ -207,6 +215,7 @@ def main():
     checkpoint_base_path = paths["checkpoint_base"]
     rollouts_base_path = paths["rollouts_base"]
     seeds_base_path = paths["seeds_base"]
+    rollouts_prefix = args.rollouts_prefix or args.prefix
 
     if args.dry_run:
         print(f"Server: {args.server}")
@@ -214,6 +223,7 @@ def main():
         print(f"Environment: {args.env}")
         print(f"Feature type: {args.feature_type}")
         print(f"Prefix: {args.prefix}")
+        print(f"Rollouts prefix: {rollouts_prefix}")
         print(f"Experiment IDs: {args.exp_ids}")
         print(f"Rollout max levels: {args.rollout_max_levels}")
         print(f"SVDD validation levels: {args.svdd_val_levels}")
@@ -234,7 +244,9 @@ def main():
         if args.rollout_dir:
             rollout_dir = args.rollout_dir
         else:
-            rollout_dir = get_rollout_dir(args.env, exp_id, rollouts_base_path)
+            rollout_dir = get_rollout_dir(
+                args.env, exp_id, rollouts_base_path, rollouts_prefix
+            )
         level_seeds_file = Path(seeds_base_path) / f"{exp_id}.json"
 
         # Get seed for this experiment ID
@@ -248,8 +260,12 @@ def main():
                 missing = True
 
         # Check rollout directory exists
-        if not Path(rollout_dir).exists():
-            print(f"Warning: exp{exp_id} rollout directory not found: {rollout_dir}")
+        resolved_rollout_path = resolve_rollout_path_for_check(rollout_dir)
+        if not resolved_rollout_path.exists():
+            print(
+                f"Warning: exp{exp_id} rollout directory not found: "
+                f"{resolved_rollout_path}"
+            )
             missing = True
         if not level_seeds_file.exists():
             print(
@@ -274,6 +290,7 @@ def main():
             print(f"  Weak:   {checkpoints['weak']}")
             print(f"  Strong: {checkpoints['strong']}")
             print(f"  Rollout dir: {rollout_dir}")
+            print(f"  Resolved rollout path: {resolved_rollout_path}")
             print(f"  Rollout max levels: {args.rollout_max_levels}")
             print(f"  Level seeds: {level_seeds_file}")
             print(f"  SVDD validation levels: {args.svdd_val_levels}")

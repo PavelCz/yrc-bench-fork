@@ -495,6 +495,24 @@ def make():
         ),
     )
     parser.add_argument(
+        "-streaming_rollouts",
+        "--training.streaming_rollouts",
+        type=str,
+        choices=["auto", "true", "false"],
+        default="auto",
+        help=(
+            "whether train_svdd.py should stream chunked rollout manifests. "
+            "'auto' streams chunked manifests and loads legacy .pt files eagerly."
+        ),
+    )
+    parser.add_argument(
+        "-rollout_chunk_cache_size",
+        "--training.rollout_chunk_cache_size",
+        type=int,
+        default=2,
+        help="number of rollout chunks to keep in the indexed streaming cache",
+    )
+    parser.add_argument(
         "-svdd_val_levels",
         "--training.svdd_val_levels",
         type=int,

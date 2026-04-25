@@ -17,7 +17,7 @@ import torch.optim as optim
 
 import logging
 
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 from .base import BaseDetector
 from ..utils.torch_utility import get_activation_by_name
@@ -390,7 +390,7 @@ class DeepSVDD(BaseDetector):
             input_shape=self.input_shape,
         )
 
-    def fit(self, X, X_threshold, y=None, X_val=None):
+    def fit(self, X, X_threshold, y=None, X_val=None, batch_transform=None):
         """Fit detector. y is ignored in unsupervised methods.
 
         Parameters
@@ -407,7 +407,14 @@ class DeepSVDD(BaseDetector):
             Fitted estimator.
         """
 
-        if self.benchmark == "minigrid":
+        is_streaming = isinstance(X, Dataset)
+        if is_streaming and self.feature_type not in ["obs", "hidden"]:
+            raise ValueError(
+                "Streaming DeepSVDD fit currently supports feature_type='obs' and "
+                f"feature_type='hidden', got {self.feature_type!r}."
+            )
+
+        if self.benchmark == "minigrid" and not is_streaming:
             if self.feature_type == "obs_hidden_dist":
                 # removing direction from the input. in minigrid, it's the "direction"
                 X.pop(0)
@@ -416,24 +423,44 @@ class DeepSVDD(BaseDetector):
                 X.pop(1)
                 X_threshold.pop(1)
 
-        X_norm = self.normalization(X)
-        X_norm_th = self.normalization(X_threshold)
+        X_norm = X if is_streaming else self.normalization(X)
+        X_norm_th = X_threshold if is_streaming else self.normalization(X_threshold)
         X_norm_val = self.normalization(X_val) if X_val is not None else None
 
         model_device = next(self.model_.parameters()).device
 
         if self.c is None:
-            self.c = 0.0
-
-            # We move things around devices a bit to avoid having to move the entire
-            # dataset to the GPU.
-            self.model_.to(X_norm.device)
-            self.model_._init_c(X_norm)
-            self.model_.to(model_device)
+            if is_streaming:
+                center_dataloader = DataLoader(
+                    X_norm,
+                    batch_size=self.batch_size,
+                    shuffle=False,
+                    num_workers=0,
+                )
+                self._init_c_from_dataloader(
+                    center_dataloader,
+                    model_device,
+                    batch_transform=batch_transform,
+                )
+            else:
+                # We move things around devices a bit to avoid having to move the
+                # entire dataset to the GPU.
+                self.model_.to(X_norm.device)
+                self.model_._init_c(X_norm)
+                self.c = self.model_.c.detach().to(model_device)
+                self.model_.to(model_device)
 
         # Prepare DataLoader for batch processing
-        dataset = self._make_dataset(X_norm)
-        dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+        if is_streaming:
+            dataloader = DataLoader(
+                X_norm,
+                batch_size=self.batch_size,
+                shuffle=True,
+                num_workers=0,
+            )
+        else:
+            dataset = self._make_dataset(X_norm)
+            dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
         val_dataloader = None
         if X_norm_val is not None:
             val_dataset = self._make_dataset(X_norm_val)
@@ -452,7 +479,12 @@ class DeepSVDD(BaseDetector):
             self.model_.train()
             epoch_loss = 0
             for batch in dataloader:
-                batch_x = self._batch_to_input(batch, model_device)
+                if is_streaming:
+                    batch_x = self._streaming_batch_to_input(
+                        batch, model_device, batch_transform=batch_transform
+                    )
+                else:
+                    batch_x = self._batch_to_input(batch, model_device)
                 outputs = self.model_(batch_x)
                 loss = self._loss(outputs, batch_x)
 
@@ -493,10 +525,17 @@ class DeepSVDD(BaseDetector):
                 best_val_loss = val_loss
         self.best_model_dict = best_model_dict
 
-        scores = []
-        for x_i in X_norm_th:
-            x_i = x_i.to(model_device)
-            scores.append(self.decision_function(x_i.unsqueeze(0)))
+        if is_streaming:
+            scores = self._streaming_decision_scores(
+                X_norm_th,
+                model_device,
+                batch_transform=batch_transform,
+            )
+        else:
+            scores = []
+            for x_i in X_norm_th:
+                x_i = x_i.to(model_device)
+                scores.append(self.decision_function(x_i.unsqueeze(0)))
         self.decision_scores_ = np.concatenate(scores, axis=0)
         self._process_decision_scores()
         return self
@@ -512,12 +551,89 @@ class DeepSVDD(BaseDetector):
         return TensorDataset(X_norm, X_norm)
 
     def _batch_to_input(self, batch, model_device):
+        if torch.is_tensor(batch):
+            return batch.to(model_device)
         batch = [b.to(model_device) for b in batch]
         if self.feature_type in ["hidden_obs", "hidden_dist", "obs_dist"]:
             return batch[0], batch[1]
         if self.feature_type in ["obs_hidden_dist"]:
             return batch[0], batch[1], batch[2]
         return batch[0]
+
+    def _streaming_batch_to_input(self, batch, model_device, batch_transform=None):
+        if batch_transform is not None:
+            batch = batch_transform(batch)
+        batch = self._unwrap_single_tensor_batch(batch)
+        batch = self.normalization(batch)
+        return batch.to(model_device)
+
+    def _unwrap_single_tensor_batch(self, batch):
+        if torch.is_tensor(batch):
+            return batch
+        if isinstance(batch, (list, tuple)) and len(batch) == 1:
+            return batch[0]
+        raise ValueError(
+            "Expected streaming DeepSVDD batch to be a tensor, got "
+            f"{type(batch)}."
+        )
+
+    def _init_c_from_dataloader(
+        self, dataloader, model_device, batch_transform=None, eps=0.1
+    ):
+        intermediate_output = {}
+        hook_handle = self.model_.fc_part._modules.get(
+            "net_output"
+        ).register_forward_hook(
+            lambda module, input, output: intermediate_output.update(
+                {"net_output": output}
+            )
+        )
+
+        output_sum = None
+        output_count = 0
+        self.model_.eval()
+        with torch.no_grad():
+            for batch in dataloader:
+                batch_x = self._streaming_batch_to_input(
+                    batch, model_device, batch_transform=batch_transform
+                )
+                self.model_(batch_x)
+                out = intermediate_output["net_output"]
+                output_sum = (
+                    out.sum(dim=0)
+                    if output_sum is None
+                    else output_sum + out.sum(dim=0)
+                )
+                output_count += out.shape[0]
+        hook_handle.remove()
+
+        if output_count == 0:
+            raise ValueError("Cannot initialize DeepSVDD center from an empty dataset.")
+
+        self.c = (output_sum / output_count).detach()
+        self.c[(torch.abs(self.c) < eps) & (self.c < 0)] = -eps
+        self.c[(torch.abs(self.c) < eps) & (self.c > 0)] = eps
+        self.model_.c = self.c
+        self.model_.train()
+
+    def _streaming_decision_scores(self, dataset, model_device, batch_transform=None):
+        dataloader = DataLoader(
+            dataset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=0,
+        )
+        scores = []
+        self.model_.eval()
+        with torch.no_grad():
+            for batch in dataloader:
+                batch_x = self._streaming_batch_to_input(
+                    batch, model_device, batch_transform=batch_transform
+                )
+                outputs = self.model_(batch_x)
+                dist = torch.sum((outputs - self.c) ** 2, dim=-1)
+                scores.append(dist.cpu().numpy())
+        return scores
 
     def _loss(self, outputs, batch_x):
         dist = torch.sum((outputs - self.c) ** 2, dim=-1)

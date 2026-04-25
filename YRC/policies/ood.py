@@ -65,13 +65,19 @@ class OODPolicy(Policy):
             )
         self.clf.threshold_ = params["threshold"]
 
-    def fit(self, x, x_threshold, y=None, x_val=None):
+    def fit(self, x, x_threshold, y=None, x_val=None, batch_transform=None):
         if self.clf_name == "DeepSVDD":
             # We don't want to move the complete datasets to the GPU, we move the
             # the batches separately.
             # x = x.to(self.device)
             # x_threshold = x_threshold.to(self.device)
-            self.clf.fit(X=x, X_threshold=x_threshold, y=y, X_val=x_val)
+            self.clf.fit(
+                X=x,
+                X_threshold=x_threshold,
+                y=y,
+                X_val=x_val,
+                batch_transform=batch_transform,
+            )
         elif self.clf_name == "AutoEncoder":
             x = x.cpu()
             # Flatten the observations.

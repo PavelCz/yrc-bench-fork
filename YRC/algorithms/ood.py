@@ -4,6 +4,7 @@ from YRC.core import Algorithm
 from YRC.core.configs.global_configs import get_global_variable
 from typing import List
 import torch
+from torch.utils.data import Dataset
 
 
 class OODAlgorithm(Algorithm):
@@ -31,10 +32,27 @@ class OODAlgorithm(Algorithm):
         # Initialize OOD detector
         policy.initialize_ood_detector(args, envs["train"])
 
-        rollout_obs = self._stack_rollout_obs(rollout_obs, "rollout_obs")
+        feature_type = policy.feature_type
+        batch_transform = None
+        if isinstance(rollout_obs, Dataset):
+            if get_global_variable("benchmark") != "procgen":
+                raise ValueError(
+                    "Streaming SVDD rollout training is only supported for Procgen."
+                )
+            if policy.clf_name != "DeepSVDD":
+                raise ValueError(
+                    "Streaming rollout training is only supported for DeepSVDD."
+                )
+            batch_transform = self._make_streaming_batch_transform(
+                policy, envs, feature_type
+            )
+        else:
+            rollout_obs = self._stack_rollout_obs(
+                rollout_obs, "rollout_obs", feature_type
+            )
         if val_rollout_obs is not None:
             val_rollout_obs = self._stack_rollout_obs(
-                val_rollout_obs, "val_rollout_obs"
+                val_rollout_obs, "val_rollout_obs", feature_type
             )
 
         # Train OOD detector
@@ -42,7 +60,12 @@ class OODAlgorithm(Algorithm):
         # This could eventually be used to determine scores on an in-distribution
         # validation set that is different from the training set. Not sure if we
         # want to do this.
-        policy.fit(x=rollout_obs, x_threshold=rollout_obs, x_val=val_rollout_obs)
+        policy.fit(
+            x=rollout_obs,
+            x_threshold=rollout_obs,
+            x_val=val_rollout_obs,
+            batch_transform=batch_transform,
+        )
 
         # clf: AutoEncoderWithVal = policy.clf
         # val_scores = clf.val_score_list
@@ -94,7 +117,7 @@ class OODAlgorithm(Algorithm):
             logging.info("Saving trained model.")
             policy.save_model("trained", self.save_dir)
 
-    def _stack_rollout_obs(self, rollout_obs, name):
+    def _stack_rollout_obs(self, rollout_obs, name, feature_type):
         # OODPolicy expects a single tensor, while rollout loading keeps samples as
         # a list to reduce peak memory before training starts.
         if not isinstance(rollout_obs, list):
@@ -103,7 +126,6 @@ class OODAlgorithm(Algorithm):
                 f"{type(rollout_obs)}, something might be wrong."
             )
 
-        feature_type = self.args.coord_policy.feature_type
         if get_global_variable("benchmark") == "minigrid" and feature_type not in [
             "hidden",
             "dist",
@@ -112,3 +134,50 @@ class OODAlgorithm(Algorithm):
             rollout_obs = rollout_obs[1::3]
             return torch.cat(rollout_obs, dim=0)
         return torch.stack(rollout_obs)
+
+    def _make_streaming_batch_transform(self, policy, envs, feature_type):
+        if feature_type == "obs":
+            return None
+        if feature_type != "hidden":
+            raise ValueError(
+                "Streaming DeepSVDD training currently supports feature_type='obs' "
+                f"and feature_type='hidden', got {feature_type!r}."
+            )
+
+        weak_agent = envs["train"].weak_agent
+        weak_agent.eval()
+        model = getattr(weak_agent, "model", None)
+        if model is not None:
+            model.eval()
+        agent_device = self._agent_device(weak_agent, policy.device)
+
+        def hidden_batch_transform(batch):
+            obs_batch = self._extract_single_tensor_batch(batch).to(agent_device)
+            with torch.no_grad():
+                return weak_agent.get_hidden(obs_batch).detach().cpu()
+
+        return hidden_batch_transform
+
+    def _extract_single_tensor_batch(self, batch):
+        if torch.is_tensor(batch):
+            return batch
+        if isinstance(batch, (list, tuple)) and len(batch) == 1:
+            return batch[0]
+        raise ValueError(
+            "Expected a tensor batch from the streaming rollout dataset, got "
+            f"{type(batch)}."
+        )
+
+    def _agent_device(self, agent, default_device):
+        if hasattr(agent, "_device"):
+            return agent._device
+        model = getattr(agent, "model", None)
+        if model is not None:
+            device = getattr(model, "device", None)
+            if device is not None:
+                return device
+            try:
+                return next(model.parameters()).device
+            except StopIteration:
+                pass
+        return default_device

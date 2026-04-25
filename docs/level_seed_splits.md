@@ -36,6 +36,33 @@ prefixes of `ood_train`. SVDD training can also load the largest available
 rollout artifact and restrict it with `--rollout-max-levels`, avoiding duplicate
 collection for smaller dataset-size runs.
 
+## Additional OOD Training Seeds
+
+For larger OOD detector datasets, generate a separate OOD-train-only seed file
+rather than editing the canonical level seed files:
+
+```bash
+python scripts/generate_extra_ood_train_seeds.py \
+    --existing-level-seeds /nas/ucb/czempin/data/goal-misgen/seeds/icml/0.json \
+    --ood-train 10240 \
+    --base-seed 6033 \
+    -o /nas/ucb/czempin/data/goal-misgen/seeds/extra_ood_train_10240/0.json
+```
+
+The generated file has the standard `seeds` object, but only `ood_train` is
+non-empty. It excludes every seed from every split in the listed existing files.
+Use it for rollout collection with:
+
+```bash
+python scripts/run_gather_rollouts.py \
+    --env coinrun \
+    --prefix rollouts-neurips \
+    --exp-ids 0 \
+    --server chai \
+    --num-levels all \
+    --level-seeds-file /nas/ucb/czempin/data/goal-misgen/seeds/extra_ood_train_10240/0.json
+```
+
 ## Naming Notes
 
 - `validation` is a seed-file split.
