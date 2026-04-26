@@ -27,6 +27,7 @@ Optional arguments:
     -h, --help                Show this help message
     --randomize-agent-start   MAZE only: train with randomized initial agent cells
     --random-percent PERCENT  Train only this random_percent value (default: 0 50 100)
+    --num-timesteps N         Training timesteps per job (default: 200000000)
 
 Experiment configurations:
     EXPERIMENT_ID | SEED                   | LEVEL_SEEDS_FILE | TRAIN_MODE | NUM_LEVELS
@@ -49,6 +50,7 @@ ENV_TYPE=""
 EXPERIMENT_ID=""
 RANDOMIZE_AGENT_START=false
 RANDOM_PERCENT_OVERRIDE=""
+NUM_TIMESTEPS=200000000
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -69,6 +71,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --random-percent)
             RANDOM_PERCENT_OVERRIDE="$2"
+            shift 2
+            ;;
+        --num-timesteps)
+            NUM_TIMESTEPS="$2"
             shift 2
             ;;
         *)
@@ -107,6 +113,16 @@ fi
 
 if [ -n "$RANDOM_PERCENT_OVERRIDE" ] && [ "$RANDOM_PERCENT_OVERRIDE" -gt 100 ]; then
     echo "Error: --random-percent must be between 0 and 100, got '$RANDOM_PERCENT_OVERRIDE'"
+    exit 1
+fi
+
+if ! [[ "$NUM_TIMESTEPS" =~ ^[0-9]+$ ]]; then
+    echo "Error: --num-timesteps must be a positive integer, got '$NUM_TIMESTEPS'"
+    exit 1
+fi
+
+if [ "$NUM_TIMESTEPS" -le 0 ]; then
+    echo "Error: --num-timesteps must be positive, got '$NUM_TIMESTEPS'"
     exit 1
 fi
 
@@ -158,6 +174,7 @@ echo "  EXPERIMENT_ID: $EXPERIMENT_ID"
 echo "  SEED:          $SEED"
 echo "  TRAIN_MODE:    $TRAIN_MODE"
 echo "  RANDOM_START:  $RANDOMIZE_AGENT_START"
+echo "  TIMESTEPS:     $NUM_TIMESTEPS"
 echo ""
 
 if [ -n "$RANDOM_PERCENT_OVERRIDE" ]; then
@@ -198,7 +215,7 @@ for random_percent in "${RANDOM_PERCENTS[@]}"; do
             --random_percent_val 50 \
             --distribution_mode hard \
             --param_name paper \
-            --num_timesteps 200000000 \
+            --num_timesteps $NUM_TIMESTEPS \
             --log_interval 4000000 \
             --num_checkpoints 10 \
             --num_threads 4 \
