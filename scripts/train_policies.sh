@@ -26,6 +26,7 @@ Required arguments:
 Optional arguments:
     -h, --help                Show this help message
     --randomize-agent-start   MAZE only: train with randomized initial agent cells
+    --random-percent PERCENT  Train only this random_percent value (default: 0 50 100)
 
 Experiment configurations:
     EXPERIMENT_ID | SEED                   | LEVEL_SEEDS_FILE | TRAIN_MODE | NUM_LEVELS
@@ -47,6 +48,7 @@ EOF
 ENV_TYPE=""
 EXPERIMENT_ID=""
 RANDOMIZE_AGENT_START=false
+RANDOM_PERCENT_OVERRIDE=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -64,6 +66,10 @@ while [[ $# -gt 0 ]]; do
         --randomize-agent-start)
             RANDOMIZE_AGENT_START=true
             shift
+            ;;
+        --random-percent)
+            RANDOM_PERCENT_OVERRIDE="$2"
+            shift 2
             ;;
         *)
             echo "Error: Unknown option: $1"
@@ -91,6 +97,16 @@ fi
 
 if [ "$RANDOMIZE_AGENT_START" = true ] && [ "$ENV_TYPE" != "maze" ]; then
     echo "Error: --randomize-agent-start is currently supported only for maze"
+    exit 1
+fi
+
+if [ -n "$RANDOM_PERCENT_OVERRIDE" ] && ! [[ "$RANDOM_PERCENT_OVERRIDE" =~ ^[0-9]+$ ]]; then
+    echo "Error: --random-percent must be an integer, got '$RANDOM_PERCENT_OVERRIDE'"
+    exit 1
+fi
+
+if [ -n "$RANDOM_PERCENT_OVERRIDE" ] && [ "$RANDOM_PERCENT_OVERRIDE" -gt 100 ]; then
+    echo "Error: --random-percent must be between 0 and 100, got '$RANDOM_PERCENT_OVERRIDE'"
     exit 1
 fi
 
@@ -143,6 +159,10 @@ echo "  SEED:          $SEED"
 echo "  TRAIN_MODE:    $TRAIN_MODE"
 echo "  RANDOM_START:  $RANDOMIZE_AGENT_START"
 echo ""
+
+if [ -n "$RANDOM_PERCENT_OVERRIDE" ]; then
+    RANDOM_PERCENTS=("$RANDOM_PERCENT_OVERRIDE")
+fi
 
 for random_percent in "${RANDOM_PERCENTS[@]}"; do
     exp_name="${EXP_PREFIX}_${ENV_TYPE}_exp${EXPERIMENT_ID}_${random_percent}p"
