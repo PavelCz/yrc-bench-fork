@@ -25,6 +25,7 @@ Required arguments:
 
 Optional arguments:
     -h, --help                Show this help message
+    --randomize-agent-start   MAZE only: train with randomized initial agent cells
 
 Experiment configurations:
     EXPERIMENT_ID | SEED                   | LEVEL_SEEDS_FILE | TRAIN_MODE | NUM_LEVELS
@@ -45,6 +46,7 @@ EOF
 # Parse command line arguments
 ENV_TYPE=""
 EXPERIMENT_ID=""
+RANDOMIZE_AGENT_START=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -58,6 +60,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -h|--help)
             usage
+            ;;
+        --randomize-agent-start)
+            RANDOMIZE_AGENT_START=true
+            shift
             ;;
         *)
             echo "Error: Unknown option: $1"
@@ -80,6 +86,11 @@ fi
 # Validate ENV_TYPE
 if [ "$ENV_TYPE" != "coinrun" ] && [ "$ENV_TYPE" != "maze" ] && [ "$ENV_TYPE" != "heist" ]; then
     echo "Error: ENV_TYPE must be 'coinrun', 'maze', or 'heist', got '$ENV_TYPE'"
+    exit 1
+fi
+
+if [ "$RANDOMIZE_AGENT_START" = true ] && [ "$ENV_TYPE" != "maze" ]; then
+    echo "Error: --randomize-agent-start is currently supported only for maze"
     exit 1
 fi
 
@@ -130,15 +141,22 @@ echo "  ENV_TYPE:      $ENV_TYPE"
 echo "  EXPERIMENT_ID: $EXPERIMENT_ID"
 echo "  SEED:          $SEED"
 echo "  TRAIN_MODE:    $TRAIN_MODE"
+echo "  RANDOM_START:  $RANDOMIZE_AGENT_START"
 echo ""
 
 for random_percent in "${RANDOM_PERCENTS[@]}"; do
     exp_name="${EXP_PREFIX}_${ENV_TYPE}_exp${EXPERIMENT_ID}_${random_percent}p"
+    if [ "$RANDOMIZE_AGENT_START" = true ]; then
+        exp_name="${exp_name}_random_start"
+    fi
 
     # Build optional arguments
     EXTRA_ARGS=""
     if [ -n "$NUM_LEVELS" ]; then
         EXTRA_ARGS="--num_levels $NUM_LEVELS"
+    fi
+    if [ "$RANDOMIZE_AGENT_START" = true ]; then
+        EXTRA_ARGS="$EXTRA_ARGS --randomize_agent_start --validate_random_agent_start"
     fi
 
     echo "Submitting job: $exp_name"

@@ -1,15 +1,25 @@
-from common.env.procgen_wrappers import *
+import argparse
+import json
+import os
+import random
+import time
+
+import gym
+import torch
+import yaml
 from common.logger import Logger
-from common.storage import Storage
+from common import set_global_seeds, set_global_log_levels
+from common.env.procgen_wrappers import (
+    ScaledFloatFrame,
+    TransposeFrame,
+    VecExtractDictObs,
+    VecNormalize,
+)
 from common.model import NatureModel, ImpalaModel, DebugModel
 from common.policy import CategoricalPolicy
-from common import set_global_seeds, set_global_log_levels
-
-import os, time, yaml, argparse, json
-import gym
+from common.storage import Storage
+import numpy as np
 from procgen import ProcgenEnv
-import random
-import torch
 
 try:
     import wandb
@@ -17,52 +27,158 @@ except ImportError:
     pass
 
 
-if __name__=='__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--exp_name',         type=str, default = 'test', help='experiment name')
-    parser.add_argument('--env_name',         type=str, default = 'coinrun', help='environment ID')
-    parser.add_argument('--val_env_name',     type=str, default = None, help='optional validation environment ID')
-    parser.add_argument('--start_level',      type=int, default = int(0), help='start-level for environment')
-    parser.add_argument('--num_levels',       type=int, default = int(0), help='number of training levels for environment')
-    parser.add_argument('--distribution_mode',type=str, default = 'easy', help='distribution mode for environment')
-    parser.add_argument('--param_name',       type=str, default = 'easy-200', help='hyper-parameter ID')
-    parser.add_argument('--device',           type=str, default = 'gpu', required = False, help='whether to use gpu')
-    parser.add_argument('--gpu_device',       type=int, default = int(0), required = False, help = 'visible device in CUDA')
-    parser.add_argument('--num_timesteps',    type=int, default = int(25000000), help = 'number of training timesteps')
-    parser.add_argument('--seed',             type=int, default = random.randint(0,9999), help='Random generator seed')
-    parser.add_argument('--log_level',        type=int, default = int(40), help='[10,20,30,40]')
-    parser.add_argument('--num_checkpoints',  type=int, default = int(1), help='number of checkpoints to store')
-    parser.add_argument('--model_file', type=str)
-    parser.add_argument('--use_wandb',        action="store_true")
-    parser.add_argument('--disable_backgrounds', action="store_true")
+    parser.add_argument("--exp_name", type=str, default="test", help="experiment name")
+    parser.add_argument(
+        "--env_name", type=str, default="coinrun", help="environment ID"
+    )
+    parser.add_argument(
+        "--val_env_name",
+        type=str,
+        default=None,
+        help="optional validation environment ID",
+    )
+    parser.add_argument(
+        "--start_level", type=int, default=int(0), help="start-level for environment"
+    )
+    parser.add_argument(
+        "--num_levels",
+        type=int,
+        default=int(0),
+        help="number of training levels for environment",
+    )
+    parser.add_argument(
+        "--distribution_mode",
+        type=str,
+        default="easy",
+        help="distribution mode for environment",
+    )
+    parser.add_argument(
+        "--param_name", type=str, default="easy-200", help="hyper-parameter ID"
+    )
+    parser.add_argument(
+        "--device", type=str, default="gpu", required=False, help="whether to use gpu"
+    )
+    parser.add_argument(
+        "--gpu_device",
+        type=int,
+        default=int(0),
+        required=False,
+        help="visible device in CUDA",
+    )
+    parser.add_argument(
+        "--num_timesteps",
+        type=int,
+        default=int(25000000),
+        help="number of training timesteps",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=random.randint(0, 9999),
+        help="Random generator seed",
+    )
+    parser.add_argument("--log_level", type=int, default=int(40), help="[10,20,30,40]")
+    parser.add_argument(
+        "--num_checkpoints",
+        type=int,
+        default=int(1),
+        help="number of checkpoints to store",
+    )
+    parser.add_argument("--model_file", type=str)
+    parser.add_argument("--use_wandb", action="store_true")
+    parser.add_argument("--disable_backgrounds", action="store_true")
 
-    parser.add_argument('--wandb_tags',       type=str, nargs='+')
-    parser.add_argument('--log_interval',     type=int, default=1000000, help='number of timesteps between logging')
-    parser.add_argument('--num_validation_episodes', type=int, default=1024, help='number of validation episodes to run')
+    parser.add_argument("--wandb_tags", type=str, nargs="+")
+    parser.add_argument(
+        "--log_interval",
+        type=int,
+        default=1000000,
+        help="number of timesteps between logging",
+    )
+    parser.add_argument(
+        "--num_validation_episodes",
+        type=int,
+        default=1024,
+        help="number of validation episodes to run",
+    )
 
-    parser.add_argument('--random_percent',   type=int, default=0, help='COINRUN: percent of environments in which coin is randomized (only for coinrun)')
-    parser.add_argument('--random_percent_val', type=int, default=None, help='COINRUN: random_percent for validation env (defaults to --random_percent if not set)')
-    parser.add_argument('--key_penalty',   type=int, default=0, help='HEIST_AISC: Penalty for picking up keys (divided by 10)')
-    parser.add_argument('--step_penalty',   type=int, default=0, help='HEIST_AISC: Time penalty per step (divided by 1000)')
-    parser.add_argument('--rand_region',   type=int, default=0, help='MAZE: size of region (in upper left corner) in which goal is sampled.')
-    
+    parser.add_argument(
+        "--random_percent",
+        type=int,
+        default=0,
+        help="COINRUN: percent of environments in which coin is randomized (only for coinrun)",
+    )
+    parser.add_argument(
+        "--random_percent_val",
+        type=int,
+        default=None,
+        help="COINRUN: random_percent for validation env (defaults to --random_percent if not set)",
+    )
+    parser.add_argument(
+        "--key_penalty",
+        type=int,
+        default=0,
+        help="HEIST_AISC: Penalty for picking up keys (divided by 10)",
+    )
+    parser.add_argument(
+        "--step_penalty",
+        type=int,
+        default=0,
+        help="HEIST_AISC: Time penalty per step (divided by 1000)",
+    )
+    parser.add_argument(
+        "--rand_region",
+        type=int,
+        default=0,
+        help="MAZE: size of region (in upper left corner) in which goal is sampled.",
+    )
+    parser.add_argument(
+        "--randomize_agent_start",
+        action="store_true",
+        help="MAZE: sample the initial agent cell from traversable maze cells.",
+    )
+    parser.add_argument(
+        "--validate_random_agent_start",
+        action="store_true",
+        help="MAZE: add a second validation stream with randomized agent starts.",
+    )
+
     # Level seeds options
-    parser.add_argument('--level_seeds_file', type=str, default=None,
-                        help='Path to JSON file with level seeds (generated by generate_level_seeds.py)')
-    parser.add_argument('--train_mode', type=str, default='container',
-                        choices=['sequential', 'container', 'random', 'fallback'],
-                        help='Mode for training env seeds: sequential, container, random (with replacement), or fallback (ignore seeds file)')
-    parser.add_argument('--eval_mode', type=str, default='sequential',
-                        choices=['sequential', 'container', 'random', 'fallback'],
-                        help='Mode for eval env seeds: sequential, container, random (with replacement), or fallback (ignore seeds file)')
+    parser.add_argument(
+        "--level_seeds_file",
+        type=str,
+        default=None,
+        help="Path to JSON file with level seeds (generated by generate_level_seeds.py)",
+    )
+    parser.add_argument(
+        "--train_mode",
+        type=str,
+        default="container",
+        choices=["sequential", "container", "random", "fallback"],
+        help="Mode for training env seeds: sequential, container, random (with replacement), or fallback (ignore seeds file)",
+    )
+    parser.add_argument(
+        "--eval_mode",
+        type=str,
+        default="sequential",
+        choices=["sequential", "container", "random", "fallback"],
+        help="Mode for eval env seeds: sequential, container, random (with replacement), or fallback (ignore seeds file)",
+    )
 
-    #multi threading
-    parser.add_argument('--num_threads', type=int, default=8)
-    parser.add_argument('--debug', action="store_true")
-    
+    # multi threading
+    parser.add_argument("--num_threads", type=int, default=8)
+    parser.add_argument("--debug", action="store_true")
+
     # Eval env recreation
-    parser.add_argument('--recreate_eval_env', type=str, default='auto', choices=['true', 'false', 'auto'],
-                        help='Recreate eval env before each validation run. auto=true when using level_seeds_file, false otherwise')
+    parser.add_argument(
+        "--recreate_eval_env",
+        type=str,
+        default="auto",
+        choices=["true", "false", "auto"],
+        help="Recreate eval env before each validation run. auto=true when using level_seeds_file, false otherwise",
+    )
 
     args = parser.parse_args()
     exp_name = args.exp_name
@@ -80,6 +196,13 @@ if __name__=='__main__':
     num_checkpoints = args.num_checkpoints
     num_validation_episodes = args.num_validation_episodes
 
+    if (
+        args.randomize_agent_start or args.validate_random_agent_start
+    ) and not env_name.startswith("maze"):
+        raise ValueError(
+            "Agent-start randomization is currently supported only for maze envs."
+        )
+
     set_global_seeds(seed)
     set_global_log_levels(log_level)
 
@@ -91,93 +214,115 @@ if __name__=='__main__':
     ####################
     ## HYPERPARAMETERS #
     ####################
-    print('[LOADING HYPERPARAMETERS...]')
-    with open('hyperparams/procgen/config.yml', 'r') as f:
+    print("[LOADING HYPERPARAMETERS...]")
+    with open("hyperparams/procgen/config.yml", "r") as f:
         hyperparameters = yaml.safe_load(f)[param_name]
     for key, value in hyperparameters.items():
-        print(key, ':', value)
+        print(key, ":", value)
 
     ############
     ## DEVICE ##
     ############
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_device)
-    if args.device == 'gpu':
-        device = torch.device('cuda')
-    elif args.device == 'cpu':
-        device = torch.device('cpu')
+    if args.device == "gpu":
+        device = torch.device("cuda")
+    elif args.device == "cpu":
+        device = torch.device("cpu")
 
     #################
     ## ENVIRONMENT ##
     #################
-    print('INITIALIZAING ENVIRONMENTS...')
+    print("INITIALIZAING ENVIRONMENTS...")
 
-    n_steps = hyperparameters.get('n_steps', 256)
-    n_envs = hyperparameters.get('n_envs', 256)
+    n_steps = hyperparameters.get("n_steps", 256)
+    n_envs = hyperparameters.get("n_envs", 256)
 
     # Load level seeds if provided
     level_seeds_train = None
     level_seeds_eval = None
     if args.level_seeds_file is not None:
-        print(f'LOADING LEVEL SEEDS FROM {args.level_seeds_file}...')
+        print(f"LOADING LEVEL SEEDS FROM {args.level_seeds_file}...")
         with open(args.level_seeds_file) as f:
             seeds_data = json.load(f)
-        level_seeds_train = seeds_data['seeds']['policy_train']
-        level_seeds_eval = seeds_data['seeds'].get('validation', None)
-        print(f'  - Loaded {len(level_seeds_train)} training seeds (mode: {args.train_mode})')
+        level_seeds_train = seeds_data["seeds"]["policy_train"]
+        level_seeds_eval = seeds_data["seeds"].get("validation", None)
+        print(
+            f"  - Loaded {len(level_seeds_train)} training seeds (mode: {args.train_mode})"
+        )
         if level_seeds_eval:
-            print(f'  - Loaded {len(level_seeds_eval)} validation seeds (mode: {args.eval_mode})')
+            print(
+                f"  - Loaded {len(level_seeds_eval)} validation seeds (mode: {args.eval_mode})"
+            )
         else:
-            print(f'  - No validation seeds in file (mode: {args.eval_mode})')
+            print(f"  - No validation seeds in file (mode: {args.eval_mode})")
 
-    def create_venv(args, hyperparameters, is_valid=False):
+    def create_venv(args, hyperparameters, is_valid=False, randomize_agent_start=False):
         # Determine which level seeds to use (if any)
         # Mode can be 'sequential', 'container', or 'fallback' (don't use seeds)
         if is_valid:
             seeds_mode = args.eval_mode
-            seeds_to_use = level_seeds_eval if seeds_mode != 'fallback' else None
+            seeds_to_use = level_seeds_eval if seeds_mode != "fallback" else None
         else:
             seeds_mode = args.train_mode
-            seeds_to_use = level_seeds_train if seeds_mode != 'fallback' else None
-        
+            seeds_to_use = level_seeds_train if seeds_mode != "fallback" else None
+
         # Determine random_percent based on train/eval
         if is_valid and args.random_percent_val is not None:
             random_percent = args.random_percent_val
         else:
             random_percent = args.random_percent
-        
+
+        if is_valid:
+            env_randomize_agent_start = randomize_agent_start
+        else:
+            env_randomize_agent_start = args.randomize_agent_start
+
         # Build kwargs for level seeds
         seed_kwargs = {}
         if seeds_to_use is not None:
-            seed_kwargs['level_seeds'] = seeds_to_use
-            seed_kwargs['level_seeds_mode'] = seeds_mode
-        
-        venv = ProcgenEnv(num_envs=n_envs,
-                          env_name=val_env_name if is_valid else env_name,
-                          num_levels=0 if is_valid else args.num_levels,
-                          start_level=start_level_val if is_valid else args.start_level,
-                          distribution_mode=args.distribution_mode,
-                          num_threads=args.num_threads,
-                          random_percent=random_percent,
-                          step_penalty=args.step_penalty,
-                          key_penalty=args.key_penalty,
-                          use_backgrounds=not args.disable_backgrounds,
-                          rand_region=args.rand_region,
-                          **seed_kwargs)
+            seed_kwargs["level_seeds"] = seeds_to_use
+            seed_kwargs["level_seeds_mode"] = seeds_mode
+
+        venv = ProcgenEnv(
+            num_envs=n_envs,
+            env_name=val_env_name if is_valid else env_name,
+            num_levels=0 if is_valid else args.num_levels,
+            start_level=start_level_val if is_valid else args.start_level,
+            distribution_mode=args.distribution_mode,
+            num_threads=args.num_threads,
+            random_percent=random_percent,
+            step_penalty=args.step_penalty,
+            key_penalty=args.key_penalty,
+            use_backgrounds=not args.disable_backgrounds,
+            rand_region=args.rand_region,
+            randomize_agent_start=env_randomize_agent_start,
+            **seed_kwargs,
+        )
         venv = VecExtractDictObs(venv, "rgb")
-        
-        normalize_rew = hyperparameters.get('normalize_rew', True)
+
+        normalize_rew = hyperparameters.get("normalize_rew", True)
         if normalize_rew:
-            venv = VecNormalize(venv, ob=False) # normalizing returns, but not
-            #the img frames
+            venv = VecNormalize(venv, ob=False)  # normalizing returns, but not
+            # the img frames
         venv = TransposeFrame(venv)
         venv = ScaledFloatFrame(venv)
         return venv
 
     env = create_venv(args, hyperparameters)
     env_valid = create_venv(args, hyperparameters, is_valid=True)
-
-
-
+    use_random_start_validation = (
+        args.randomize_agent_start or args.validate_random_agent_start
+    )
+    env_valid_random_start = (
+        create_venv(
+            args,
+            hyperparameters,
+            is_valid=True,
+            randomize_agent_start=True,
+        )
+        if use_random_start_validation
+        else None
+    )
 
     ############
     ## LOGGER ##
@@ -188,57 +333,80 @@ if __name__=='__main__':
     def get_latest_model(model_dir):
         """given model_dir with files named model_n.pth where n is an integer,
         return the filename with largest n"""
-        steps = [int(filename[6:-4]) for filename in os.listdir(model_dir) if filename.startswith("model_")]
+        steps = [
+            int(filename[6:-4])
+            for filename in os.listdir(model_dir)
+            if filename.startswith("model_")
+        ]
         return list(os.listdir(model_dir))[np.argmax(steps)]
 
-    print('INITIALIZING LOGGER...')
+    print("INITIALIZING LOGGER...")
 
-    logdir = os.path.join('logs', 'train', env_name, exp_name)
+    logdir = os.path.join("logs", "train", env_name, exp_name)
     if args.model_file == "auto":  # try to figure out which file to load
-        logdirs_with_model = [d for d in listdir(logdir) if any(['model' in filename for filename in os.listdir(d)])] 
+        logdirs_with_model = [
+            d
+            for d in listdir(logdir)
+            if any(["model" in filename for filename in os.listdir(d)])
+        ]
         if len(logdirs_with_model) > 1:
-            raise ValueError("Received args.model_file = 'auto', but there are multiple experiments"
-                                f" with saved models under experiment_name {exp_name}.")
+            raise ValueError(
+                "Received args.model_file = 'auto', but there are multiple experiments"
+                f" with saved models under experiment_name {exp_name}."
+            )
         elif len(logdirs_with_model) == 0:
-            raise ValueError("Received args.model_file = 'auto', but there are"
-                                f" no saved models under experiment_name {exp_name}.")
+            raise ValueError(
+                "Received args.model_file = 'auto', but there are"
+                f" no saved models under experiment_name {exp_name}."
+            )
         model_dir = logdirs_with_model[0]
         args.model_file = os.path.join(model_dir, get_latest_model(model_dir))
-        logdir = model_dir # reuse logdir
+        logdir = model_dir  # reuse logdir
     else:
-        run_name = time.strftime("%Y-%m-%d__%H-%M-%S") + f'__seed_{seed}'
+        run_name = time.strftime("%Y-%m-%d__%H-%M-%S") + f"__seed_{seed}"
         logdir = os.path.join(logdir, run_name)
     if not (os.path.exists(logdir)):
         os.makedirs(logdir)
 
-    print(f'Logging to {logdir}')
+    print(f"Logging to {logdir}")
     if args.use_wandb:
         cfg = vars(args)
         cfg.update(hyperparameters)
         wb_resume = "allow" if args.model_file is None else "must"
-        wandb.init(project="objective-robustness", config=cfg, tags=args.wandb_tags, resume=wb_resume)
-    logger = Logger(n_envs, logdir, use_wandb=args.use_wandb, log_interval=args.log_interval)
+        wandb.init(
+            project="objective-robustness",
+            config=cfg,
+            tags=args.wandb_tags,
+            resume=wb_resume,
+        )
+    logger = Logger(
+        n_envs,
+        logdir,
+        use_wandb=args.use_wandb,
+        log_interval=args.log_interval,
+        use_random_start_validation=use_random_start_validation,
+    )
 
     ###########
     ## MODEL ##
     ###########
-    print('INTIALIZING MODEL...')
+    print("INTIALIZING MODEL...")
     observation_space = env.observation_space
     observation_shape = observation_space.shape
-    architecture = hyperparameters.get('architecture', 'impala')
+    architecture = hyperparameters.get("architecture", "impala")
     in_channels = observation_shape[0]
     action_space = env.action_space
 
     # Model architecture
     if args.debug:
         model = DebugModel(in_channels=in_channels)
-    elif architecture == 'nature':
+    elif architecture == "nature":
         model = NatureModel(in_channels=in_channels)
-    elif architecture == 'impala':
+    elif architecture == "impala":
         model = ImpalaModel(in_channels=in_channels)
 
     # Discrete action space
-    recurrent = hyperparameters.get('recurrent', False)
+    recurrent = hyperparameters.get("recurrent", False)
     if isinstance(action_space, gym.spaces.Discrete):
         action_size = action_space.n
         policy = CategoricalPolicy(model, recurrent, action_size)
@@ -249,37 +417,69 @@ if __name__=='__main__':
     #############
     ## STORAGE ##
     #############
-    print('INITIALIZING STORAGE...')
+    print("INITIALIZING STORAGE...")
     hidden_state_dim = model.output_dim
     storage = Storage(observation_shape, hidden_state_dim, n_steps, n_envs, device)
-    storage_valid = Storage(observation_shape, hidden_state_dim, n_steps, n_envs, device)
+    storage_valid = Storage(
+        observation_shape, hidden_state_dim, n_steps, n_envs, device
+    )
+    storage_valid_random_start = (
+        Storage(observation_shape, hidden_state_dim, n_steps, n_envs, device)
+        if use_random_start_validation
+        else None
+    )
 
     ###########
     ## AGENT ##
     ###########
-    print('INTIALIZING AGENT...')
-    algo = hyperparameters.get('algo', 'ppo')
-    if algo == 'ppo':
+    print("INTIALIZING AGENT...")
+    algo = hyperparameters.get("algo", "ppo")
+    if algo == "ppo":
         from agents.ppo import PPO as AGENT
     else:
         raise NotImplementedError
-    
+
     # Determine if we should recreate eval env
-    if args.recreate_eval_env == 'auto':
+    if args.recreate_eval_env == "auto":
         recreate_eval_env = args.level_seeds_file is not None
     else:
-        recreate_eval_env = args.recreate_eval_env == 'true'
-    
-    create_env_valid_fn = (lambda: create_venv(args, hyperparameters, is_valid=True)) if recreate_eval_env else None
-    
-    agent = AGENT(env, policy, logger, storage, device,
-                  num_checkpoints,
-                  env_valid=env_valid, 
-                  storage_valid=storage_valid,  
-                  log_interval=args.log_interval,
-                  num_validation_episodes=num_validation_episodes,
-                  create_env_valid_fn=create_env_valid_fn,
-                  **hyperparameters)
+        recreate_eval_env = args.recreate_eval_env == "true"
+
+    create_env_valid_fn = (
+        (lambda: create_venv(args, hyperparameters, is_valid=True))
+        if recreate_eval_env
+        else None
+    )
+    create_env_valid_random_start_fn = (
+        (
+            lambda: create_venv(
+                args,
+                hyperparameters,
+                is_valid=True,
+                randomize_agent_start=True,
+            )
+        )
+        if recreate_eval_env and use_random_start_validation
+        else None
+    )
+
+    agent = AGENT(
+        env,
+        policy,
+        logger,
+        storage,
+        device,
+        num_checkpoints,
+        env_valid=env_valid,
+        storage_valid=storage_valid,
+        log_interval=args.log_interval,
+        num_validation_episodes=num_validation_episodes,
+        create_env_valid_fn=create_env_valid_fn,
+        env_valid_random_start=env_valid_random_start,
+        storage_valid_random_start=storage_valid_random_start,
+        create_env_valid_random_start_fn=create_env_valid_random_start_fn,
+        **hyperparameters,
+    )
     if args.model_file is not None:
         print("Loading agent from %s" % args.model_file)
         checkpoint = torch.load(args.model_file)
@@ -291,8 +491,8 @@ if __name__=='__main__':
     ##############
     training_start_time = time.time()
     setup_duration = training_start_time - setup_start_time
-    print(f'Setup completed in {setup_duration:.2f}s')
-    print('START TRAINING...')
+    print(f"Setup completed in {setup_duration:.2f}s")
+    print("START TRAINING...")
     agent.train(num_timesteps)
 
     training_end_time = time.time()
@@ -300,11 +500,13 @@ if __name__=='__main__':
     total_duration = training_end_time - setup_start_time
     throughput = num_timesteps / training_duration
 
-    print('\n' + '='*50)
-    print('TIMING SUMMARY')
-    print('='*50)
-    print(f'Setup time:      {setup_duration:.2f}s')
-    print(f'Training time:   {training_duration:.2f}s ({training_duration/3600:.2f}h)')
-    print(f'Total time:      {total_duration:.2f}s ({total_duration/3600:.2f}h)')
-    print(f'Throughput:      {throughput:.0f} timesteps/s')
-    print('='*50)
+    print("\n" + "=" * 50)
+    print("TIMING SUMMARY")
+    print("=" * 50)
+    print(f"Setup time:      {setup_duration:.2f}s")
+    print(
+        f"Training time:   {training_duration:.2f}s ({training_duration / 3600:.2f}h)"
+    )
+    print(f"Total time:      {total_duration:.2f}s ({total_duration / 3600:.2f}h)")
+    print(f"Throughput:      {throughput:.0f} timesteps/s")
+    print("=" * 50)

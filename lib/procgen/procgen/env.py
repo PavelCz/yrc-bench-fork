@@ -289,6 +289,7 @@ class ProcgenGym3Env(BaseProcgenEnv):
         corruption_type=None,
         corruption_severity=1,
         continue_after_coin=False,
+        randomize_agent_start=False,
         timeout=None,
         **kwargs,
     ):
@@ -324,6 +325,7 @@ class ProcgenGym3Env(BaseProcgenEnv):
             "step_penalty": int(step_penalty),
             "rand_region": int(rand_region),
             "continue_after_coin": bool(continue_after_coin),
+            "randomize_agent_start": bool(randomize_agent_start),
         }
         if timeout is not None:
             options["timeout"] = int(timeout)

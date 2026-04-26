@@ -55,6 +55,7 @@ void Game::parse_options(std::string name, VecOptions opts) {
     opts.consume_int("step_penalty", &options.step_penalty); // changed
     opts.consume_int("rand_region", &options.rand_region); //changed new
     opts.consume_bool("continue_after_coin", &options.continue_after_coin); //changed new
+    opts.consume_bool("randomize_agent_start", &options.randomize_agent_start);
 
     int dist_mode = EasyMode;
     opts.consume_int("distribution_mode", &dist_mode);

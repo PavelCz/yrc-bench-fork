@@ -60,6 +60,7 @@ struct GameOptions {
     int step_penalty = 0;
     int rand_region = 0;
     bool continue_after_coin;
+    bool randomize_agent_start = false;
 
     // coinrun_old
     bool use_easy_jump = false;

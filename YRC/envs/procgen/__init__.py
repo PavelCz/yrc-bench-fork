@@ -24,6 +24,9 @@ def create_env(
 
     # Get max_steps if specified in config
     max_steps = getattr(common_config, "max_steps", None)
+    randomize_agent_start = getattr(specific_config, "randomize_agent_start", None)
+    if randomize_agent_start is None:
+        randomize_agent_start = getattr(common_config, "randomize_agent_start", False)
 
     # Build kwargs for level seeds if provided
     seed_kwargs = {}
@@ -44,6 +47,7 @@ def create_env(
         use_monochrome_assets=common_config.use_monochrome_assets,
         restrict_themes=common_config.restrict_themes,
         random_percent=specific_config.random_percent,
+        randomize_agent_start=randomize_agent_start,
         # Enable human-resolution rendering for video logging when requested.
         render_mode=render_mode,
         # Set episode timeout (max steps) directly in procgen C++ backend

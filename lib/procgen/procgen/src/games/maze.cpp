@@ -53,6 +53,29 @@ class MazeGame : public BasicAbstractGame {
         main_height = world_dim;
     }
 
+    void maybe_randomize_agent_start(int margin) {
+        if (!options.randomize_agent_start) {
+            return;
+        }
+
+        std::vector<int> start_cells;
+        for (int i = 0; i < maze_dim; i++) {
+            for (int j = 0; j < maze_dim; j++) {
+                int type = maze_gen->grid.get(i + MAZE_OFFSET, j + MAZE_OFFSET);
+                if (type == SPACE) {
+                    start_cells.push_back(maze_dim * j + i);
+                }
+            }
+        }
+
+        fassert(start_cells.size() > 0);
+        int start_cell = rand_gen.choose_one(start_cells);
+        int x = start_cell % maze_dim;
+        int y = start_cell / maze_dim;
+        agent->x = margin + x + .5;
+        agent->y = margin + y + .5;
+    }
+
     void game_reset() override {
         BasicAbstractGame::game_reset();
 
@@ -73,6 +96,8 @@ class MazeGame : public BasicAbstractGame {
 
         maze_gen->generate_maze();
         maze_gen->place_objects(GOAL, 1);
+
+        maybe_randomize_agent_start(margin);
 
         for (int i = 0; i < grid_size; i++) {
             set_obj(i, WALL_OBJ);

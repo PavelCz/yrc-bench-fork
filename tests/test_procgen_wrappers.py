@@ -1,7 +1,12 @@
+import sys
+from pathlib import Path
+
 import gym
 import numpy as np
 
-from YRC.envs.procgen.wrappers import HardResetWrapper, VecEnv
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from YRC.envs.procgen.wrappers import HardResetWrapper, VecEnv  # noqa: E402
 
 
 class DummyVecEnv(VecEnv):
