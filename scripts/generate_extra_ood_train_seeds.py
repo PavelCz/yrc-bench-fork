@@ -5,7 +5,7 @@ import argparse
 import json
 import random
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 
 LEVEL_SEED_SPLITS = ("policy_train", "ood_train", "validation", "ood_eval")
@@ -112,7 +112,7 @@ def build_seed_file_data(
     base_seed: int,
     min_seed: int,
     max_seed: int,
-    name: str | None = None,
+    name: Optional[str] = None,
 ) -> Dict[str, Any]:
     seed_splits = {split: [] for split in LEVEL_SEED_SPLITS}
     seed_splits["ood_train"] = ood_train_seeds
