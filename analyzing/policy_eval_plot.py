@@ -34,6 +34,7 @@ METRIC_LABELS = {
     "id": "ID",
     "ood": "OOD",
 }
+SUPPORTED_ENVS = ["coinrun", "coinrun_proxy_fail", "maze", "maze_afh", "heist"]
 SERIES_COLORS = {
     "strong": "#1f77b4",
     "weak": "#ff7f0e",
@@ -62,7 +63,7 @@ def parse_args() -> argparse.Namespace:
         "--env",
         type=str,
         default=None,
-        choices=["coinrun", "maze", "maze_afh", "heist"],
+        choices=SUPPORTED_ENVS,
         help="Environment filter",
     )
     parser.add_argument(
@@ -126,7 +127,10 @@ def configure_matplotlib(show_plot: bool):
     import matplotlib.pyplot as plt
 
     try:
-        from analyzing.plotting_common import setup_plot_style, style_plot_for_publication
+        from analyzing.plotting_common import (
+            setup_plot_style,
+            style_plot_for_publication,
+        )
 
         setup_plot_style(paper_mode=False, use_latex=False)
         return plt, style_plot_for_publication
@@ -136,7 +140,8 @@ def configure_matplotlib(show_plot: bool):
 
 def parse_experiment_dir(dir_name: str) -> Optional[Tuple[str, str, str, int]]:
     """Parse <prefix>_<env>_<agent>_expN directory names."""
-    pattern = r"^(.+)_(coinrun|maze|maze_afh|heist)_(sim|weak|strong)_exp(\d+)$"
+    env_pattern = "|".join(re.escape(env) for env in SUPPORTED_ENVS)
+    pattern = rf"^(.+)_({env_pattern})_(sim|weak|strong)_exp(\d+)$"
     match = re.match(pattern, dir_name)
     if match:
         prefix = match.group(1)
@@ -263,7 +268,9 @@ def aggregate_series(result_files: Dict[int, Path]) -> Dict:
             ood_returns: List[float] = []
         else:
             id_returns = [
-                ret for ret, is_ood in zip(all_returns, level_ood_gt) if not bool(is_ood)
+                ret
+                for ret, is_ood in zip(all_returns, level_ood_gt)
+                if not bool(is_ood)
             ]
             ood_returns = [
                 ret for ret, is_ood in zip(all_returns, level_ood_gt) if bool(is_ood)
@@ -315,7 +322,9 @@ def aggregate_series(result_files: Dict[int, Path]) -> Dict:
     }
 
 
-def list_available_series(eval_dir: Path, prefix: Optional[List[str]], env: Optional[str]) -> None:
+def list_available_series(
+    eval_dir: Path, prefix: Optional[List[str]], env: Optional[str]
+) -> None:
     results, metadata = extract_policy_eval_results(eval_dir, prefix, env, None)
     if not results:
         print("No policy-eval series found.")
@@ -331,7 +340,9 @@ def list_available_series(eval_dir: Path, prefix: Optional[List[str]], env: Opti
         )
 
 
-def print_summary(series_results: Dict[str, Dict], metadata: Dict[str, Dict[str, str]]) -> None:
+def print_summary(
+    series_results: Dict[str, Dict], metadata: Dict[str, Dict[str, str]]
+) -> None:
     """Print aggregated stats to the console."""
     for label, summary in series_results.items():
         meta = metadata[label]
@@ -355,9 +366,7 @@ def print_summary(series_results: Dict[str, Dict], metadata: Dict[str, Dict[str,
                 if pooled_stats["mean"] is not None
                 else "n/a"
             )
-            print(
-                f"  {metric:>7}: run-mean={run_mean}  pooled={pooled_mean}"
-            )
+            print(f"  {metric:>7}: run-mean={run_mean}  pooled={pooled_mean}")
 
         print("  per-run:")
         for run in summary["per_run"]:
@@ -365,10 +374,14 @@ def print_summary(series_results: Dict[str, Dict], metadata: Dict[str, Dict[str,
                 f"{run['mean_return']:.4f}" if run["mean_return"] is not None else "n/a"
             )
             id_mean = (
-                f"{run['id_mean_return']:.4f}" if run["id_mean_return"] is not None else "n/a"
+                f"{run['id_mean_return']:.4f}"
+                if run["id_mean_return"] is not None
+                else "n/a"
             )
             ood_mean = (
-                f"{run['ood_mean_return']:.4f}" if run["ood_mean_return"] is not None else "n/a"
+                f"{run['ood_mean_return']:.4f}"
+                if run["ood_mean_return"] is not None
+                else "n/a"
             )
             print(
                 f"    exp{run['exp_id']}: overall={overall} (n={run['num_episodes']}) "
@@ -431,7 +444,8 @@ def plot_summary(
 
         if use_pooled:
             heights = [
-                summary["pooled_stats"][metric]["mean"] or 0.0 for metric in METRIC_ORDER
+                summary["pooled_stats"][metric]["mean"] or 0.0
+                for metric in METRIC_ORDER
             ]
             yerr = None
         else:
@@ -465,7 +479,9 @@ def plot_summary(
         prefixes = sorted({metadata[label]["prefix"] for label in ordered_labels})
         envs = sorted({metadata[label]["env"] for label in ordered_labels})
         mode = "Pooled episode means" if use_pooled else "Run mean +/- SEM"
-        ax.set_title(f"Policy Eval Summary ({', '.join(prefixes)} / {', '.join(envs)})\n{mode}")
+        ax.set_title(
+            f"Policy Eval Summary ({', '.join(prefixes)} / {', '.join(envs)})\n{mode}"
+        )
 
     ax.grid(True, axis="y", alpha=0.3)
     ax.spines["top"].set_visible(False)
