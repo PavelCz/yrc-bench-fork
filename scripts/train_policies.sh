@@ -28,6 +28,7 @@ Optional arguments:
     --randomize-agent-start   MAZE only: train with randomized initial agent cells
     --random-percent PERCENT  Train only this random_percent value (default: 0 50 100)
     --num-timesteps N         Training timesteps per job (default: 200000000)
+    --days N                  SLURM wall-time days per job (default: 3)
 
 Experiment configurations:
     EXPERIMENT_ID | SEED                   | LEVEL_SEEDS_FILE | TRAIN_MODE | NUM_LEVELS
@@ -51,6 +52,7 @@ EXPERIMENT_ID=""
 RANDOMIZE_AGENT_START=false
 RANDOM_PERCENT_OVERRIDE=""
 NUM_TIMESTEPS=200000000
+TRAIN_DAYS=3
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -75,6 +77,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --num-timesteps)
             NUM_TIMESTEPS="$2"
+            shift 2
+            ;;
+        --days)
+            TRAIN_DAYS="$2"
             shift 2
             ;;
         *)
@@ -123,6 +129,16 @@ fi
 
 if [ "$NUM_TIMESTEPS" -le 0 ]; then
     echo "Error: --num-timesteps must be positive, got '$NUM_TIMESTEPS'"
+    exit 1
+fi
+
+if ! [[ "$TRAIN_DAYS" =~ ^[0-9]+$ ]]; then
+    echo "Error: --days must be a positive integer, got '$TRAIN_DAYS'"
+    exit 1
+fi
+
+if [ "$TRAIN_DAYS" -le 0 ]; then
+    echo "Error: --days must be positive, got '$TRAIN_DAYS'"
     exit 1
 fi
 
@@ -175,6 +191,7 @@ echo "  SEED:          $SEED"
 echo "  TRAIN_MODE:    $TRAIN_MODE"
 echo "  RANDOM_START:  $RANDOMIZE_AGENT_START"
 echo "  TIMESTEPS:     $NUM_TIMESTEPS"
+echo "  TRAIN_DAYS:    $TRAIN_DAYS"
 echo ""
 
 if [ -n "$RANDOM_PERCENT_OVERRIDE" ]; then
@@ -200,7 +217,7 @@ for random_percent in "${RANDOM_PERCENTS[@]}"; do
 
     sbatch --qos=default \
         --gres=gpu:1 \
-        --time=3-00:00:00 \
+        --time=${TRAIN_DAYS}-00:00:00 \
         --mem=128G \
         --job-name="$exp_name" \
         --output="${LOG_DIR}/${exp_name}_%j.out" \
