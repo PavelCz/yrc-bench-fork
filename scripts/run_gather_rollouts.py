@@ -29,7 +29,8 @@ GATHER_DEFAULTS = {
     "random_percent": 0,
     "use_bg": True,
     "query_cost": 0,
-    "rollout_chunk_size": None,
+    "rollout_chunk_size": 0,
+    "level_seeds_dir_name": "neurips_extra_ood_train_1024",
 }
 
 
@@ -58,6 +59,10 @@ def format_rollout_levels_label(num_levels) -> str:
 
 def get_rollout_output_dir(rollouts_base_path: str, prefix: str, env: str) -> Path:
     return Path(rollouts_base_path) / prefix / env
+
+
+def get_default_level_seeds_dir(seeds_base_path: str) -> Path:
+    return Path(seeds_base_path).parent / GATHER_DEFAULTS["level_seeds_dir_name"]
 
 
 def get_level_seeds_file(
@@ -184,7 +189,8 @@ def main():
         default=None,
         help=(
             "Override the directory containing {exp_id}.json level seed files. "
-            "Defaults to the selected server's seeds_base path."
+            "Defaults to the selected server's neurips_extra_ood_train_1024 "
+            "seed directory."
         ),
     )
     parser.add_argument(
@@ -214,7 +220,7 @@ def main():
         default=GATHER_DEFAULTS["rollout_chunk_size"],
         help=(
             "Maximum observations per rollout chunk in gather_rollouts.py. "
-            "Omit to use the gather script default; use 0 to disable chunked saving."
+            "Defaults to 0, which disables chunked saving."
         ),
     )
     # Override checkpoints if needed
@@ -237,7 +243,9 @@ def main():
     paths = SERVER_PATHS[args.server]
     checkpoint_base_path = paths["checkpoint_base"]
     rollouts_base_path = paths["rollouts_base"]
-    seeds_base_path = str(args.level_seeds_dir or paths["seeds_base"])
+    seeds_base_path = str(
+        args.level_seeds_dir or get_default_level_seeds_dir(paths["seeds_base"])
+    )
     rollout_output_dir = get_rollout_output_dir(
         rollouts_base_path, args.prefix, args.env
     )
@@ -315,21 +323,6 @@ def main():
                 else f"{run_name}_{rollout_levels_label}"
             )
 
-            if args.dry_run:
-                print(f"=== exp{exp_id} / {rollout_levels_label} ===")
-                print(f"  Job name: {job_name}")
-                print(f"  Run name: {run_name}")
-                print(f"  Experiment group: {experiment_group}")
-                print(f"  Output dir: {rollout_output_dir}")
-                print(f"  Expected rollout dir: {rollout_output_dir / run_name}")
-                print(f"  Weak:   {checkpoints['weak']}")
-                print(f"  Strong: {checkpoints['strong']}")
-                print(f"  Level seeds: {level_seeds_file}")
-                print(f"  Rollout levels: {rollout_levels_label}")
-                print(f"  Seed: {seed}")
-                print()
-                continue
-
             gather_args = {
                 "config": args.config,
                 "name": run_name,
@@ -347,7 +340,21 @@ def main():
                 **checkpoints,
             }
 
-            submit_job(job_name, gather_args, dry_run=False)
+            if args.dry_run:
+                print(f"=== exp{exp_id} / {rollout_levels_label} ===")
+                print(f"  Job name: {job_name}")
+                print(f"  Run name: {run_name}")
+                print(f"  Experiment group: {experiment_group}")
+                print(f"  Output dir: {rollout_output_dir}")
+                print(f"  Expected rollout dir: {rollout_output_dir / run_name}")
+                print(f"  Weak:   {checkpoints['weak']}")
+                print(f"  Strong: {checkpoints['strong']}")
+                print(f"  Level seeds: {level_seeds_file}")
+                print(f"  Rollout levels: {rollout_levels_label}")
+                print(f"  Seed: {seed}")
+                print()
+
+            submit_job(job_name, gather_args, dry_run=args.dry_run)
 
     return 0
 
