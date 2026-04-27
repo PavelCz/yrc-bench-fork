@@ -36,6 +36,8 @@ optimizer_dict = {
     "lbfgs": optim.LBFGS,
 }
 
+PROGRESS_LOG_BATCH_INTERVAL = 100
+
 
 class InnerDeepSVDD(nn.Module):
     """Inner class for DeepSVDD model.
@@ -478,7 +480,9 @@ class DeepSVDD(BaseDetector):
         for epoch in range(self.epochs):
             self.model_.train()
             epoch_loss = 0
-            for batch in dataloader:
+            num_batches = len(dataloader)
+            self._log_epoch_start(epoch, num_batches, is_streaming=is_streaming)
+            for batch_index, batch in enumerate(dataloader, start=1):
                 if is_streaming:
                     batch_x = self._streaming_batch_to_input(
                         batch, model_device, batch_transform=batch_transform
@@ -492,6 +496,15 @@ class DeepSVDD(BaseDetector):
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.item()
+                running_loss = epoch_loss / batch_index
+                if self._should_log_progress(batch_index, num_batches):
+                    self._log_training_progress(
+                        epoch,
+                        batch_index,
+                        num_batches,
+                        batch_loss=loss.item(),
+                        running_loss=running_loss,
+                    )
             epoch_loss /= len(dataloader)
             val_loss = None
             if val_dataloader is not None:
@@ -540,6 +553,54 @@ class DeepSVDD(BaseDetector):
         self._process_decision_scores()
         return self
 
+    def _should_log_progress(self, batch_index, num_batches):
+        return (
+            batch_index == 1
+            or batch_index == num_batches
+            or batch_index % PROGRESS_LOG_BATCH_INTERVAL == 0
+        )
+
+    def _log_progress_message(self, message):
+        logging.info(message)
+        print(message, flush=True)
+
+    def _log_epoch_start(self, epoch, num_batches, is_streaming):
+        message = (
+            f"Starting DeepSVDD epoch {epoch + 1}/{self.epochs} "
+            f"({num_batches} batches, streaming={is_streaming})"
+        )
+        self._log_progress_message(message)
+        if self.logger is not None:
+            self.logger.log_metrics(
+                {
+                    "train/epoch": epoch + 1,
+                    "train/num_batches": num_batches,
+                    "train/epoch_started": 1,
+                    "train/streaming": int(is_streaming),
+                }
+            )
+
+    def _log_training_progress(
+        self, epoch, batch_index, num_batches, batch_loss, running_loss
+    ):
+        message = (
+            f"DeepSVDD epoch {epoch + 1}/{self.epochs} "
+            f"batch {batch_index}/{num_batches}: "
+            f"batch_loss={batch_loss:.6g}, running_loss={running_loss:.6g}"
+        )
+        self._log_progress_message(message)
+        if self.logger is not None:
+            self.logger.log_metrics(
+                {
+                    "train/epoch": epoch + 1,
+                    "train/batch": batch_index,
+                    "train/num_batches": num_batches,
+                    "train/epoch_progress": batch_index / num_batches,
+                    "train/batch_loss": batch_loss,
+                    "train/running_loss": running_loss,
+                }
+            )
+
     def _make_dataset(self, X_norm):
         if self.feature_type in [
             "hidden_obs",
@@ -573,8 +634,7 @@ class DeepSVDD(BaseDetector):
         if isinstance(batch, (list, tuple)) and len(batch) == 1:
             return batch[0]
         raise ValueError(
-            "Expected streaming DeepSVDD batch to be a tensor, got "
-            f"{type(batch)}."
+            f"Expected streaming DeepSVDD batch to be a tensor, got {type(batch)}."
         )
 
     def _init_c_from_dataloader(
@@ -592,8 +652,19 @@ class DeepSVDD(BaseDetector):
         output_sum = None
         output_count = 0
         self.model_.eval()
+        num_batches = len(dataloader)
+        self._log_progress_message(
+            f"Initializing DeepSVDD center ({num_batches} batches)"
+        )
+        if self.logger is not None:
+            self.logger.log_metrics(
+                {
+                    "train/center_init_started": 1,
+                    "train/center_init_num_batches": num_batches,
+                }
+            )
         with torch.no_grad():
-            for batch in dataloader:
+            for batch_index, batch in enumerate(dataloader, start=1):
                 batch_x = self._streaming_batch_to_input(
                     batch, model_device, batch_transform=batch_transform
                 )
@@ -605,6 +676,8 @@ class DeepSVDD(BaseDetector):
                     else output_sum + out.sum(dim=0)
                 )
                 output_count += out.shape[0]
+                if self._should_log_progress(batch_index, num_batches):
+                    self._log_center_init_progress(batch_index, num_batches)
         hook_handle.remove()
 
         if output_count == 0:
@@ -616,6 +689,22 @@ class DeepSVDD(BaseDetector):
         self.model_.c = self.c
         self.model_.train()
 
+    def _log_center_init_progress(self, batch_index, num_batches):
+        message = (
+            "DeepSVDD center init "
+            f"batch {batch_index}/{num_batches} "
+            f"({batch_index / num_batches:.1%})"
+        )
+        self._log_progress_message(message)
+        if self.logger is not None:
+            self.logger.log_metrics(
+                {
+                    "train/center_init_batch": batch_index,
+                    "train/center_init_num_batches": num_batches,
+                    "train/center_init_progress": batch_index / num_batches,
+                }
+            )
+
     def _streaming_decision_scores(self, dataset, model_device, batch_transform=None):
         dataloader = DataLoader(
             dataset,
@@ -625,15 +714,37 @@ class DeepSVDD(BaseDetector):
         )
         scores = []
         self.model_.eval()
+        num_batches = len(dataloader)
+        self._log_progress_message(
+            f"Computing DeepSVDD training decision scores ({num_batches} batches)"
+        )
         with torch.no_grad():
-            for batch in dataloader:
+            for batch_index, batch in enumerate(dataloader, start=1):
                 batch_x = self._streaming_batch_to_input(
                     batch, model_device, batch_transform=batch_transform
                 )
                 outputs = self.model_(batch_x)
                 dist = torch.sum((outputs - self.c) ** 2, dim=-1)
                 scores.append(dist.cpu().numpy())
+                if self._should_log_progress(batch_index, num_batches):
+                    self._log_score_progress(batch_index, num_batches)
         return scores
+
+    def _log_score_progress(self, batch_index, num_batches):
+        message = (
+            "DeepSVDD decision-score pass "
+            f"batch {batch_index}/{num_batches} "
+            f"({batch_index / num_batches:.1%})"
+        )
+        self._log_progress_message(message)
+        if self.logger is not None:
+            self.logger.log_metrics(
+                {
+                    "train/decision_score_batch": batch_index,
+                    "train/decision_score_num_batches": num_batches,
+                    "train/decision_score_progress": batch_index / num_batches,
+                }
+            )
 
     def _loss(self, outputs, batch_x):
         dist = torch.sum((outputs - self.c) ** 2, dim=-1)

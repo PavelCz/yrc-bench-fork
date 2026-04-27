@@ -17,6 +17,13 @@ class RecordingLogger:
         self.records.append((metrics, step))
 
 
+def find_record_with_metric(logger, metric_name):
+    for metrics, step in logger.records:
+        if metric_name in metrics:
+            return metrics, step
+    raise AssertionError(f"Could not find logged metric {metric_name!r}")
+
+
 def test_deep_svdd_logs_validation_loss_when_validation_data_is_provided():
     logger = RecordingLogger()
     clf = DeepSVDD(
@@ -35,8 +42,7 @@ def test_deep_svdd_logs_validation_loss_when_validation_data_is_provided():
 
     clf.fit(X=train_data, X_threshold=train_data, X_val=val_data)
 
-    assert len(logger.records) == 1
-    metrics, step = logger.records[0]
+    metrics, step = find_record_with_metric(logger, "train/loss")
     assert step == 1
     assert "train/loss" in metrics
     assert "val/loss" in metrics
@@ -60,7 +66,7 @@ def test_deep_svdd_omits_validation_loss_without_validation_data():
 
     clf.fit(X=train_data, X_threshold=train_data)
 
-    metrics, _ = logger.records[0]
+    metrics, _ = find_record_with_metric(logger, "train/loss")
     assert "train/loss" in metrics
     assert "val/loss" not in metrics
     assert "val/best_loss" not in metrics
@@ -100,12 +106,45 @@ def test_deep_svdd_streaming_fit_logs_train_and_validation_metrics():
 
     clf.fit(X=dataset, X_threshold=dataset, X_val=val_data)
 
-    metrics, step = logger.records[0]
+    metrics, step = find_record_with_metric(logger, "train/loss")
     assert step == 1
     assert "train/loss" in metrics
     assert "train/best_loss" in metrics
     assert "val/loss" in metrics
     assert "val/best_loss" in metrics
+
+
+def test_deep_svdd_logs_progress_before_epoch_summary():
+    logger = RecordingLogger()
+    clf = DeepSVDD(
+        n_features=2,
+        hidden_neurons=[4, 2],
+        epochs=1,
+        batch_size=4,
+        feature_type="hidden",
+        benchmark="procgen",
+        input_shape=(1, 4),
+        logger=logger,
+    )
+    dataset = TensorDataset(torch.randn(8, 4))
+
+    clf.fit(X=dataset, X_threshold=dataset)
+
+    progress_record_index = next(
+        index
+        for index, (metrics, _) in enumerate(logger.records)
+        if "train/batch_loss" in metrics
+    )
+    summary_record_index = next(
+        index
+        for index, (metrics, _) in enumerate(logger.records)
+        if "train/loss" in metrics
+    )
+
+    assert progress_record_index < summary_record_index
+    progress_metrics, _ = logger.records[progress_record_index]
+    assert "train/running_loss" in progress_metrics
+    assert "train/epoch_progress" in progress_metrics
 
 
 class DummyWeakAgent:
