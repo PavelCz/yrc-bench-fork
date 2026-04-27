@@ -37,6 +37,11 @@ from analyzing.plotting_common import (
 
 matplotlib.use("TkAgg")
 
+SUPPORTED_ENVS = ["coinrun", "coinrun_proxy_fail", "maze", "maze_afh", "heist"]
+ENV_PATTERN = "|".join(
+    re.escape(env) for env in sorted(SUPPORTED_ENVS, key=len, reverse=True)
+)
+
 # Data key display names mapping
 DATA_KEY_NAMES = {
     "step_afhp": "Ask-For-Help Percentage (AFHP, per timestep)",
@@ -72,14 +77,12 @@ def parse_experiment_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
     Parse experiment directory name to extract prefix, env, and experiment ID.
 
     Expected format: {prefix}_{env}_exp{id}
-    Examples: imcl04_coinrun_exp0, imcl04_maze_exp1
+    Examples: imcl04_coinrun_exp0, imcl04_coinrun_proxy_fail_exp1
 
     Returns:
         Tuple of (prefix, env, exp_id) or None if pattern doesn't match
     """
-    # Pattern: prefix_env_expN where env can contain underscores (like maze_afh)
-    # But typically: prefix_env_expN
-    pattern = r"^(.+)_(coinrun|maze|maze_afh|heist)_exp(\d+)$"
+    pattern = rf"^(.+)_({ENV_PATTERN})_exp(\d+)$"
     match = re.match(pattern, dir_name)
     if match:
         prefix = match.group(1)
@@ -94,13 +97,12 @@ def parse_method_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
     Parse method directory name to extract env, method, and experiment ID.
 
     Expected format: {env}_{method}_exp{id}
-    Examples: coinrun_max_prob_exp0, maze_ensemble_exp1
+    Examples: coinrun_max_prob_exp0, coinrun_proxy_fail_max_prob_exp1
 
     Returns:
         Tuple of (env, method, exp_id) or None if pattern doesn't match
     """
-    # Pattern: env_method_expN
-    pattern = r"^(coinrun|maze|maze_afh|heist)_(.+)_exp(\d+)$"
+    pattern = rf"^({ENV_PATTERN})_(.+)_exp(\d+)$"
     match = re.match(pattern, dir_name)
     if match:
         env = match.group(1)
@@ -853,7 +855,7 @@ def main():
         "--env",
         type=str,
         default=None,
-        choices=["coinrun", "maze", "maze_afh", "heist"],
+        choices=SUPPORTED_ENVS,
         help="Environment filter",
     )
     parser.add_argument(
