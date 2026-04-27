@@ -6,7 +6,9 @@ import torch
 from YRC.core.configs import ConfigDict
 from YRC.core.rollout_storage import (
     IndexedChunkedRolloutDataset,
+    MemmapRolloutDataset,
     is_rollout_chunk_manifest,
+    is_rollout_memmap_metadata,
     load_chunked_rollouts,
 )
 
@@ -202,8 +204,9 @@ def load_rollout_dataset_from_file(
 ):
     """Load rollout observations eagerly or as an indexed streaming dataset.
 
-    Legacy ``.pt`` rollout artifacts are always loaded eagerly. Chunked rollout
-    manifests stream when ``streaming_rollouts`` is ``"auto"`` or ``"true"``.
+    Legacy ``.pt`` rollout artifacts are always loaded eagerly. Memmap rollout
+    artifacts stream when available. Chunked rollout manifests stream when
+    ``streaming_rollouts`` is ``"auto"`` or ``"true"``.
     """
     streaming_rollouts = _normalize_streaming_rollouts(streaming_rollouts)
     rollouts_config_path, rollouts_data_path = resolve_rollout_paths(
@@ -225,11 +228,14 @@ def load_rollout_dataset_from_file(
             )
         )
 
-    should_stream = (
-        is_rollout_chunk_manifest(rollouts_data_path)
-        and streaming_rollouts in {"auto", "true"}
-    )
-    if should_stream:
+    should_stream = streaming_rollouts in {"auto", "true"}
+    if is_rollout_memmap_metadata(rollouts_data_path):
+        rollout_obs = MemmapRolloutDataset(
+            rollouts_data_path,
+            max_observations=max_observations,
+        )
+        print(f"Using memmap rollout dataset ({len(rollout_obs)} observations)")
+    elif should_stream and is_rollout_chunk_manifest(rollouts_data_path):
         rollout_obs = IndexedChunkedRolloutDataset(
             rollouts_data_path,
             max_observations=max_observations,
@@ -281,12 +287,13 @@ def resolve_rollout_paths(rollout_path: Path, prefer_largest: bool = False):
 
     matching_rollout_files = sorted(rollout_path.glob("rollouts_*levels.pt"))
     matching_manifests = sorted(rollout_path.glob("rollouts_manifest_*levels.json"))
-    matching_data_files = matching_rollout_files + matching_manifests
+    matching_memmaps = sorted(rollout_path.glob("rollouts_memmap_*levels.json"))
+    matching_data_files = matching_rollout_files + matching_manifests + matching_memmaps
     if len(matching_data_files) == 1:
         return resolve_rollout_paths(matching_data_files[0])
     if len(matching_data_files) > 1:
         if prefer_largest:
-            selected_path = max(matching_data_files, key=_rollout_level_count_from_path)
+            selected_path = max(matching_data_files, key=_rollout_selection_key)
             selected_levels = _rollout_level_count_from_path(selected_path)
             print(
                 f"Multiple rollout datasets found in {rollout_path}; selecting "
@@ -322,9 +329,13 @@ def _resolve_rollout_file_paths(rollout_path: Path):
     elif is_rollout_chunk_manifest(data_path):
         suffix = data_path.stem[len("rollouts_manifest_") :]
         config_path = data_path.with_name(f"rollouts_config_{suffix}.json")
+    elif is_rollout_memmap_metadata(data_path):
+        suffix = data_path.stem[len("rollouts_memmap_") :]
+        config_path = data_path.with_name(f"rollouts_config_{suffix}.json")
     else:
         raise ValueError(
-            "Expected rollout file to be a .pt file or rollouts_manifest*.json, "
+            "Expected rollout file to be a .pt file, rollouts_manifest*.json, "
+            "or rollouts_memmap*.json, "
             f"got {data_path}"
         )
     return config_path, data_path
@@ -336,6 +347,8 @@ def _rollout_level_count_from_path(path: Path) -> int:
         suffix = path.stem[len("rollouts_") :]
     elif is_rollout_chunk_manifest(path):
         suffix = path.stem[len("rollouts_manifest_") :]
+    elif is_rollout_memmap_metadata(path):
+        suffix = path.stem[len("rollouts_memmap_") :]
     else:
         raise ValueError(f"Cannot infer rollout level count from {path}")
 
@@ -348,12 +361,26 @@ def _rollout_level_count_from_path(path: Path) -> int:
         raise ValueError(f"Cannot infer rollout level count from {path}") from exc
 
 
+def _rollout_selection_key(path: Path):
+    # Prefer larger artifacts, and for the same level count prefer memmap over
+    # chunked manifest over legacy pt because memmap supports efficient random access.
+    if is_rollout_memmap_metadata(path):
+        format_priority = 2
+    elif is_rollout_chunk_manifest(path):
+        format_priority = 1
+    else:
+        format_priority = 0
+    return _rollout_level_count_from_path(path), format_priority
+
+
 def _get_rollout_metadata_path(data_path: Path) -> Path:
     data_path = Path(data_path)
     if data_path.suffix == ".pt" and data_path.stem.startswith("rollouts_"):
         suffix = data_path.stem[len("rollouts_") :]
     elif is_rollout_chunk_manifest(data_path):
         suffix = data_path.stem[len("rollouts_manifest_") :]
+    elif is_rollout_memmap_metadata(data_path):
+        suffix = data_path.stem[len("rollouts_memmap_") :]
     else:
         return data_path.with_name("rollouts_metadata.json")
     return data_path.with_name(f"rollouts_metadata_{suffix}.json")
@@ -372,6 +399,14 @@ def _load_rollout_level_observation_counts(data_path: Path) -> Optional[List[int
         with Path(data_path).open("r") as f:
             manifest = json.load(f)
         counts = manifest.get("metadata", {}).get(
+            "completed_rollout_observation_counts"
+        )
+        if counts is not None:
+            return [int(count) for count in counts]
+    if is_rollout_memmap_metadata(data_path):
+        with Path(data_path).open("r") as f:
+            metadata = json.load(f)
+        counts = metadata.get("metadata", {}).get(
             "completed_rollout_observation_counts"
         )
         if counts is not None:

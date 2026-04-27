@@ -6,7 +6,9 @@ import torch
 
 from YRC.core.rollout_storage import RolloutChunkWriter
 from YRC.core.rollout_storage import IndexedChunkedRolloutDataset
+from YRC.core.rollout_storage import MemmapRolloutDataset
 from YRC.core.utils import load_rollout_dataset_from_file, load_rollouts_from_file
+from scripts.convert_rollouts_to_memmap import convert_rollouts_to_memmap
 
 
 def test_load_rollouts_from_specific_file():
@@ -227,3 +229,84 @@ def test_streaming_loader_keeps_legacy_pt_rollouts_eager():
 
     assert isinstance(rollout_obs, list)
     assert [tensor.item() for tensor in rollout_obs] == [1.0, 2.0]
+
+
+def test_convert_chunked_rollouts_to_memmap_and_random_access():
+    with TemporaryDirectory() as tmp_dir:
+        rollout_dir = Path(tmp_dir)
+        manifest_file = rollout_dir / "rollouts_manifest_3levels.json"
+        writer = RolloutChunkWriter(
+            manifest_file, rollout_dir / "rollouts_3levels_chunks"
+        )
+        writer.write_chunk(
+            [
+                torch.tensor([[1, 2], [3, 4]], dtype=torch.uint8),
+                torch.tensor([[5, 6], [7, 8]], dtype=torch.uint8),
+            ]
+        )
+        writer.write_chunk([torch.tensor([[9, 10], [11, 12]], dtype=torch.uint8)])
+        writer.save_manifest({"completed_rollout_observation_counts": [1, 1, 1]})
+
+        metadata_path = convert_rollouts_to_memmap(manifest_file)
+        dataset = MemmapRolloutDataset(metadata_path)
+
+    assert len(dataset) == 3
+    assert dataset[0].dtype == torch.uint8
+    assert torch.equal(dataset[2], torch.tensor([[9, 10], [11, 12]], dtype=torch.uint8))
+
+
+def test_streaming_loader_prefers_memmap_for_matching_level_count():
+    with TemporaryDirectory() as tmp_dir:
+        rollout_dir = Path(tmp_dir)
+        manifest_file = rollout_dir / "rollouts_manifest_3levels.json"
+        config_file = rollout_dir / "rollouts_config_3levels.json"
+        writer = RolloutChunkWriter(
+            manifest_file, rollout_dir / "rollouts_3levels_chunks"
+        )
+        writer.write_chunk([torch.tensor([1], dtype=torch.uint8)])
+        writer.write_chunk([torch.tensor([2], dtype=torch.uint8)])
+        writer.save_manifest()
+        config_file.write_text(json.dumps({"name": "dummy"}))
+        convert_rollouts_to_memmap(manifest_file)
+
+        dataset = load_rollout_dataset_from_file(
+            rollout_dir,
+            prefer_largest=True,
+            streaming_rollouts="auto",
+        )
+
+    assert isinstance(dataset, MemmapRolloutDataset)
+    assert [dataset[index].item() for index in range(len(dataset))] == [1, 2]
+
+
+def test_memmap_dataset_limits_length_by_completed_levels():
+    with TemporaryDirectory() as tmp_dir:
+        rollout_dir = Path(tmp_dir)
+        manifest_file = rollout_dir / "rollouts_manifest_3levels.json"
+        config_file = rollout_dir / "rollouts_config_3levels.json"
+        writer = RolloutChunkWriter(
+            manifest_file, rollout_dir / "rollouts_3levels_chunks"
+        )
+        writer.write_chunk([torch.tensor([1]), torch.tensor([2])])
+        writer.write_chunk([torch.tensor([3]), torch.tensor([4])])
+        writer.write_chunk([torch.tensor([5]), torch.tensor([6])])
+        writer.save_manifest({"completed_rollout_observation_counts": [2, 3, 1]})
+        config_file.write_text(json.dumps({"name": "dummy"}))
+        convert_rollouts_to_memmap(manifest_file)
+
+        dataset = load_rollout_dataset_from_file(
+            rollout_dir,
+            max_levels=2,
+            prefer_largest=True,
+            streaming_rollouts="auto",
+        )
+
+    assert isinstance(dataset, MemmapRolloutDataset)
+    assert len(dataset) == 5
+    assert [dataset[index].item() for index in range(len(dataset))] == [
+        1,
+        2,
+        3,
+        4,
+        5,
+    ]

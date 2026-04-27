@@ -4,11 +4,14 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import torch
 from torch.utils.data import Dataset
 
 
 ROLLOUT_CHUNK_FORMAT = "chunked_rollouts_v1"
+ROLLOUT_MEMMAP_FORMAT = "rollout_memmap_v1"
+ROLLOUT_MEMMAP_METADATA_PREFIX = "rollouts_memmap_"
 
 
 class RolloutChunkWriter:
@@ -74,6 +77,63 @@ class RolloutChunkWriter:
 def is_rollout_chunk_manifest(path: Path) -> bool:
     path = Path(path)
     return path.suffix == ".json" and path.name.startswith("rollouts_manifest_")
+
+
+def is_rollout_memmap_metadata(path: Path) -> bool:
+    path = Path(path)
+    return path.suffix == ".json" and path.name.startswith(
+        ROLLOUT_MEMMAP_METADATA_PREFIX
+    )
+
+
+class MemmapRolloutDataset(Dataset):
+    """Random-access rollout dataset backed by a NumPy memmap."""
+
+    def __init__(
+        self,
+        metadata_path: Path,
+        max_observations: Optional[int] = None,
+    ):
+        self.metadata_path = Path(metadata_path)
+        with self.metadata_path.open("r") as f:
+            self.metadata = json.load(f)
+
+        if self.metadata.get("format") != ROLLOUT_MEMMAP_FORMAT:
+            raise ValueError(
+                f"Expected rollout memmap format {ROLLOUT_MEMMAP_FORMAT!r}, got "
+                f"{self.metadata.get('format')!r} in {self.metadata_path}"
+            )
+        if max_observations is not None and max_observations < 0:
+            raise ValueError(
+                f"max_observations must be non-negative, got {max_observations}"
+            )
+
+        data_path = self.metadata_path.parent / self.metadata["data_path"]
+        self.dtype = np.dtype(self.metadata["dtype"])
+        self.shape = tuple(int(dim) for dim in self.metadata["shape"])
+        self._length = self.shape[0]
+        if max_observations is not None:
+            self._length = min(self._length, max_observations)
+
+        self._array = np.memmap(
+            data_path,
+            dtype=self.dtype,
+            mode="r",
+            shape=self.shape,
+        )
+
+    def __len__(self) -> int:
+        return self._length
+
+    def __getitem__(self, index: int) -> torch.Tensor:
+        if index < 0:
+            index += len(self)
+        if index < 0 or index >= len(self):
+            raise IndexError(
+                f"Rollout index {index} out of range for length {len(self)}"
+            )
+        array = np.asarray(self._array[index])
+        return torch.from_numpy(array.copy())
 
 
 class IndexedChunkedRolloutDataset(Dataset):
