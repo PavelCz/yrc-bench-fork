@@ -112,27 +112,32 @@ def build_seed_file_data(
     base_seed: int,
     min_seed: int,
     max_seed: int,
+    name: str | None = None,
 ) -> Dict[str, Any]:
     seed_splits = {split: [] for split in LEVEL_SEED_SPLITS}
     seed_splits["ood_train"] = ood_train_seeds
 
+    metadata: Dict[str, Any] = {
+        "base_seed": base_seed,
+        "num_policy_train": 0,
+        "num_ood_train": len(ood_train_seeds),
+        "num_validation": 0,
+        "num_ood_eval": 0,
+        "candidate_min_seed": min_seed,
+        "candidate_max_seed": max_seed,
+        "excluded_level_seed_count": excluded_count,
+        "source_level_seed_files": [str(path) for path in source_files],
+        "description": (
+            "Additional OOD training level seeds generated from a separate "
+            "candidate range while excluding all seeds found in the listed "
+            "source level seed files. Intended for gather_rollouts.py only."
+        ),
+    }
+    if name is not None:
+        metadata["name"] = name
+
     return {
-        "metadata": {
-            "base_seed": base_seed,
-            "num_policy_train": 0,
-            "num_ood_train": len(ood_train_seeds),
-            "num_validation": 0,
-            "num_ood_eval": 0,
-            "candidate_min_seed": min_seed,
-            "candidate_max_seed": max_seed,
-            "excluded_level_seed_count": excluded_count,
-            "source_level_seed_files": [str(path) for path in source_files],
-            "description": (
-                "Additional OOD training level seeds generated from a separate "
-                "candidate range while excluding all seeds found in the listed "
-                "source level seed files. Intended for gather_rollouts.py only."
-            ),
-        },
+        "metadata": metadata,
         "seeds": seed_splits,
     }
 
@@ -193,6 +198,12 @@ def parse_args() -> argparse.Namespace:
         help=f"Inclusive upper bound for generated seeds (default: {DEFAULT_MAX_SEED}).",
     )
     parser.add_argument(
+        "--name",
+        type=str,
+        default=None,
+        help="Optional human-readable name stored in metadata.name.",
+    )
+    parser.add_argument(
         "-o",
         "--output",
         type=Path,
@@ -226,10 +237,13 @@ def main() -> int:
         base_seed=args.base_seed,
         min_seed=args.min_seed,
         max_seed=args.max_seed,
+        name=args.name,
     )
     save_seed_file(seed_file_data, args.output, overwrite=args.overwrite)
 
     print(f"Saved additional OOD-train seeds to {args.output}")
+    if args.name is not None:
+        print(f"  - Name: {args.name}")
     print(f"  - OOD training: {len(ood_train_seeds)} seeds")
     print(f"  - Excluded existing seeds: {len(excluded_seeds)}")
     print(f"  - Source files: {len(source_files)}")

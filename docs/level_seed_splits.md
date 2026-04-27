@@ -44,14 +44,15 @@ rather than editing the canonical level seed files:
 ```bash
 python scripts/generate_extra_ood_train_seeds.py \
     --existing-level-seeds /nas/ucb/czempin/data/goal-misgen/seeds/icml/0.json \
-    --ood-train 10240 \
+    --ood-train 1024 \
     --base-seed 6033 \
-    -o /nas/ucb/czempin/data/goal-misgen/seeds/extra_ood_train_10240/0.json
+    --name extra_ood_train_1024 \
+    -o /nas/ucb/czempin/data/goal-misgen/seeds/extra_ood_train_1024/0.json
 ```
 
 The generated file has the standard `seeds` object, but only `ood_train` is
-non-empty. It excludes every seed from every split in the listed existing files.
-Use it for rollout collection with:
+non-empty. It excludes every seed from every split in the listed existing files,
+and writes the set name to `metadata.name`. Use it for rollout collection with:
 
 ```bash
 python scripts/run_gather_rollouts.py \
@@ -60,7 +61,7 @@ python scripts/run_gather_rollouts.py \
     --exp-ids 0 \
     --server chai \
     --num-levels all \
-    --level-seeds-file /nas/ucb/czempin/data/goal-misgen/seeds/extra_ood_train_10240/0.json
+    --level-seeds-file /nas/ucb/czempin/data/goal-misgen/seeds/extra_ood_train_1024/0.json
 ```
 
 ## Naming Notes

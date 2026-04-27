@@ -58,10 +58,12 @@ def test_build_seed_file_data_writes_only_ood_train_split(tmp_path):
         base_seed=6033,
         min_seed=100_000,
         max_seed=200_000,
+        name="extra_ood_train_1024",
     )
 
     assert seed_file_data["seeds"]["policy_train"] == []
     assert seed_file_data["seeds"]["ood_train"] == generated_seeds
     assert seed_file_data["seeds"]["validation"] == []
     assert seed_file_data["seeds"]["ood_eval"] == []
+    assert seed_file_data["metadata"]["name"] == "extra_ood_train_1024"
     assert seed_file_data["metadata"]["num_ood_train"] == 3

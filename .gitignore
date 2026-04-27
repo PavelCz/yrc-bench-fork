@@ -205,3 +205,4 @@ fabric.properties
 __pycache__/
 
 .codex
+.claude/settings.local.json
