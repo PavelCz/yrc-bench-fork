@@ -310,3 +310,55 @@ def test_memmap_dataset_limits_length_by_completed_levels():
         4,
         5,
     ]
+
+
+def test_loader_rejects_large_non_memmap_rollout_dataset():
+    with TemporaryDirectory() as tmp_dir:
+        rollout_dir = Path(tmp_dir)
+        manifest_file = rollout_dir / "rollouts_manifest_1025levels.json"
+        config_file = rollout_dir / "rollouts_config_1025levels.json"
+        writer = RolloutChunkWriter(
+            manifest_file, rollout_dir / "rollouts_1025levels_chunks"
+        )
+        writer.write_chunk([torch.tensor([1.0])])
+        writer.save_manifest()
+        config_file.write_text(json.dumps({"name": "dummy"}))
+
+        try:
+            load_rollout_dataset_from_file(
+                rollout_dir,
+                prefer_largest=True,
+                streaming_rollouts="auto",
+            )
+        except ValueError as exc:
+            error = str(exc)
+        else:
+            raise AssertionError("Expected large non-memmap rollout dataset to fail")
+
+    assert "requires a memmap rollout artifact" in error
+
+
+def test_loader_allows_large_artifact_when_rollout_max_levels_is_small():
+    with TemporaryDirectory() as tmp_dir:
+        rollout_dir = Path(tmp_dir)
+        manifest_file = rollout_dir / "rollouts_manifest_1025levels.json"
+        config_file = rollout_dir / "rollouts_config_1025levels.json"
+        metadata_file = rollout_dir / "rollouts_metadata_1025levels.json"
+        writer = RolloutChunkWriter(
+            manifest_file, rollout_dir / "rollouts_1025levels_chunks"
+        )
+        writer.write_chunk([torch.tensor([1.0]), torch.tensor([2.0])])
+        writer.save_manifest()
+        config_file.write_text(json.dumps({"name": "dummy"}))
+        metadata_file.write_text(
+            json.dumps({"completed_rollout_observation_counts": [1] * 1025})
+        )
+
+        dataset = load_rollout_dataset_from_file(
+            rollout_dir,
+            max_levels=1024,
+            prefer_largest=True,
+            streaming_rollouts="auto",
+        )
+
+    assert isinstance(dataset, IndexedChunkedRolloutDataset)

@@ -13,6 +13,9 @@ from YRC.core.rollout_storage import (
 )
 
 
+MEMMAP_REQUIRED_LEVEL_THRESHOLD = 1024
+
+
 def to_tensor(data):
     """Converts input to a torch tensor if it's not already."""
     if isinstance(data, dict):
@@ -160,6 +163,7 @@ def load_rollouts_from_file(
         rollouts_config_loaded = json.load(f)
 
     max_observations = _get_max_observations_for_levels(rollouts_data_path, max_levels)
+    _require_memmap_for_large_training_set(rollouts_data_path, max_levels)
     if max_levels is not None:
         print(
             f"Using first {max_levels} rollout levels"
@@ -218,6 +222,7 @@ def load_rollout_dataset_from_file(
         rollouts_config_loaded = json.load(f)
 
     max_observations = _get_max_observations_for_levels(rollouts_data_path, max_levels)
+    _require_memmap_for_large_training_set(rollouts_data_path, max_levels)
     if max_levels is not None:
         print(
             f"Using first {max_levels} rollout levels"
@@ -273,6 +278,30 @@ def _normalize_streaming_rollouts(value) -> str:
             f"got {value!r}"
         )
     return value
+
+
+def _require_memmap_for_large_training_set(data_path: Path, max_levels: Optional[int]):
+    selected_levels = _get_selected_rollout_level_count(data_path, max_levels)
+    if selected_levels <= MEMMAP_REQUIRED_LEVEL_THRESHOLD:
+        return
+    if is_rollout_memmap_metadata(data_path):
+        return
+    raise ValueError(
+        f"Training on {selected_levels} rollout levels requires a memmap rollout "
+        f"artifact. Convert the selected rollout manifest first, e.g. "
+        f"`python scripts/convert_rollouts_to_memmap.py {data_path}`. "
+        f"Memmap is required above {MEMMAP_REQUIRED_LEVEL_THRESHOLD} levels to avoid "
+        "slow random access over chunked .pt files or eager in-memory loading."
+    )
+
+
+def _get_selected_rollout_level_count(
+    data_path: Path, max_levels: Optional[int]
+) -> int:
+    artifact_levels = _rollout_level_count_from_path(data_path)
+    if max_levels is None:
+        return artifact_levels
+    return min(max_levels, artifact_levels)
 
 
 def resolve_rollout_paths(rollout_path: Path, prefer_largest: bool = False):
