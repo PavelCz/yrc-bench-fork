@@ -1,4 +1,5 @@
 import importlib
+import subprocess
 import sys
 from pathlib import Path
 
@@ -39,3 +40,79 @@ def test_eval_sbatch_overrides_env_name():
 
     assert "-en coinrun_proxy_fail" in command
     assert "-weak weak.pth" in command
+
+
+def test_preflight_uses_module_invocation_and_hides_success_output(
+    monkeypatch, capsys
+):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, "preflight ok\n", "")
+
+    monkeypatch.setattr(run_eval.subprocess, "run", fake_run)
+
+    assert run_eval.run_preflight_check(
+        "ood-stable", "coinrun_proxy_fail", show_output=False
+    )
+
+    assert calls[0][0] == [
+        "conda",
+        "run",
+        "-n",
+        "ood-stable",
+        "python",
+        "-m",
+        "scripts.preflight_eval_env",
+        "--env",
+        "coinrun_proxy_fail",
+    ]
+    assert calls[0][1]["cwd"] == run_eval.REPO_ROOT
+    assert capsys.readouterr().out == ""
+
+
+def test_preflight_prints_output_for_dry_run(monkeypatch, capsys):
+    def fake_run(command, **kwargs):
+        return subprocess.CompletedProcess(command, 0, "preflight ok\n", "")
+
+    monkeypatch.setattr(run_eval.subprocess, "run", fake_run)
+
+    assert run_eval.run_preflight_check(
+        "ood-stable", "coinrun_proxy_fail", show_output=True
+    )
+
+    output = capsys.readouterr().out
+    assert "=== Preflight check ===" in output
+    assert "python -m scripts.preflight_eval_env --env coinrun_proxy_fail" in output
+    assert "preflight ok" in output
+
+
+def test_main_stops_before_submit_when_preflight_fails(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_eval.py",
+            "--prefix",
+            "prefix",
+            "--exp-ids",
+            "1",
+            "--server",
+            "chai",
+            "--env",
+            "coinrun_proxy_fail",
+            "--method",
+            "max-logit",
+            "--conda-env",
+            "ood-stable",
+        ],
+    )
+    monkeypatch.setattr(run_eval, "run_preflight_check", lambda *args, **kwargs: False)
+
+    def fail_submit(*args, **kwargs):
+        raise AssertionError("submit_job should not be called after preflight failure")
+
+    monkeypatch.setattr(run_eval, "submit_job", fail_submit)
+
+    assert run_eval.main() == 1

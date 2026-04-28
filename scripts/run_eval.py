@@ -23,6 +23,7 @@ from common import (
 
 # Default conda environment
 DEFAULT_CONDA_ENV = "ood-stable"
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # SLURM configuration
 SLURM_CONFIG = {
@@ -224,6 +225,44 @@ def submit_job(
         print(f"Failed to submit {job_name}: {result.stderr}")
 
 
+def run_preflight_check(conda_env: str, env_name: str, *, show_output: bool) -> bool:
+    """Run local dependency checks before submitting SLURM jobs."""
+    command = [
+        "conda",
+        "run",
+        "-n",
+        conda_env,
+        "python",
+        "-m",
+        "scripts.preflight_eval_env",
+        "--env",
+        env_name,
+    ]
+    result = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        text=True,
+        capture_output=True,
+    )
+
+    if show_output or result.returncode != 0:
+        print("=== Preflight check ===")
+        print("$ " + " ".join(command))
+        if result.stdout:
+            print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
+        if result.stderr:
+            print(result.stderr, end="" if result.stderr.endswith("\n") else "\n")
+
+    if result.returncode != 0:
+        print(
+            f"Preflight failed with exit code {result.returncode}; "
+            "not submitting jobs."
+        )
+        return False
+
+    return True
+
+
 def main():
     import argparse
 
@@ -346,6 +385,13 @@ def main():
     wandb_project = args.wandb_project or "default"
     log_dir = log_base / wandb_project / args.prefix / date.today().isoformat()
     print(f"Log dir: {log_dir}")
+
+    if not run_preflight_check(
+        args.conda_env,
+        args.env,
+        show_output=args.dry_run,
+    ):
+        return 1
 
     if args.dry_run:
         print(f"Server: {args.server}")
