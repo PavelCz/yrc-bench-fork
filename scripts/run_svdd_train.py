@@ -27,7 +27,8 @@ TRAIN_DEFAULTS = {
     "cp_method": "DeepSVDD",
     "num_rollouts": 64,
     "query_cost": 0,
-    "rollout_max_levels": None,
+    "rollouts_prefix": "neurips02",
+    "rollout_max_levels": 1024,
     "svdd_val_levels": 64,
 }
 
@@ -174,8 +175,10 @@ def main():
     )
     parser.add_argument(
         "--rollouts-prefix",
+        default=TRAIN_DEFAULTS["rollouts_prefix"],
         help=(
-            "Rollout batch folder under the server rollouts base. Defaults to --prefix."
+            "Rollout batch folder under the server rollouts base "
+            f"(default: {TRAIN_DEFAULTS['rollouts_prefix']})."
         ),
     )
     parser.add_argument(
@@ -215,7 +218,7 @@ def main():
     checkpoint_base_path = paths["checkpoint_base"]
     rollouts_base_path = paths["rollouts_base"]
     seeds_base_path = paths["seeds_base"]
-    rollouts_prefix = args.rollouts_prefix or args.prefix
+    rollouts_prefix = args.rollouts_prefix
 
     if args.dry_run:
         print(f"Server: {args.server}")

@@ -217,10 +217,12 @@ def test_run_svdd_train_default_rollout_dir_matches_gather_output_layout():
         sys.path.pop(0)
 
     rollout_dir = run_svdd_train.get_rollout_dir(
-        "coinrun", 0, "/rollouts", "rollouts-neurips"
+        "coinrun", 0, "/rollouts", run_svdd_train.TRAIN_DEFAULTS["rollouts_prefix"]
     )
 
-    assert rollout_dir == "/rollouts/rollouts-neurips/coinrun/gather_coinrun_exp0"
+    assert run_svdd_train.TRAIN_DEFAULTS["rollouts_prefix"] == "neurips02"
+    assert run_svdd_train.TRAIN_DEFAULTS["rollout_max_levels"] == 1024
+    assert rollout_dir == "/rollouts/neurips02/coinrun/gather_coinrun_exp0"
 
 
 def test_run_gather_rollouts_exports_prefixed_rollout_output_dir():
