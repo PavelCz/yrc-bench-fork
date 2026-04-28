@@ -253,14 +253,14 @@ def test_run_gather_rollouts_exports_prefixed_rollout_output_dir():
             "level_seeds_file": "seeds/0.json",
             "query_cost": 0,
             "rollout_levels": None,
-            "rollout_chunk_size": 0,
+            "rollout_chunk_size": None,
             "output_dir": str(output_dir),
         },
     )
 
     assert output_dir == Path("/rollouts/rollouts-neurips/coinrun")
     assert 'export SM_OUTPUT_DIR="/rollouts/rollouts-neurips/coinrun"' in command
-    assert "-rollout_chunk_size 0" in command
+    assert "-rollout_chunk_size" not in command
 
 
 def test_run_gather_rollouts_defaults_to_neurips_extra_seed_dir():
@@ -278,7 +278,7 @@ def test_run_gather_rollouts_defaults_to_neurips_extra_seed_dir():
     assert seeds_dir == Path(
         "/nas/ucb/czempin/data/goal-misgen/seeds/neurips_extra_ood_train_1024"
     )
-    assert run_gather_rollouts.GATHER_DEFAULTS["rollout_chunk_size"] == 0
+    assert run_gather_rollouts.GATHER_DEFAULTS["rollout_chunk_size"] is None
 
 
 def test_run_gather_rollouts_allows_level_seed_file_override():

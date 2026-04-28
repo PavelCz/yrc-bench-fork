@@ -29,7 +29,7 @@ GATHER_DEFAULTS = {
     "random_percent": 0,
     "use_bg": True,
     "query_cost": 0,
-    "rollout_chunk_size": 0,
+    "rollout_chunk_size": None,
     "level_seeds_dir_name": "neurips_extra_ood_train_1024",
 }
 
@@ -220,7 +220,8 @@ def main():
         default=GATHER_DEFAULTS["rollout_chunk_size"],
         help=(
             "Maximum observations per rollout chunk in gather_rollouts.py. "
-            "Defaults to 0, which disables chunked saving."
+            "Omit to use gather_rollouts.py's default chunk size; use 0 to "
+            "disable chunked saving."
         ),
     )
     # Override checkpoints if needed
