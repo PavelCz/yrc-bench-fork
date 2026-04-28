@@ -3,7 +3,7 @@
 
 Run this inside the same conda environment used by SLURM, for example:
 
-    conda run -n ood-stable python scripts/preflight_eval_env.py \
+    conda run -n ood-stable python -m scripts.preflight_eval_env \
         --env coinrun_proxy_fail
 """
 
