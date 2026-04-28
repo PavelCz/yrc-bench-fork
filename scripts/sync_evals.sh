@@ -38,7 +38,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-ENVS=("maze" "coinrun" "coinrun_proxy_fail")
+ENVS=("maze" "coinrun" "coinrun_proxy_fail" "maze_proxy_fail")
 EXPS=("exp0" "exp1" "exp2" "exp3")
 AGENTS=("sim" "weak" "strong")
 
