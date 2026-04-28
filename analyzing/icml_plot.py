@@ -37,7 +37,14 @@ from analyzing.plotting_common import (
 
 matplotlib.use("TkAgg")
 
-SUPPORTED_ENVS = ["coinrun", "coinrun_proxy_fail", "maze", "maze_afh", "heist"]
+SUPPORTED_ENVS = [
+    "coinrun",
+    "coinrun_proxy_fail",
+    "maze",
+    "maze_afh",
+    "maze_proxy_fail",
+    "heist",
+]
 ENV_PATTERN = "|".join(
     re.escape(env) for env in sorted(SUPPORTED_ENVS, key=len, reverse=True)
 )
@@ -77,7 +84,7 @@ def parse_experiment_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
     Parse experiment directory name to extract prefix, env, and experiment ID.
 
     Expected format: {prefix}_{env}_exp{id}
-    Examples: imcl04_coinrun_exp0, imcl04_coinrun_proxy_fail_exp1
+    Examples: imcl04_coinrun_exp0, imcl04_maze_proxy_fail_exp1
 
     Returns:
         Tuple of (prefix, env, exp_id) or None if pattern doesn't match
@@ -97,7 +104,7 @@ def parse_method_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
     Parse method directory name to extract env, method, and experiment ID.
 
     Expected format: {env}_{method}_exp{id}
-    Examples: coinrun_max_prob_exp0, coinrun_proxy_fail_max_prob_exp1
+    Examples: coinrun_max_prob_exp0, maze_proxy_fail_max_prob_exp1
 
     Returns:
         Tuple of (env, method, exp_id) or None if pattern doesn't match
