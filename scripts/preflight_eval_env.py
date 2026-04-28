@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import json
 import sys
 import traceback
 from pathlib import Path
@@ -115,6 +116,19 @@ def check_procgen_env(env_name: str) -> None:
         env.close()
 
 
+def check_test_eval_info(env_name: str) -> None:
+    with (REPO_ROOT / "YRC" / "core" / "test_eval_info.json").open() as f:
+        test_eval_info = json.load(f)
+
+    procgen_info = test_eval_info.get("procgen", {})
+    if env_name not in procgen_info:
+        available = ", ".join(sorted(procgen_info))
+        raise RuntimeError(
+            f"Missing procgen/{env_name} in YRC/core/test_eval_info.json. "
+            f"Available procgen envs: {available}"
+        )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Check that the conda environment can run Procgen AFHP evals."
@@ -169,6 +183,10 @@ def main() -> int:
     if not args.skip_procgen_env:
         env_names = SUPPORTED_ENVS if args.env == "all" else [args.env]
         for env_name in env_names:
+            preflight.run(
+                f"test_eval_info contains procgen/{env_name}",
+                lambda env_name=env_name: check_test_eval_info(env_name),
+            )
             preflight.run(
                 f"ProcgenEnv can construct {env_name}",
                 lambda env_name=env_name: check_procgen_env(env_name),
