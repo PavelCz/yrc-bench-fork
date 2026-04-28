@@ -62,7 +62,7 @@ def make_interactive(vision, record_dir, **kwargs):
         info_key=info_key,
         width=w * 12,
         height=h * 12,
-        keys_to_act=keys_to_act_fn
+        # keys_to_act=keys_to_act_fn
     )
 
 
