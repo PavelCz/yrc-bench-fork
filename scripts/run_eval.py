@@ -47,6 +47,10 @@ EVAL_DEFAULTS = {
 
 # Default number of ensemble members (excluding weak agent which is added automatically)
 DEFAULT_NUM_ENSEMBLE_MEMBERS = 4
+ROBUST_MAZE_CHECKPOINT_STEPS = {
+    "robust200": 200015872,
+    "robust400": 400031744,
+}
 
 EVAL_ENVS = [*ENVS, "coinrun_proxy_fail", "maze_proxy_fail"]
 
@@ -147,6 +151,26 @@ def get_ensemble_member_paths(
             member_paths.append(None)
 
     return member_paths
+
+
+def get_robust_maze_strong_checkpoint(
+    exp_id: int,
+    checkpoint_base_path: str,
+    checkpoint_steps: int,
+) -> str:
+    """Get the random-start maze strong checkpoint at the requested timestep."""
+    policy_base_path = Path(checkpoint_base_path).parent
+    robust_parent = (
+        policy_base_path
+        / "neurips"
+        / "maze_afh_random_start"
+        / f"icml2_maze_exp{exp_id}_50p_random_start"
+    )
+    robust_ts_dir = find_newest_timestamp_dir(robust_parent)
+    if robust_ts_dir is None:
+        return str(robust_parent / "NOT_FOUND")
+
+    return str(robust_ts_dir / f"model_{checkpoint_steps}.pth")
 
 
 def build_sbatch_command(
@@ -378,6 +402,25 @@ def main():
     parser.add_argument("--sim", help="Override sim weak checkpoint path")
     parser.add_argument("--weak", help="Override weak checkpoint path")
     parser.add_argument("--strong", help="Override strong checkpoint path")
+    robust_group = parser.add_mutually_exclusive_group()
+    robust_group.add_argument(
+        "--robust200",
+        "--robust-200",
+        action="store_true",
+        help=(
+            "For maze evals, replace the strong agent with the random-start "
+            "strong policy at 200M timesteps."
+        ),
+    )
+    robust_group.add_argument(
+        "--robust400",
+        "--robust-400",
+        action="store_true",
+        help=(
+            "For maze evals, replace the strong agent with the random-start "
+            "strong policy at 400M timesteps."
+        ),
+    )
     # Ensemble-specific arguments
     parser.add_argument(
         "--num-ensemble-members",
@@ -397,6 +440,20 @@ def main():
     # `args.env` is the actual Procgen environment to instantiate. `artifact_env`
     # is only the namespace used for existing experiment artifacts on disk.
     artifact_env = ARTIFACT_ENVS.get(args.env, args.env)
+    robust_checkpoint_key = None
+    if args.robust200:
+        robust_checkpoint_key = "robust200"
+    elif args.robust400:
+        robust_checkpoint_key = "robust400"
+
+    if robust_checkpoint_key is not None and artifact_env != "maze":
+        print(
+            f"Error: --{robust_checkpoint_key} is currently supported only for maze."
+        )
+        return 1
+    if robust_checkpoint_key is not None and args.strong:
+        print(f"Error: pass either --strong or --{robust_checkpoint_key}, not both.")
+        return 1
 
     # Configs are artifact-scoped: proxy-fail evaluation reuses coinrun configs
     # and overrides the actual env through -en below.
@@ -431,6 +488,12 @@ def main():
             print(f"Artifact env: {artifact_env}")
         print(f"Method: {args.method}")
         print(f"Prefix: {args.prefix}")
+        if robust_checkpoint_key is not None:
+            print(
+                "Robust strong checkpoint: "
+                f"{robust_checkpoint_key} "
+                f"({ROBUST_MAZE_CHECKPOINT_STEPS[robust_checkpoint_key]} timesteps)"
+            )
         if args.method in SVDD_METHODS:
             print(f"SVDD prefix: {svdd_prefix}")
             print(f"SVDD base: {Path(svdd_base_path) / svdd_prefix}")
@@ -448,6 +511,12 @@ def main():
             checkpoints["weak"] = args.weak
         if args.strong:
             checkpoints["strong"] = args.strong
+        elif robust_checkpoint_key is not None:
+            checkpoints["strong"] = get_robust_maze_strong_checkpoint(
+                exp_id,
+                checkpoint_base_path,
+                ROBUST_MAZE_CHECKPOINT_STEPS[robust_checkpoint_key],
+            )
 
         # Get level seeds file path
         level_seeds_file = Path(seeds_base_path) / f"{exp_id}.json"
