@@ -224,9 +224,9 @@ def test_run_svdd_train_default_rollout_dir_matches_gather_output_layout():
         "coinrun", 0, "/rollouts", run_svdd_train.TRAIN_DEFAULTS["rollouts_prefix"]
     )
 
-    assert run_svdd_train.TRAIN_DEFAULTS["rollouts_prefix"] == "neurips02"
+    assert run_svdd_train.TRAIN_DEFAULTS["rollouts_prefix"] == "neurips03"
     assert run_svdd_train.TRAIN_DEFAULTS["rollout_max_levels"] == 1024
-    assert rollout_dir == "/rollouts/neurips02/coinrun/gather_coinrun_exp0"
+    assert rollout_dir == "/rollouts/neurips03/coinrun/gather_coinrun_exp0"
 
 
 def test_run_svdd_train_expected_model_path_includes_prefix():
