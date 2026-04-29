@@ -5,6 +5,7 @@ Script to run DeepSVDD training jobs in parallel via SLURM sbatch.
 
 import os
 import subprocess
+from datetime import date
 from pathlib import Path
 
 from common import ENVS, EXP_ID_TO_SEED, SERVER_PATHS, get_checkpoints
@@ -44,6 +45,14 @@ def get_rollout_dir(
     return str(Path(rollouts_base_path) / rollouts_prefix / env / rollout_name)
 
 
+def get_svdd_output_dir(svdd_base_path: str, prefix: str) -> Path:
+    return Path(svdd_base_path) / prefix
+
+
+def get_expected_model_file(svdd_output_dir: Path, job_name: str) -> Path:
+    return svdd_output_dir / job_name / "trained.joblib"
+
+
 def resolve_rollout_path_for_check(rollout_dir: str) -> Path:
     rollout_path = Path(rollout_dir)
     if rollout_path.is_absolute():
@@ -51,7 +60,7 @@ def resolve_rollout_path_for_check(rollout_dir: str) -> Path:
     return Path(os.getenv("SM_OUTPUT_DIR", "experiments")) / rollout_path
 
 
-def build_sbatch_command(job_name: str, train_args: dict) -> str:
+def build_sbatch_command(job_name: str, train_args: dict, log_dir: Path) -> str:
     """Build the sbatch command string."""
     slurm_args = " ".join(f"--{k}={v}" for k, v in SLURM_CONFIG.items())
 
@@ -81,20 +90,23 @@ def build_sbatch_command(job_name: str, train_args: dict) -> str:
 
     sbatch_script = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
-#SBATCH --output=logs/slurm/%x_%j.out
-#SBATCH --error=logs/slurm/%x_%j.err
+#SBATCH --output={log_dir}/%x_%j.out
+#SBATCH --error={log_dir}/%x_%j.err
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in SLURM_CONFIG.items())}
 
 eval "$(conda shell.bash hook)"
 conda activate {CONDA_ENV}
+export SM_OUTPUT_DIR="{train_args["output_dir"]}"
 srun {slurm_args} {python_cmd}
 """
     return sbatch_script
 
 
-def submit_job(job_name: str, train_args: dict, dry_run: bool = False) -> None:
+def submit_job(
+    job_name: str, train_args: dict, log_dir: Path, dry_run: bool = False
+) -> None:
     """Submit a single job via sbatch."""
-    sbatch_script = build_sbatch_command(job_name, train_args)
+    sbatch_script = build_sbatch_command(job_name, train_args, log_dir)
 
     if dry_run:
         print(f"=== Job: {job_name} ===")
@@ -103,7 +115,7 @@ def submit_job(job_name: str, train_args: dict, dry_run: bool = False) -> None:
         return
 
     # Ensure logs directory exists
-    Path("logs/slurm").mkdir(parents=True, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
 
     # Submit via sbatch
     result = subprocess.run(
@@ -218,6 +230,13 @@ def main():
     checkpoint_base_path = paths["checkpoint_base"]
     rollouts_base_path = paths["rollouts_base"]
     seeds_base_path = paths["seeds_base"]
+    svdd_output_dir = get_svdd_output_dir(paths["svdd_base"], args.prefix)
+    log_dir = (
+        Path(paths["log_base"])
+        / "svdd_train"
+        / args.prefix
+        / date.today().isoformat()
+    )
     rollouts_prefix = args.rollouts_prefix
 
     if args.dry_run:
@@ -227,6 +246,8 @@ def main():
         print(f"Feature type: {args.feature_type}")
         print(f"Prefix: {args.prefix}")
         print(f"Rollouts prefix: {rollouts_prefix}")
+        print(f"SVDD output dir: {svdd_output_dir}")
+        print(f"Log dir: {log_dir}")
         print(f"Experiment IDs: {args.exp_ids}")
         print(f"Rollout max levels: {args.rollout_max_levels}")
         print(f"SVDD validation levels: {args.svdd_val_levels}")
@@ -284,6 +305,7 @@ def main():
         feature_suffix = "latent" if args.feature_type == "hidden" else "image"
         job_name = f"svdd_{args.env}_{feature_suffix}_exp{exp_id}"
         wandb_group = f"{args.prefix}_{args.env}_{feature_suffix}_exp{exp_id}"
+        expected_model_file = get_expected_model_file(svdd_output_dir, job_name)
 
         if args.dry_run:
             print(f"=== exp{exp_id} ===")
@@ -297,6 +319,10 @@ def main():
             print(f"  Rollout max levels: {args.rollout_max_levels}")
             print(f"  Level seeds: {level_seeds_file}")
             print(f"  SVDD validation levels: {args.svdd_val_levels}")
+            print(f"  Output dir: {svdd_output_dir}")
+            print(f"  Expected model dir: {expected_model_file.parent}")
+            print(f"  Expected model file: {expected_model_file}")
+            print(f"  Log dir: {log_dir}")
             print(f"  Seed: {seed}")
             print()
 
@@ -313,11 +339,12 @@ def main():
             "rollout_max_levels": args.rollout_max_levels,
             "level_seeds_file": str(level_seeds_file),
             "svdd_val_levels": args.svdd_val_levels,
+            "output_dir": str(svdd_output_dir),
             "seed": seed,
             **checkpoints,
         }
 
-        submit_job(job_name, train_args, dry_run=args.dry_run)
+        submit_job(job_name, train_args, log_dir, dry_run=args.dry_run)
 
     return 0
 

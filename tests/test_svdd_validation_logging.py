@@ -200,12 +200,16 @@ def test_run_svdd_train_command_passes_seed_file_and_validation_levels():
             "query_cost": 0,
             "seed": 6033,
             "rollout_max_levels": 128,
+            "output_dir": "/svdd/prefix",
         },
+        Path("/logs/svdd_train/prefix/2026-04-29"),
     )
 
     assert "-level_seeds_file seeds/0.json" in command
     assert "-svdd_val_levels 64" in command
     assert "-rollout_max_levels 128" in command
+    assert 'export SM_OUTPUT_DIR="/svdd/prefix"' in command
+    assert "#SBATCH --output=/logs/svdd_train/prefix/2026-04-29/%x_%j.out" in command
 
 
 def test_run_svdd_train_default_rollout_dir_matches_gather_output_layout():
@@ -223,6 +227,25 @@ def test_run_svdd_train_default_rollout_dir_matches_gather_output_layout():
     assert run_svdd_train.TRAIN_DEFAULTS["rollouts_prefix"] == "neurips02"
     assert run_svdd_train.TRAIN_DEFAULTS["rollout_max_levels"] == 1024
     assert rollout_dir == "/rollouts/neurips02/coinrun/gather_coinrun_exp0"
+
+
+def test_run_svdd_train_expected_model_path_includes_prefix():
+    scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+    sys.path.insert(0, str(scripts_dir))
+    try:
+        import run_svdd_train
+    finally:
+        sys.path.pop(0)
+
+    output_dir = run_svdd_train.get_svdd_output_dir("/trained_svdd", "neurips02")
+    model_file = run_svdd_train.get_expected_model_file(
+        output_dir, "svdd_coinrun_image_exp0"
+    )
+
+    assert output_dir == Path("/trained_svdd/neurips02")
+    assert model_file == Path(
+        "/trained_svdd/neurips02/svdd_coinrun_image_exp0/trained.joblib"
+    )
 
 
 def test_run_gather_rollouts_exports_prefixed_rollout_output_dir():

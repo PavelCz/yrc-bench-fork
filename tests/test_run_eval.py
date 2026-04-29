@@ -42,6 +42,26 @@ def test_eval_sbatch_overrides_env_name():
     assert "-weak weak.pth" in command
 
 
+def test_svdd_model_path_uses_training_prefix(tmp_path):
+    model_file = (
+        tmp_path
+        / "neurips02"
+        / "svdd_coinrun_image_exp0"
+        / "trained.joblib"
+    )
+    model_file.parent.mkdir(parents=True)
+    model_file.write_text("model")
+
+    resolved = run_eval.get_svdd_model_path(
+        "coinrun", 0, "svdd-image", str(tmp_path), "neurips02"
+    )
+
+    assert resolved == str(model_file)
+    assert run_eval.get_svdd_expected_model_path(
+        "coinrun", 0, "svdd-image", str(tmp_path), "neurips02"
+    ) == model_file
+
+
 def test_preflight_uses_module_invocation_and_hides_success_output(
     monkeypatch, capsys
 ):

@@ -79,14 +79,35 @@ def get_svdd_policy_name(env: str, exp_id: int, method: str) -> str:
 
 
 def get_svdd_model_path(
-    env: str, exp_id: int, method: str, svdd_base_path: str
+    env: str,
+    exp_id: int,
+    method: str,
+    svdd_base_path: str,
+    svdd_prefix: Optional[str] = None,
 ) -> Optional[str]:
     """Get the full path to the trained SVDD model file, or None if it doesn't exist."""
     policy_name = get_svdd_policy_name(env, exp_id, method)
-    model_file = Path(svdd_base_path) / policy_name / "trained.joblib"
+    model_base_path = Path(svdd_base_path)
+    if svdd_prefix is not None:
+        model_base_path = model_base_path / svdd_prefix
+    model_file = model_base_path / policy_name / "trained.joblib"
     if model_file.exists():
         return str(model_file)
     return None
+
+
+def get_svdd_expected_model_path(
+    env: str,
+    exp_id: int,
+    method: str,
+    svdd_base_path: str,
+    svdd_prefix: Optional[str] = None,
+) -> Path:
+    policy_name = get_svdd_policy_name(env, exp_id, method)
+    model_base_path = Path(svdd_base_path)
+    if svdd_prefix is not None:
+        model_base_path = model_base_path / svdd_prefix
+    return model_base_path / policy_name / "trained.joblib"
 
 
 def get_ensemble_member_paths(
@@ -345,6 +366,14 @@ def main():
         default=None,
         help="Override wandb project name",
     )
+    parser.add_argument(
+        "--svdd-prefix",
+        default=None,
+        help=(
+            "SVDD training prefix under the server svdd_base path. Defaults to "
+            "--prefix for SVDD methods."
+        ),
+    )
     # Override checkpoints if needed
     parser.add_argument("--sim", help="Override sim weak checkpoint path")
     parser.add_argument("--weak", help="Override weak checkpoint path")
@@ -363,6 +392,7 @@ def main():
     checkpoint_base_path = paths["checkpoint_base"]
     seeds_base_path = paths["seeds_base"]
     svdd_base_path = paths["svdd_base"]
+    svdd_prefix = args.svdd_prefix or args.prefix
 
     # `args.env` is the actual Procgen environment to instantiate. `artifact_env`
     # is only the namespace used for existing experiment artifacts on disk.
@@ -401,6 +431,9 @@ def main():
             print(f"Artifact env: {artifact_env}")
         print(f"Method: {args.method}")
         print(f"Prefix: {args.prefix}")
+        if args.method in SVDD_METHODS:
+            print(f"SVDD prefix: {svdd_prefix}")
+            print(f"SVDD base: {Path(svdd_base_path) / svdd_prefix}")
         print()
 
     # Loop over experiment IDs
@@ -424,7 +457,7 @@ def main():
         cp_feature = None
         if args.method in SVDD_METHODS:
             svdd_model_path = get_svdd_model_path(
-                artifact_env, exp_id, args.method, svdd_base_path
+                artifact_env, exp_id, args.method, svdd_base_path, svdd_prefix
             )
             cp_feature = "obs" if args.method == "svdd-image" else "hidden"
 
@@ -449,9 +482,11 @@ def main():
             missing = True
 
         if args.method in SVDD_METHODS and svdd_model_path is None:
-            svdd_policy_name = get_svdd_policy_name(artifact_env, exp_id, args.method)
+            expected_model_path = get_svdd_expected_model_path(
+                artifact_env, exp_id, args.method, svdd_base_path, svdd_prefix
+            )
             print(
-                f"Warning: exp{exp_id} SVDD model not found at {svdd_base_path}/{svdd_policy_name}/trained.joblib"
+                f"Warning: exp{exp_id} SVDD model not found at {expected_model_path}"
             )
             missing = True
 
