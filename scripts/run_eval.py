@@ -454,6 +454,11 @@ def main():
     if robust_checkpoint_key is not None and args.strong:
         print(f"Error: pass either --strong or --{robust_checkpoint_key}, not both.")
         return 1
+    output_prefix = (
+        f"{args.prefix}_{robust_checkpoint_key}"
+        if robust_checkpoint_key is not None
+        else args.prefix
+    )
 
     # Configs are artifact-scoped: proxy-fail evaluation reuses coinrun configs
     # and overrides the actual env through -en below.
@@ -470,7 +475,7 @@ def main():
     # Build log directory path: base / wandb_project / prefix / date
     log_base = Path(paths["log_base"])
     wandb_project = args.wandb_project or "default"
-    log_dir = log_base / wandb_project / args.prefix / date.today().isoformat()
+    log_dir = log_base / wandb_project / output_prefix / date.today().isoformat()
     print(f"Log dir: {log_dir}")
 
     if not run_preflight_check(
@@ -488,6 +493,8 @@ def main():
             print(f"Artifact env: {artifact_env}")
         print(f"Method: {args.method}")
         print(f"Prefix: {args.prefix}")
+        if output_prefix != args.prefix:
+            print(f"Output prefix: {output_prefix}")
         if robust_checkpoint_key is not None:
             print(
                 "Robust strong checkpoint: "
@@ -574,8 +581,12 @@ def main():
             continue
 
         # Build job name and experiment group
-        job_name = f"{args.env}_{args.method}_exp{exp_id}"
-        experiment_group = f"{args.prefix}_{args.env}_exp{exp_id}"
+        name_parts = [args.env, args.method]
+        if robust_checkpoint_key is not None:
+            name_parts.append(robust_checkpoint_key)
+        name_parts.append(f"exp{exp_id}")
+        job_name = "_".join(name_parts)
+        experiment_group = f"{output_prefix}_{args.env}_exp{exp_id}"
 
         if args.dry_run:
             print(f"=== exp{exp_id} ===")
