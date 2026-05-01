@@ -43,6 +43,7 @@ EVAL_DEFAULTS = {
     "video_logging_mode": "folder",
     "video_filter_mode": "any",
     "coverage_fraction": 0.05,
+    "svdd_prefix": "neurips04",
 }
 
 # Default number of ensemble members (excluding weak agent which is added automatically)
@@ -392,10 +393,10 @@ def main():
     )
     parser.add_argument(
         "--svdd-prefix",
-        default=None,
+        default=EVAL_DEFAULTS["svdd_prefix"],
         help=(
-            "SVDD training prefix under the server svdd_base path. Defaults to "
-            "--prefix for SVDD methods."
+            "SVDD training prefix under the server svdd_base path "
+            f"(default: {EVAL_DEFAULTS['svdd_prefix']})."
         ),
     )
     # Override checkpoints if needed
@@ -435,7 +436,7 @@ def main():
     checkpoint_base_path = paths["checkpoint_base"]
     seeds_base_path = paths["seeds_base"]
     svdd_base_path = paths["svdd_base"]
-    svdd_prefix = args.svdd_prefix or args.prefix
+    svdd_prefix = args.svdd_prefix
 
     # `args.env` is the actual Procgen environment to instantiate. `artifact_env`
     # is only the namespace used for existing experiment artifacts on disk.

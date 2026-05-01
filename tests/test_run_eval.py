@@ -62,6 +62,22 @@ def test_svdd_model_path_uses_training_prefix(tmp_path):
     ) == model_file
 
 
+def test_svdd_default_prefix_is_neurips04():
+    expected = run_eval.get_svdd_expected_model_path(
+        "coinrun",
+        0,
+        "svdd-image",
+        "/nas/ucb/czempin/data/goal-misgen/trained_svdd",
+        run_eval.EVAL_DEFAULTS["svdd_prefix"],
+    )
+
+    assert run_eval.EVAL_DEFAULTS["svdd_prefix"] == "neurips04"
+    assert expected == Path(
+        "/nas/ucb/czempin/data/goal-misgen/trained_svdd/"
+        "neurips04/svdd_coinrun_image_exp0/trained.joblib"
+    )
+
+
 def test_preflight_uses_module_invocation_and_hides_success_output(
     monkeypatch, capsys
 ):
