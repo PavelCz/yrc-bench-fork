@@ -10,6 +10,7 @@ usage() {
   echo "Sync eval directories from ${SRC_BASE} to ${DST_BASE}."
   echo "Includes both standard eval dirs (<prefix>_<env>_expN) and"
   echo "policy-eval dirs (<prefix>_<env>_<agent>_expN)."
+  echo "Also includes robust maze eval dirs (<prefix>_robust{200,400}_<env>_expN)."
   echo "Videos and images in the videos folder are excluded by default."
 }
 
@@ -39,6 +40,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 ENVS=("maze" "coinrun" "coinrun_proxy_fail" "maze_proxy_fail")
+ROBUST_ENVS=("maze" "maze_proxy_fail")
+ROBUST_VARIANTS=("robust200" "robust400")
 EXPS=("exp0" "exp1" "exp2" "exp3")
 AGENTS=("sim" "weak" "strong")
 
@@ -103,6 +106,15 @@ for env in "${ENVS[@]}"; do
     # Agent-specific policy eval directories
     for agent in "${AGENTS[@]}"; do
       sync_name "${PREFIX}_${env}_${agent}_${exp}"
+    done
+  done
+done
+
+for robust_variant in "${ROBUST_VARIANTS[@]}"; do
+  for env in "${ROBUST_ENVS[@]}"; do
+    for exp in "${EXPS[@]}"; do
+      # Robust AFHP eval directories
+      sync_name "${PREFIX}_${robust_variant}_${env}_${exp}"
     done
   done
 done
