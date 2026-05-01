@@ -6,10 +6,12 @@ Handles directory structure like:
     imcl04_coinrun_exp0/
     imcl04_coinrun_exp1/
     imcl04_maze_exp0/
+    imcl04_robust400_maze_exp0/
     ...
 
 Aggregates results for the same method across different experiment IDs,
 plotting mean with shaded standard error regions.
+Robust eval groups are plotted as distinct method variants.
 """
 
 from __future__ import annotations
@@ -32,7 +34,6 @@ from analyzing.plotting_common import (
     setup_plot_style,
     get_line_styles,
     style_plot_for_publication,
-    format_label,
 )
 
 matplotlib.use("TkAgg")
@@ -48,6 +49,12 @@ SUPPORTED_ENVS = [
 ENV_PATTERN = "|".join(
     re.escape(env) for env in sorted(SUPPORTED_ENVS, key=len, reverse=True)
 )
+ROBUST_VARIANTS = ("robust200", "robust400")
+ROBUST_LABELS = {
+    "robust200": "Robust 200M",
+    "robust400": "Robust 400M",
+}
+ROBUST_PATTERN = "|".join(re.escape(variant) for variant in ROBUST_VARIANTS)
 
 # Data key display names mapping
 DATA_KEY_NAMES = {
@@ -79,6 +86,29 @@ FILTERED_PERFORMANCE_KEYS = {
 }
 
 
+def parse_robust_experiment_dir(
+    dir_name: str,
+) -> Optional[Tuple[str, str, str, int]]:
+    """
+    Parse robust experiment directory names.
+
+    Expected format: {prefix}_robust{200,400}_{env}_exp{id}
+    Example: icml04_robust400_maze_exp0
+
+    Returns:
+        Tuple of (base_prefix, robust_variant, env, exp_id), or None.
+    """
+    pattern = rf"^(.+)_({ROBUST_PATTERN})_({ENV_PATTERN})_exp(\d+)$"
+    match = re.match(pattern, dir_name)
+    if match:
+        prefix = match.group(1)
+        robust_variant = match.group(2)
+        env = match.group(3)
+        exp_id = int(match.group(4))
+        return prefix, robust_variant, env, exp_id
+    return None
+
+
 def parse_experiment_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
     """
     Parse experiment directory name to extract prefix, env, and experiment ID.
@@ -89,6 +119,11 @@ def parse_experiment_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
     Returns:
         Tuple of (prefix, env, exp_id) or None if pattern doesn't match
     """
+    robust_parsed = parse_robust_experiment_dir(dir_name)
+    if robust_parsed is not None:
+        prefix, _, env, exp_id = robust_parsed
+        return prefix, env, exp_id
+
     pattern = rf"^(.+)_({ENV_PATTERN})_exp(\d+)$"
     match = re.match(pattern, dir_name)
     if match:
@@ -97,6 +132,89 @@ def parse_experiment_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
         exp_id = int(match.group(3))
         return prefix, env, exp_id
     return None
+
+
+def split_robust_method(method: str) -> Tuple[str, Optional[str]]:
+    """Split method names like max-prob_robust400 into base method and variant."""
+    for robust_variant in ROBUST_VARIANTS:
+        suffix = f"_{robust_variant}"
+        if method.endswith(suffix):
+            return method[: -len(suffix)], robust_variant
+    return method, None
+
+
+def add_robust_suffix(method: str, robust_variant: Optional[str]) -> str:
+    """Attach robust variant to method name unless it is already present."""
+    if robust_variant is None:
+        return method
+    _, existing_variant = split_robust_method(method)
+    if existing_variant is not None:
+        return method
+    return f"{method}_{robust_variant}"
+
+
+def method_display_name(method: str) -> str:
+    """Return a display name, accepting both hyphen and underscore method ids."""
+    return METHOD_NAMES.get(method, METHOD_NAMES.get(method.replace("-", "_"), method))
+
+
+def format_plot_label(
+    method: str, paper_mode: bool, n_experiments: Optional[int] = None
+) -> str:
+    """Format method labels, including robust strong-policy variants."""
+    base_method, robust_variant = split_robust_method(method)
+    label = method_display_name(base_method)
+
+    if robust_variant is not None:
+        label = f"{label} ({ROBUST_LABELS[robust_variant]})"
+
+    if not paper_mode and n_experiments is not None:
+        label = f"{label} (n={n_experiments})"
+
+    return label
+
+
+def prefix_matches_filter(
+    prefix: str,
+    robust_variant: Optional[str],
+    prefix_filter: Optional[List[str]],
+) -> bool:
+    """Match both base prefixes and robust output prefixes."""
+    if prefix_filter is None:
+        return True
+
+    candidates = [prefix]
+    if robust_variant is not None:
+        candidates.append(f"{prefix}_{robust_variant}")
+
+    return any(candidate in prefix_filter for candidate in candidates)
+
+
+def expand_method_order_for_robust_variants(
+    method_order: List[str], available_methods: Dict[str, Dict[int, Path]]
+) -> List[str]:
+    """Place robust variants after their base method when a base order is provided."""
+    expanded_order = []
+    seen = set()
+
+    for method in method_order:
+        candidate_methods = [method]
+        candidate_methods.extend(
+            f"{method}_{robust_variant}" for robust_variant in ROBUST_VARIANTS
+        )
+
+        for candidate_method in candidate_methods:
+            if candidate_method in available_methods and candidate_method not in seen:
+                expanded_order.append(candidate_method)
+                seen.add(candidate_method)
+
+    return expanded_order
+
+
+def method_is_filtered(method: str, method_filter: List[str]) -> bool:
+    """Filter robust method variants when either full or base method is filtered."""
+    base_method, _ = split_robust_method(method)
+    return method in method_filter or base_method in method_filter
 
 
 def parse_method_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
@@ -141,15 +259,20 @@ def extract_icml_results(
         if not child.is_dir():
             continue
 
-        parsed = parse_experiment_dir(child.name)
-        if parsed is None:
-            continue
+        robust_parsed = parse_robust_experiment_dir(child.name)
+        robust_variant = None
+        if robust_parsed is not None:
+            prefix, robust_variant, env, exp_id = robust_parsed
+        else:
+            parsed = parse_experiment_dir(child.name)
+            if parsed is None:
+                continue
+            prefix, env, exp_id = parsed
 
-        prefix, env, exp_id = parsed
+        if not prefix_matches_filter(prefix, robust_variant, prefix_filter):
+            continue
 
         # Apply filters
-        if prefix_filter is not None and prefix not in prefix_filter:
-            continue
         if env_filter is not None and env != env_filter:
             continue
 
@@ -168,6 +291,7 @@ def extract_icml_results(
                 # Verify consistency with parent directory
                 if method_exp_id != exp_id:
                     continue  # Skip mismatched experiment IDs
+            method_name = add_robust_suffix(method_name, robust_variant)
 
             # Find the most recent run (by timestamp)
             latest_run = None
@@ -373,8 +497,7 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
     print("\\midrule")
     
     for method, (auc_median, auc_lower, auc_upper) in sorted_methods:
-        # Get display name from METHOD_NAMES or use original
-        display_name = METHOD_NAMES.get(method, method)
+        display_name = format_plot_label(method, paper_mode=True)
         
         if np.isnan(auc_median):
             print(f"{display_name} & -- \\\\")
@@ -420,7 +543,11 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
     print("-"*60)
     
     for method, (auc_median, auc_lower, auc_upper) in sorted_methods:
-        display_name = METHOD_NAMES.get(method, method).replace(r'\textsc{', '').replace('}', '')
+        display_name = (
+            format_plot_label(method, paper_mode=True)
+            .replace(r"\textsc{", "")
+            .replace("}", "")
+        )
         
         if np.isnan(auc_median):
             print(f"{display_name:<30} {'N/A':<15}")
@@ -495,9 +622,13 @@ def plot_icml_results(
     # Determine method order
     if method_order is None:
         method_order = sorted(results.keys())
+    else:
+        method_order = expand_method_order_for_robust_variants(method_order, results)
 
     if method_filter is not None:
-        method_order = [m for m in method_order if m not in method_filter]
+        method_order = [
+            m for m in method_order if not method_is_filtered(m, method_filter)
+        ]
 
     # Filter to valid methods
     valid_methods = [m for m in method_order if m in results]
@@ -600,7 +731,9 @@ def plot_icml_results(
                     sort_idx = np.argsort(x)
                     # Vary alpha or lightness for different experiments
                     alpha = 0.7 + (i / len(x_arrays)) * 0.3
-                    base_label = format_label(method, paper_mode, n_experiments=None)
+                    base_label = format_plot_label(
+                        method, paper_mode, n_experiments=None
+                    )
                     exp_label = f"{base_label} exp{exp_id}"
                     
                     # Add markers for wait policy
@@ -634,7 +767,11 @@ def plot_icml_results(
                 y_sorted = y[sort_idx]
                 
                 # Format label using shared function
-                plot_label = format_label(method, paper_mode, n_experiments=1 if not paper_mode else None)
+                plot_label = format_plot_label(
+                    method,
+                    paper_mode,
+                    n_experiments=1 if not paper_mode else None,
+                )
                 plt.plot(
                     x_sorted,
                     y_sorted,
@@ -672,7 +809,9 @@ def plot_icml_results(
             n_exps = len(x_arrays)
             
             # Format label using shared function
-            plot_label = format_label(method, paper_mode, n_experiments=n_exps)
+            plot_label = format_plot_label(
+                method, paper_mode, n_experiments=n_exps
+            )
             
             # Plot median line
             plt.plot(
