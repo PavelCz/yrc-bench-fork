@@ -10,6 +10,10 @@ except ImportError:
     pass
 
 
+def _mean_or_nan(values):
+    return np.mean(values) if len(values) > 0 else np.nan
+
+
 class Logger(object):
     def __init__(
         self,
@@ -138,6 +142,39 @@ class Logger(object):
 
         self.timesteps += self.n_envs * steps
 
+    def feed_validation(
+        self,
+        episode_returns,
+        episode_lengths,
+        episode_timeouts=None,
+        random_start=False,
+    ):
+        if episode_timeouts is None:
+            episode_timeouts = [0] * len(episode_returns)
+
+        if not (
+            len(episode_returns) == len(episode_lengths) == len(episode_timeouts)
+        ):
+            raise ValueError(
+                "Validation returns, lengths, and timeouts must have matching lengths."
+            )
+
+        if random_start:
+            reward_buffer = self.episode_reward_buffer_v_random_start
+            len_buffer = self.episode_len_buffer_v_random_start
+            timeout_buffer = self.episode_timeout_buffer_v_random_start
+        else:
+            reward_buffer = self.episode_reward_buffer_v
+            len_buffer = self.episode_len_buffer_v
+            timeout_buffer = self.episode_timeout_buffer_v
+
+        for episode_return, episode_length, episode_timeout in zip(
+            episode_returns, episode_lengths, episode_timeouts
+        ):
+            reward_buffer.append(float(episode_return))
+            len_buffer.append(int(episode_length))
+            timeout_buffer.append(int(episode_timeout))
+
     def dump(self):
         if self.timesteps < self.next_log_timestep:
             return
@@ -181,7 +218,7 @@ class Logger(object):
         episode_statistics["Rewards/max_episodes"] = np.max(
             self.episode_reward_buffer, initial=0
         )
-        episode_statistics["Rewards/mean_episodes"] = np.mean(
+        episode_statistics["Rewards/mean_episodes"] = _mean_or_nan(
             self.episode_reward_buffer
         )
         episode_statistics["Rewards/min_episodes"] = np.min(
@@ -190,17 +227,21 @@ class Logger(object):
         episode_statistics["Len/max_episodes"] = np.max(
             self.episode_len_buffer, initial=0
         )
-        episode_statistics["Len/mean_episodes"] = np.mean(self.episode_len_buffer)
+        episode_statistics["Len/mean_episodes"] = _mean_or_nan(
+            self.episode_len_buffer
+        )
         episode_statistics["Len/min_episodes"] = np.min(
             self.episode_len_buffer, initial=0
         )
-        episode_statistics["Len/mean_timeout"] = np.mean(self.episode_timeout_buffer)
+        episode_statistics["Len/mean_timeout"] = _mean_or_nan(
+            self.episode_timeout_buffer
+        )
 
         # valid
         episode_statistics["[Valid] Rewards/max_episodes"] = np.max(
             self.episode_reward_buffer_v, initial=0
         )
-        episode_statistics["[Valid] Rewards/mean_episodes"] = np.mean(
+        episode_statistics["[Valid] Rewards/mean_episodes"] = _mean_or_nan(
             self.episode_reward_buffer_v
         )
         episode_statistics["[Valid] Rewards/min_episodes"] = np.min(
@@ -209,21 +250,21 @@ class Logger(object):
         episode_statistics["[Valid] Len/max_episodes"] = np.max(
             self.episode_len_buffer_v, initial=0
         )
-        episode_statistics["[Valid] Len/mean_episodes"] = np.mean(
+        episode_statistics["[Valid] Len/mean_episodes"] = _mean_or_nan(
             self.episode_len_buffer_v
         )
         episode_statistics["[Valid] Len/min_episodes"] = np.min(
             self.episode_len_buffer_v, initial=0
         )
-        episode_statistics["[Valid] Len/mean_timeout"] = np.mean(
+        episode_statistics["[Valid] Len/mean_timeout"] = _mean_or_nan(
             self.episode_timeout_buffer_v
         )
         if self.use_random_start_validation:
             episode_statistics["[Valid Random Start] Rewards/max_episodes"] = np.max(
                 self.episode_reward_buffer_v_random_start, initial=0
             )
-            episode_statistics["[Valid Random Start] Rewards/mean_episodes"] = np.mean(
-                self.episode_reward_buffer_v_random_start
+            episode_statistics["[Valid Random Start] Rewards/mean_episodes"] = (
+                _mean_or_nan(self.episode_reward_buffer_v_random_start)
             )
             episode_statistics["[Valid Random Start] Rewards/min_episodes"] = np.min(
                 self.episode_reward_buffer_v_random_start, initial=0
@@ -231,13 +272,13 @@ class Logger(object):
             episode_statistics["[Valid Random Start] Len/max_episodes"] = np.max(
                 self.episode_len_buffer_v_random_start, initial=0
             )
-            episode_statistics["[Valid Random Start] Len/mean_episodes"] = np.mean(
-                self.episode_len_buffer_v_random_start
+            episode_statistics["[Valid Random Start] Len/mean_episodes"] = (
+                _mean_or_nan(self.episode_len_buffer_v_random_start)
             )
             episode_statistics["[Valid Random Start] Len/min_episodes"] = np.min(
                 self.episode_len_buffer_v_random_start, initial=0
             )
-            episode_statistics["[Valid Random Start] Len/mean_timeout"] = np.mean(
-                self.episode_timeout_buffer_v_random_start
+            episode_statistics["[Valid Random Start] Len/mean_timeout"] = (
+                _mean_or_nan(self.episode_timeout_buffer_v_random_start)
             )
         return episode_statistics

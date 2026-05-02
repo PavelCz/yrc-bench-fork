@@ -73,38 +73,75 @@ class PPO(BaseAgent):
         self.normalize_rew = normalize_rew
         self.use_gae = use_gae
         self.log_interval = log_interval
-        self.next_log_timestep = 0
+        self.next_log_timestep = self.log_interval
         self.num_validation_episodes = num_validation_episodes
+        self.validation_episode_returns = np.zeros(self.n_envs, dtype=np.float64)
+        self.validation_episode_lengths = np.zeros(self.n_envs, dtype=np.int64)
+        self.validation_random_start_episode_returns = np.zeros(
+            self.n_envs, dtype=np.float64
+        )
+        self.validation_random_start_episode_lengths = np.zeros(
+            self.n_envs, dtype=np.int64
+        )
 
-    def run_validation(self, env, storage, obs, hidden_state, done):
+    def _reset_validation_accumulators(self, random_start=False):
+        if random_start:
+            self.validation_random_start_episode_returns.fill(0.0)
+            self.validation_random_start_episode_lengths.fill(0)
+        else:
+            self.validation_episode_returns.fill(0.0)
+            self.validation_episode_lengths.fill(0)
+
+    def _get_validation_accumulators(self, random_start=False):
+        if random_start:
+            return (
+                self.validation_random_start_episode_returns,
+                self.validation_random_start_episode_lengths,
+            )
+        return self.validation_episode_returns, self.validation_episode_lengths
+
+    def _raw_rewards(self, rewards, infos):
+        if len(infos) > 0 and "env_reward" in infos[0]:
+            return np.array([info["env_reward"] for info in infos], dtype=np.float64)
+        return np.asarray(rewards, dtype=np.float64)
+
+    def _episode_timeout(self, info):
+        return bool(info.get("timeout", info.get("TimeLimit.truncated", False)))
+
+    def run_validation(self, env, obs, hidden_state, done, random_start=False):
         num_episodes = 0
+        episode_returns = []
+        episode_lengths = []
+        episode_timeouts = []
+        current_returns, current_lengths = self._get_validation_accumulators(
+            random_start=random_start
+        )
         while num_episodes < self.num_validation_episodes:
             act, log_prob_act, value, next_hidden_state = self.predict(
                 obs, hidden_state, done
             )
             next_obs, rew, done, info = env.step(act)
-            storage.store(
-                obs,
-                hidden_state,
-                act,
-                rew,
-                done,
-                info,
-                log_prob_act,
-                value,
-            )
+            del log_prob_act, value
+
+            current_returns += self._raw_rewards(rew, info)
+            current_lengths += 1
+            done_indices = np.flatnonzero(done)
+            for env_idx in done_indices:
+                episode_returns.append(float(current_returns[env_idx]))
+                episode_lengths.append(int(current_lengths[env_idx]))
+                episode_timeouts.append(int(self._episode_timeout(info[env_idx])))
+                current_returns[env_idx] = 0.0
+                current_lengths[env_idx] = 0
+            num_episodes += len(done_indices)
+
             obs = next_obs
             hidden_state = next_hidden_state
 
-            # Count the number of completed episodes.
-            num_episodes += np.sum(done)
-
-        _, _, last_val, hidden_state = self.predict(obs, hidden_state, done)
-        storage.store_last(obs, hidden_state, last_val)
-        storage.compute_estimates(
-            self.gamma, self.lmbda, self.use_gae, self.normalize_adv
-        )
-        return obs, hidden_state, done
+        return obs, hidden_state, done, {
+            "episode_returns": episode_returns,
+            "episode_lengths": episode_lengths,
+            "episode_timeouts": episode_timeouts,
+        }
 
     def predict(self, obs, hidden_state, done):
         with torch.no_grad():
@@ -256,7 +293,8 @@ class PPO(BaseAgent):
             )
 
             # valid
-            should_validate = self.t > self.next_log_timestep
+            next_timestep = self.t + self.n_steps * self.n_envs
+            should_validate = next_timestep >= self.next_log_timestep
             if should_validate:
                 self.next_log_timestep += self.log_interval
 
@@ -270,14 +308,21 @@ class PPO(BaseAgent):
                         (self.n_envs, self.storage.hidden_state_size)
                     )
                     done_v = np.zeros(self.n_envs)
+                    self._reset_validation_accumulators(random_start=False)
 
                 # Run validation episodes.
-                obs_v, hidden_state_v, done_v = self.run_validation(
+                obs_v, hidden_state_v, done_v, validation_stats = self.run_validation(
                     self.env_valid,
-                    self.storage_valid,
                     obs_v,
                     hidden_state_v,
                     done_v,
+                    random_start=False,
+                )
+                self.logger.feed_validation(
+                    validation_stats["episode_returns"],
+                    validation_stats["episode_lengths"],
+                    validation_stats["episode_timeouts"],
+                    random_start=False,
                 )
 
             if self.env_valid_random_start is not None and should_validate:
@@ -291,15 +336,25 @@ class PPO(BaseAgent):
                         (self.n_envs, self.storage.hidden_state_size)
                     )
                     done_v_random_start = np.zeros(self.n_envs)
+                    self._reset_validation_accumulators(random_start=True)
 
-                obs_v_random_start, hidden_state_v_random_start, done_v_random_start = (
-                    self.run_validation(
-                        self.env_valid_random_start,
-                        self.storage_valid_random_start,
-                        obs_v_random_start,
-                        hidden_state_v_random_start,
-                        done_v_random_start,
-                    )
+                (
+                    obs_v_random_start,
+                    hidden_state_v_random_start,
+                    done_v_random_start,
+                    validation_random_start_stats,
+                ) = self.run_validation(
+                    self.env_valid_random_start,
+                    obs_v_random_start,
+                    hidden_state_v_random_start,
+                    done_v_random_start,
+                    random_start=True,
+                )
+                self.logger.feed_validation(
+                    validation_random_start_stats["episode_returns"],
+                    validation_random_start_stats["episode_lengths"],
+                    validation_random_start_stats["episode_timeouts"],
+                    random_start=True,
                 )
 
             # Optimize policy & valueq
@@ -307,23 +362,9 @@ class PPO(BaseAgent):
             # Log the training-procedure
             self.t += self.n_steps * self.n_envs
             rew_batch, done_batch = self.storage.fetch_log_data()
-            if self.storage_valid is not None:
-                rew_batch_v, done_batch_v = self.storage_valid.fetch_log_data()
-            else:
-                rew_batch_v = done_batch_v = None
-            if self.storage_valid_random_start is not None:
-                rew_batch_v_random_start, done_batch_v_random_start = (
-                    self.storage_valid_random_start.fetch_log_data()
-                )
-            else:
-                rew_batch_v_random_start = done_batch_v_random_start = None
             self.logger.feed(
                 rew_batch,
                 done_batch,
-                rew_batch_v,
-                done_batch_v,
-                rew_batch_v_random_start,
-                done_batch_v_random_start,
             )
             self.logger.dump()
             self.optimizer = adjust_lr(
