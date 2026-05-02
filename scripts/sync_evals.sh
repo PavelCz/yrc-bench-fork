@@ -11,6 +11,7 @@ usage() {
   echo "Includes both standard eval dirs (<prefix>_<env>_expN) and"
   echo "policy-eval dirs (<prefix>_<env>_<agent>_expN)."
   echo "Also includes robust maze eval dirs (<prefix>_robust{200,400}_<env>_expN)."
+  echo "Also includes robust policy-eval dirs (<prefix>_robust{200,400}_<env>_strong_expN)."
   echo "Videos and images in the videos folder are excluded by default."
 }
 
@@ -115,6 +116,9 @@ for robust_variant in "${ROBUST_VARIANTS[@]}"; do
     for exp in "${EXPS[@]}"; do
       # Robust AFHP eval directories
       sync_name "${PREFIX}_${robust_variant}_${env}_${exp}"
+
+      # Robust strong-policy eval directories
+      sync_name "${PREFIX}_${robust_variant}_${env}_strong_${exp}"
     done
   done
 done

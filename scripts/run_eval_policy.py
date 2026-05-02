@@ -14,7 +14,13 @@ from datetime import date
 from pathlib import Path
 from typing import Dict, List
 
-from common import ENVS, SERVER_PATHS, get_checkpoints
+from common import (
+    ENVS,
+    ROBUST_MAZE_CHECKPOINT_STEPS,
+    SERVER_PATHS,
+    get_checkpoints,
+    get_robust_maze_strong_checkpoint,
+)
 
 
 DEFAULT_CONDA_ENV = "ood-stable"
@@ -243,6 +249,25 @@ def parse_args():
     parser.add_argument("--sim", help="Override sim weak checkpoint path")
     parser.add_argument("--weak", help="Override weak checkpoint path")
     parser.add_argument("--strong", help="Override strong checkpoint path")
+    robust_group = parser.add_mutually_exclusive_group()
+    robust_group.add_argument(
+        "--robust200",
+        "--robust-200",
+        action="store_true",
+        help=(
+            "For maze strong-policy evals, use the random-start strong policy "
+            "at 200M timesteps."
+        ),
+    )
+    robust_group.add_argument(
+        "--robust400",
+        "--robust-400",
+        action="store_true",
+        help=(
+            "For maze strong-policy evals, use the random-start strong policy "
+            "at 400M timesteps."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -252,6 +277,29 @@ def main():
     paths = SERVER_PATHS[args.server]
     checkpoint_base_path = paths["checkpoint_base"]
     seeds_base_path = paths["seeds_base"]
+    checkpoint_env = CHECKPOINT_ENVS.get(args.env, args.env)
+    robust_checkpoint_key = None
+    if args.robust200:
+        robust_checkpoint_key = "robust200"
+    elif args.robust400:
+        robust_checkpoint_key = "robust400"
+
+    if robust_checkpoint_key is not None and checkpoint_env != "maze":
+        print(
+            f"Error: --{robust_checkpoint_key} is currently supported only for maze."
+        )
+        return 1
+    if robust_checkpoint_key is not None and args.strong:
+        print(f"Error: pass either --strong or --{robust_checkpoint_key}, not both.")
+        return 1
+    if robust_checkpoint_key is not None and args.agents != ["strong"]:
+        print(f"Error: --{robust_checkpoint_key} can only be used with --agents strong.")
+        return 1
+    output_prefix = (
+        f"{args.prefix}_{robust_checkpoint_key}"
+        if robust_checkpoint_key is not None
+        else args.prefix
+    )
 
     config_path = args.config or DEFAULT_CONFIGS[args.env]
     if not Path(config_path).exists():
@@ -262,7 +310,7 @@ def main():
 
     log_base = Path(paths["log_base"])
     wandb_project = args.wandb_project or "policy_eval"
-    log_dir = log_base / wandb_project / args.prefix / date.today().isoformat()
+    log_dir = log_base / wandb_project / output_prefix / date.today().isoformat()
     print(f"Log dir: {log_dir}")
 
     if args.dry_run:
@@ -272,9 +320,16 @@ def main():
         print(f"Agents: {' '.join(args.agents)}")
         print(f"Greedy actions: {args.greedy}")
         print(f"Prefix: {args.prefix}")
+        if output_prefix != args.prefix:
+            print(f"Output prefix: {output_prefix}")
+        if robust_checkpoint_key is not None:
+            print(
+                "Robust strong checkpoint: "
+                f"{robust_checkpoint_key} "
+                f"({ROBUST_MAZE_CHECKPOINT_STEPS[robust_checkpoint_key]} timesteps)"
+            )
         print()
 
-    checkpoint_env = CHECKPOINT_ENVS.get(args.env, args.env)
     if args.dry_run and checkpoint_env != args.env:
         print(f"Checkpoint env: {checkpoint_env}")
         print()
@@ -287,6 +342,12 @@ def main():
             checkpoints["weak"] = args.weak
         if args.strong:
             checkpoints["strong"] = args.strong
+        elif robust_checkpoint_key is not None:
+            checkpoints["strong"] = get_robust_maze_strong_checkpoint(
+                exp_id,
+                checkpoint_base_path,
+                ROBUST_MAZE_CHECKPOINT_STEPS[robust_checkpoint_key],
+            )
 
         level_seeds_file = Path(seeds_base_path) / f"{exp_id}.json"
         if not level_seeds_file.exists():
@@ -305,8 +366,12 @@ def main():
                 print(f"Skipping exp{exp_id} {agent}\n")
                 continue
 
-            job_name = f"{args.env}_{agent}_policy_exp{exp_id}"
-            experiment_group = f"{args.prefix}_{args.env}_{agent}_exp{exp_id}"
+            name_parts = [args.env, agent, "policy"]
+            if agent == "strong" and robust_checkpoint_key is not None:
+                name_parts.append(robust_checkpoint_key)
+            name_parts.append(f"exp{exp_id}")
+            job_name = "_".join(name_parts)
+            experiment_group = f"{output_prefix}_{args.env}_{agent}_exp{exp_id}"
 
             if args.dry_run:
                 print(f"=== exp{exp_id} / {agent} ===")

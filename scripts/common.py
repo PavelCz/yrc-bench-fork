@@ -4,6 +4,10 @@ from typing import Optional
 
 
 EXPECTED_TIMESTEPS = 200015872
+ROBUST_MAZE_CHECKPOINT_STEPS = {
+    "robust200": 200015872,
+    "robust400": 400031744,
+}
 ENVS = ["maze", "coinrun"]
 EXP_ID_TO_SEED = {
     0: 6033,
@@ -136,6 +140,26 @@ def get_checkpoints(env: str, exp_id: int, checkpoint_base_path: str) -> dict:
     strong = str(strong_model) if strong_model else str(strong_parent / "NOT_FOUND")
 
     return {"sim": weak, "weak": weak, "strong": strong}
+
+
+def get_robust_maze_strong_checkpoint(
+    exp_id: int,
+    checkpoint_base_path: str,
+    checkpoint_steps: int,
+) -> str:
+    """Get the random-start maze strong checkpoint at the requested timestep."""
+    policy_base_path = Path(checkpoint_base_path).parent
+    robust_parent = (
+        policy_base_path
+        / "neurips"
+        / "maze_afh_random_start"
+        / f"icml2_maze_exp{exp_id}_50p_random_start"
+    )
+    robust_ts_dir = find_newest_timestamp_dir(robust_parent)
+    if robust_ts_dir is None:
+        return str(robust_parent / "NOT_FOUND")
+
+    return str(robust_ts_dir / f"model_{checkpoint_steps}.pth")
 
 
 def get_strong_checkpoint(

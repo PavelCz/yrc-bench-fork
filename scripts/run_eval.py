@@ -12,12 +12,14 @@ from common import (
     ENSEMBLE_METHODS,
     ENVS,
     METHOD_CONFIGS,
+    ROBUST_MAZE_CHECKPOINT_STEPS,
     SERVER_PATHS,
     SVDD_METHODS,
     find_best_model_checkpoint,
     find_newest_timestamp_dir,
     get_checkpoints,
     get_env_folder,
+    get_robust_maze_strong_checkpoint,
 )
 
 
@@ -48,10 +50,6 @@ EVAL_DEFAULTS = {
 
 # Default number of ensemble members (excluding weak agent which is added automatically)
 DEFAULT_NUM_ENSEMBLE_MEMBERS = 4
-ROBUST_MAZE_CHECKPOINT_STEPS = {
-    "robust200": 200015872,
-    "robust400": 400031744,
-}
 
 EVAL_ENVS = [*ENVS, "coinrun_proxy_fail", "maze_proxy_fail"]
 
@@ -152,26 +150,6 @@ def get_ensemble_member_paths(
             member_paths.append(None)
 
     return member_paths
-
-
-def get_robust_maze_strong_checkpoint(
-    exp_id: int,
-    checkpoint_base_path: str,
-    checkpoint_steps: int,
-) -> str:
-    """Get the random-start maze strong checkpoint at the requested timestep."""
-    policy_base_path = Path(checkpoint_base_path).parent
-    robust_parent = (
-        policy_base_path
-        / "neurips"
-        / "maze_afh_random_start"
-        / f"icml2_maze_exp{exp_id}_50p_random_start"
-    )
-    robust_ts_dir = find_newest_timestamp_dir(robust_parent)
-    if robust_ts_dir is None:
-        return str(robust_parent / "NOT_FOUND")
-
-    return str(robust_ts_dir / f"model_{checkpoint_steps}.pth")
 
 
 def build_sbatch_command(
