@@ -185,7 +185,7 @@ class OODPolicy(Policy):
             f"{num_rollouts} rollouts ({num_batches} batches, num_envs={env.num_envs})"
         )
         for batch_idx in range(num_batches):
-            ep_scores, ep_maxes = self._rollout_once(env)
+            ep_scores, ep_maxes = self._rollout_once(env, batch_idx=batch_idx)
             scores.extend(ep_scores)
             episode_max_scores.extend(ep_maxes)
             if (
@@ -207,7 +207,7 @@ class OODPolicy(Policy):
         )
         return scores
 
-    def _rollout_once(self, env):
+    def _rollout_once(self, env, batch_idx=None):
         from torch.distributions.categorical import Categorical
 
         agent = self.agent
@@ -217,6 +217,9 @@ class OODPolicy(Policy):
         has_done = np.array([False] * env.num_envs)
         scores = []
         episode_max_scores = [float("-inf")] * env.num_envs
+        steps = 0
+        max_steps = 10000
+        batch_label = "" if batch_idx is None else f" in batch {batch_idx + 1}"
 
         while not has_done.all():
             score = self._compute_scores(obs)
@@ -238,7 +241,28 @@ class OODPolicy(Policy):
             action = dist.sample().cpu().numpy()
 
             obs, reward, done, info = env.step(action)
+            steps += 1
             has_done |= done
+
+            if steps % 1000 == 0:
+                unfinished = np.flatnonzero(~has_done).tolist()
+                logging.warning(
+                    "OOD calibration rollout still running after "
+                    f"{steps} steps"
+                    f"{batch_label}; "
+                    f"unfinished env indices: {unfinished}"
+                )
+
+            if steps >= max_steps and not has_done.all():
+                unfinished = np.flatnonzero(~has_done).tolist()
+                raise RuntimeError(
+                    "OOD calibration rollout exceeded "
+                    f"{max_steps} steps"
+                    f"{batch_label}; "
+                    f"unfinished env indices: {unfinished}. "
+                    "This usually means at least one vectorized environment did not "
+                    "emit done during calibration."
+                )
 
         return scores, episode_max_scores
 
