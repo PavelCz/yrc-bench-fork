@@ -179,12 +179,32 @@ class OODPolicy(Policy):
         assert num_rollouts % env.num_envs == 0
         scores = []
         episode_max_scores = []
-        for _ in range(num_rollouts // env.num_envs):
+        num_batches = num_rollouts // env.num_envs
+        logging.info(
+            "Generating OOD calibration scores for "
+            f"{num_rollouts} rollouts ({num_batches} batches, num_envs={env.num_envs})"
+        )
+        for batch_idx in range(num_batches):
             ep_scores, ep_maxes = self._rollout_once(env)
             scores.extend(ep_scores)
             episode_max_scores.extend(ep_maxes)
+            if (
+                batch_idx == 0
+                or batch_idx == num_batches - 1
+                or (batch_idx + 1) % 10 == 0
+            ):
+                logging.info(
+                    "OOD calibration score progress: "
+                    f"{batch_idx + 1}/{num_batches} batches, "
+                    f"{len(episode_max_scores)}/{num_rollouts} episodes, "
+                    f"{len(scores)} scores"
+                )
         self._train_scores = np.array(scores)
         self._train_episode_max_scores = np.array(episode_max_scores)
+        logging.info(
+            "Generated OOD calibration scores: "
+            f"{len(scores)} step scores, {len(episode_max_scores)} episode max scores"
+        )
         return scores
 
     def _rollout_once(self, env):
@@ -310,6 +330,7 @@ class OODPolicy(Policy):
         state_dict = load(f"{load_dir}")
         self.clf = state_dict["clf"]
         self.clf_name = state_dict["clf_name"]
+        logging.info(f"Loaded OOD model from {load_dir}")
 
         return self
 

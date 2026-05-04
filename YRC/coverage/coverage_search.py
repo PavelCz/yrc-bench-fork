@@ -21,6 +21,7 @@ from YRC.policies.threshold import ThresholdPolicy
 from YRC.policies.heuristic import ExponentialHeuristicPolicy, WaitPolicy
 from YRC.core import Evaluator
 import numpy as np
+import logging
 
 try:
     import wandb
@@ -46,11 +47,13 @@ class EvalStepTracker:
         self.step += 1
 
         # Print to console
-        print(
+        message = (
             f"[Eval {self.step:3d}] threshold={threshold:10.4f}, "
             f"step_afhp={step_afhp:6.2f}%, level_afhp={level_afhp:6.2f}%, "
             f"performance={performance:.4f}"
         )
+        print(message)
+        logging.info(message)
 
         # Log to wandb
         if self.wandb_run is not None and wandb is not None:

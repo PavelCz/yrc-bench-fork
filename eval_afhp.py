@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import logging
 import time
 from typing import List
 
@@ -77,10 +78,12 @@ def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs, cal
     from YRC.policies.heuristic import ExponentialHeuristicPolicy, WaitPolicy
 
     if isinstance(policy, (LevelBasedRandomPolicy, OracleLevelBasedRandomPolicy)):
-        print(
+        message = (
             f"Skipping calibration for {type(policy).__name__}; "
             "using the policy's built-in level AFHP mapping."
         )
+        print(message)
+        logging.info(message)
         return
 
     cal_split, num_cal_episodes = _require_calibration_split_and_count(envs, cal_seeds)
@@ -96,10 +99,12 @@ def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs, cal
                     f"environment.common.num_envs ({cal_env.num_envs}) for "
                     "score-based calibration."
                 )
-            print(
+            message = (
                 f"Generating {num_cal_episodes} calibration scores for threshold "
                 f"policy with {metric} metric..."
             )
+            print(message)
+            logging.info(message)
             policy.generate_scores(cal_env, num_cal_episodes)
 
     if isinstance(policy, OODPolicy) and not isinstance(policy, ThresholdPolicy):
@@ -109,17 +114,21 @@ def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs, cal
                 f"environment.common.num_envs ({cal_env.num_envs}) for "
                 "score-based calibration."
             )
-        print(
+        message = (
             f"Generating {num_cal_episodes} calibration scores for "
             f"{type(policy).__name__}..."
         )
+        print(message)
+        logging.info(message)
         policy.generate_scores(cal_env, num_cal_episodes)
 
     # Episode-length calibration: run weak agent alone on calibration levels
     if isinstance(
         policy, (TimestepRandomPolicy, ExponentialHeuristicPolicy, WaitPolicy)
     ):
-        print(f"Calibrating {type(policy).__name__}: measuring episode lengths...")
+        message = f"Calibrating {type(policy).__name__}: measuring episode lengths..."
+        print(message)
+        logging.info(message)
         if isinstance(policy, TimestepRandomPolicy):
             old_prob = policy.prob
             policy.prob = 0.0  # weak agent only
@@ -149,7 +158,9 @@ def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs, cal
                 cal_summary[cal_split]["episode_lengths"]
             )
             policy.threshold = old_threshold
-        print(f"Mean episode length (weak only): {mean_ep_length:.1f}")
+        message = f"Mean episode length (weak only): {mean_ep_length:.1f}"
+        print(message)
+        logging.info(message)
 
 
 def main():
@@ -183,9 +194,17 @@ def main():
         )
 
     # Create initial environments for policy creation and score generation
+    logging.info("Creating initial evaluation environments.")
+    env_start = time.time()
     envs = make_envs()
+    logging.info(
+        f"Initial evaluation environments created in {time.time() - env_start:.2f}s"
+    )
 
+    logging.info("Creating coordination policy.")
+    policy_start = time.time()
     policy = policy_factory.make(config, envs["train"])
+    logging.info(f"Coordination policy created in {time.time() - policy_start:.2f}s")
     if config.general.algorithm != "always" and not config.coord_policy.baseline:
         # The following algorithms do not need to load a model, because they do not
         # need the training step:
@@ -198,7 +217,14 @@ def main():
             "wait",
         ]
         if config.general.algorithm not in algorithms:
-            policy.load_model(os.path.join(config.experiment_dir, config.file_name))
+            model_path = os.path.join(config.experiment_dir, config.file_name)
+            logging.info(f"Loading coordination policy model from {model_path}")
+            model_load_start = time.time()
+            policy.load_model(model_path)
+            logging.info(
+                "Coordination policy model loaded in "
+                f"{time.time() - model_load_start:.2f}s"
+            )
 
         # For the Mahalanobis AE, we need some additional initialization.
         if isinstance(policy, MahalanobisAEPolicy):
@@ -206,6 +232,8 @@ def main():
 
     evaluator = Evaluator(config, config.environment)
 
+    logging.info("Starting percentile calibration.")
+    calibration_start = time.time()
     calibrate_percentile_mapping(
         policy,
         config,
@@ -213,6 +241,9 @@ def main():
         envs,
         make_envs,
         cal_seeds,
+    )
+    logging.info(
+        f"Percentile calibration completed in {time.time() - calibration_start:.2f}s"
     )
 
     coverage_fraction = config.evaluation.coverage_fraction
@@ -274,6 +305,10 @@ def main():
     print(
         f"Running joint coverage sampling with coverage_fraction="
         f"{coverage_fraction:.3f}, budget={max_total_evals}..."
+    )
+    logging.info(
+        "Running joint coverage sampling with "
+        f"coverage_fraction={coverage_fraction:.3f}, budget={max_total_evals}"
     )
     sampling_result = sampler.run()
 
