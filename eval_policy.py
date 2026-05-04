@@ -159,10 +159,19 @@ def episode_randomize_goal(info: Dict, done: bool, current_value: bool) -> bool:
     return bool(current_value)
 
 
+def require_non_plain_maze_eval_env(env_name: str) -> None:
+    if env_name == "maze":
+        raise ValueError(
+            "Plain Procgen env 'maze' does not expose randomize_goal labels. "
+            "Use 'maze_afh' for eval_policy.py maze evaluations."
+        )
+
+
 def main():
     args = flags.make()
     args.eval_mode = True
     config = config_utils.load(args.config, flags=args)
+    require_non_plain_maze_eval_env(config.environment.common.env_name)
 
     # Check that model_file is provided
     if not hasattr(args, "model_file") or args.model_file is None:

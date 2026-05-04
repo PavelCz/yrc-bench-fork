@@ -23,11 +23,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SUPPORTED_ENVS = [
     "coinrun",
     "coinrun_proxy_fail",
-    "maze",
     "maze_afh",
     "maze_proxy_fail",
 ]
-ENV_CHOICES = [*SUPPORTED_ENVS, "all"]
+ENV_CHOICES = [*SUPPORTED_ENVS, "maze", "all"]
 LOCAL_PACKAGES = {
     "acs": REPO_ROOT / "lib" / "acs",
     "procgen": REPO_ROOT / "lib" / "procgen",
@@ -163,7 +162,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print tracebacks for failing checks.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.env == "maze":
+        parser.error(
+            "plain Procgen env 'maze' is not valid for eval preflight; use 'maze_afh'"
+        )
+    return args
 
 
 def main() -> int:

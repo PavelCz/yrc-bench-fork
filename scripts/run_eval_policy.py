@@ -21,6 +21,7 @@ from common import (
     get_checkpoints,
     get_eval_env_name,
     get_robust_maze_strong_checkpoint,
+    require_non_plain_maze_eval_env,
 )
 
 
@@ -65,6 +66,8 @@ def build_sbatch_command(
     qos: str = "default",
 ) -> str:
     """Build the sbatch submission script."""
+    require_non_plain_maze_eval_env(str(eval_args["env_name"]))
+
     slurm_config = SLURM_CONFIG.copy()
     slurm_config["qos"] = qos
     slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
@@ -280,6 +283,7 @@ def main():
     seeds_base_path = paths["seeds_base"]
     checkpoint_env = CHECKPOINT_ENVS.get(args.env, args.env)
     eval_env_name = get_eval_env_name(args.env)
+    require_non_plain_maze_eval_env(eval_env_name)
     robust_checkpoint_key = None
     if args.robust200:
         robust_checkpoint_key = "robust200"

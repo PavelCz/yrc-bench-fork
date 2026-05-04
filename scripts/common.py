@@ -51,6 +51,16 @@ SVDD_METHODS = {"svdd-image", "svdd-latent"}
 ENSEMBLE_METHODS = {"ensemble", "ensemble-single"}
 
 
+def require_non_plain_maze_eval_env(env_name: str) -> None:
+    """Reject plain maze for evals that need ID/OOD labels."""
+    if env_name == "maze":
+        raise ValueError(
+            "Plain Procgen env 'maze' does not expose randomize_goal labels. "
+            "Use experiment key 'maze' only before mapping, and run evals with "
+            "Procgen env 'maze_afh'."
+        )
+
+
 def get_eval_env_name(env: str) -> str:
     """Map experiment env keys to the Procgen env used at evaluation time."""
     if env == "maze":

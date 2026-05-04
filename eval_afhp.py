@@ -22,6 +22,14 @@ from pytorch_lightning.loggers import WandbLogger
 from acs.types import CurvePoint
 
 
+def require_non_plain_maze_eval_env(env_name: str) -> None:
+    if env_name == "maze":
+        raise ValueError(
+            "Plain Procgen env 'maze' does not expose randomize_goal labels. "
+            "Use 'maze_afh' for eval_afhp.py maze evaluations."
+        )
+
+
 def _require_calibration_split_and_count(envs, cal_seeds):
     """Resolve the fixed-seed calibration split and episode count."""
     if cal_seeds is None or "cal" not in envs:
@@ -149,6 +157,7 @@ def main():
     args.eval_mode = True
     # Note: config_utils.load() handles logging configuration based on args.log_level
     config = config_utils.load(args.config, flags=args)
+    require_non_plain_maze_eval_env(config.environment.common.env_name)
 
     # Record time for profiling purposes
     start_time = time.time()

@@ -21,6 +21,7 @@ from common import (
     get_eval_env_name,
     get_env_folder,
     get_robust_maze_strong_checkpoint,
+    require_non_plain_maze_eval_env,
 )
 
 
@@ -157,6 +158,8 @@ def build_sbatch_command(
     job_name: str, eval_args: dict, conda_env: str, log_dir: Path, qos: str = "default"
 ) -> str:
     """Build the sbatch command string."""
+    require_non_plain_maze_eval_env(str(eval_args["env_name"]))
+
     # Override QOS in SLURM config
     slurm_config = SLURM_CONFIG.copy()
     slurm_config["qos"] = qos
@@ -422,6 +425,7 @@ def main():
     # existing experiment artifacts on disk.
     artifact_env = ARTIFACT_ENVS.get(args.env, args.env)
     eval_env_name = get_eval_env_name(args.env)
+    require_non_plain_maze_eval_env(eval_env_name)
     robust_checkpoint_key = None
     if args.robust200:
         robust_checkpoint_key = "robust200"
