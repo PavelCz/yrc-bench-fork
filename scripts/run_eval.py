@@ -18,6 +18,7 @@ from common import (
     find_best_model_checkpoint,
     find_newest_timestamp_dir,
     get_checkpoints,
+    get_eval_env_name,
     get_env_folder,
     get_robust_maze_strong_checkpoint,
 )
@@ -416,9 +417,11 @@ def main():
     svdd_base_path = paths["svdd_base"]
     svdd_prefix = args.svdd_prefix
 
-    # `args.env` is the actual Procgen environment to instantiate. `artifact_env`
-    # is only the namespace used for existing experiment artifacts on disk.
+    # `args.env` is the public experiment key. `eval_env_name` is the Procgen
+    # environment to instantiate, and `artifact_env` is the namespace used for
+    # existing experiment artifacts on disk.
     artifact_env = ARTIFACT_ENVS.get(args.env, args.env)
+    eval_env_name = get_eval_env_name(args.env)
     robust_checkpoint_key = None
     if args.robust200:
         robust_checkpoint_key = "robust200"
@@ -459,7 +462,7 @@ def main():
 
     if not run_preflight_check(
         args.conda_env,
-        args.env,
+        eval_env_name,
         show_output=args.dry_run,
     ):
         return 1
@@ -468,6 +471,8 @@ def main():
         print(f"Server: {args.server}")
         print(f"Config: {config_path}")
         print(f"Environment: {args.env}")
+        if eval_env_name != args.env:
+            print(f"Procgen env: {eval_env_name}")
         if artifact_env != args.env:
             print(f"Artifact env: {artifact_env}")
         print(f"Method: {args.method}")
@@ -590,7 +595,7 @@ def main():
             # build_sbatch_command emits this as `-en`, so eval_afhp.py creates
             # the requested environment even when config/artifact lookup used an
             # alias such as coinrun.
-            "env_name": args.env,
+            "env_name": eval_env_name,
             "experiment_group": experiment_group,
             "num_levels": args.num_levels,
             "video_episodes_to_collect": args.video_episodes,

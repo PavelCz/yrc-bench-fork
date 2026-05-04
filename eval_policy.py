@@ -152,6 +152,13 @@ def summarize_returns(returns: List[float]) -> Dict[str, Optional[float]]:
     }
 
 
+def episode_randomize_goal(info: Dict, done: bool, current_value: bool) -> bool:
+    """Return the OOD label for the episode that just ended."""
+    if done and "prev_level/randomize_goal" in info:
+        return bool(info["prev_level/randomize_goal"])
+    return bool(current_value)
+
+
 def main():
     args = flags.make()
     args.eval_mode = True
@@ -408,7 +415,11 @@ def rollout_and_get_returns(
             if done[i]:
                 if num_completed < target_episodes:
                     returns.append(cumulative_rewards[i])
-                    level_ood_gt.append(bool(current_level_ood_gt[i]))
+                    level_ood_gt.append(
+                        episode_randomize_goal(
+                            info[i], bool(done[i]), current_level_ood_gt[i]
+                        )
+                    )
                     level_seeds.append(int(info[i].get("prev_level_seed", -1)))
                     num_completed += 1
 

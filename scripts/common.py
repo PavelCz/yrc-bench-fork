@@ -51,6 +51,13 @@ SVDD_METHODS = {"svdd-image", "svdd-latent"}
 ENSEMBLE_METHODS = {"ensemble", "ensemble-single"}
 
 
+def get_eval_env_name(env: str) -> str:
+    """Map experiment env keys to the Procgen env used at evaluation time."""
+    if env == "maze":
+        return "maze_afh"
+    return env
+
+
 def normalize_method_name(method: str) -> str:
     """Normalize legacy underscore method ids to the shared hyphen style."""
     return method.replace("_", "-")

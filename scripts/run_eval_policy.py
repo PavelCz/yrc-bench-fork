@@ -19,6 +19,7 @@ from common import (
     ROBUST_MAZE_CHECKPOINT_STEPS,
     SERVER_PATHS,
     get_checkpoints,
+    get_eval_env_name,
     get_robust_maze_strong_checkpoint,
 )
 
@@ -278,6 +279,7 @@ def main():
     checkpoint_base_path = paths["checkpoint_base"]
     seeds_base_path = paths["seeds_base"]
     checkpoint_env = CHECKPOINT_ENVS.get(args.env, args.env)
+    eval_env_name = get_eval_env_name(args.env)
     robust_checkpoint_key = None
     if args.robust200:
         robust_checkpoint_key = "robust200"
@@ -317,6 +319,8 @@ def main():
         print(f"Server: {args.server}")
         print(f"Config: {config_path}")
         print(f"Environment: {args.env}")
+        if eval_env_name != args.env:
+            print(f"Procgen env: {eval_env_name}")
         print(f"Agents: {' '.join(args.agents)}")
         print(f"Greedy actions: {args.greedy}")
         print(f"Prefix: {args.prefix}")
@@ -386,7 +390,7 @@ def main():
                 "config": config_path,
                 "name": job_name,
                 "experiment_group": experiment_group,
-                "env_name": args.env,
+                "env_name": eval_env_name,
                 "model_file": model_file,
                 "level_seeds_file": str(level_seeds_file),
                 "num_rollouts": args.num_rollouts,

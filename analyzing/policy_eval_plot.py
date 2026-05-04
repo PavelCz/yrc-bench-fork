@@ -444,21 +444,36 @@ def plot_summary(
 
         if use_pooled:
             heights = [
-                summary["pooled_stats"][metric]["mean"] or 0.0
+                (
+                    summary["pooled_stats"][metric]["mean"]
+                    if summary["pooled_stats"][metric]["mean"] is not None
+                    else np.nan
+                )
                 for metric in METRIC_ORDER
             ]
             yerr = None
         else:
             heights = [
-                summary["run_stats"][metric]["mean"] or 0.0 for metric in METRIC_ORDER
+                (
+                    summary["run_stats"][metric]["mean"]
+                    if summary["run_stats"][metric]["mean"] is not None
+                    else np.nan
+                )
+                for metric in METRIC_ORDER
             ]
             yerr = [
-                summary["run_stats"][metric]["sem"] or 0.0 for metric in METRIC_ORDER
+                (
+                    summary["run_stats"][metric]["sem"]
+                    if summary["run_stats"][metric]["mean"] is not None
+                    and summary["run_stats"][metric]["sem"] is not None
+                    else 0.0
+                )
+                for metric in METRIC_ORDER
             ]
 
         offset = (idx - (len(ordered_labels) - 1) / 2) * width
         color = SERIES_COLORS.get(meta["agent"])
-        ax.bar(
+        bars = ax.bar(
             x + offset,
             heights,
             width=width,
@@ -468,6 +483,17 @@ def plot_summary(
             color=color,
             alpha=0.85,
         )
+        for bar, height in zip(bars, heights):
+            if np.isnan(height):
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2,
+                    0.02,
+                    "n/a",
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                    rotation=90,
+                )
 
     ax.set_xticks(x)
     ax.set_xticklabels([METRIC_LABELS[metric] for metric in METRIC_ORDER])

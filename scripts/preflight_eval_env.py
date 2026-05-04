@@ -20,7 +20,13 @@ from typing import Callable
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SUPPORTED_ENVS = ["coinrun", "coinrun_proxy_fail", "maze", "maze_proxy_fail"]
+SUPPORTED_ENVS = [
+    "coinrun",
+    "coinrun_proxy_fail",
+    "maze",
+    "maze_afh",
+    "maze_proxy_fail",
+]
 ENV_CHOICES = [*SUPPORTED_ENVS, "all"]
 LOCAL_PACKAGES = {
     "acs": REPO_ROOT / "lib" / "acs",
