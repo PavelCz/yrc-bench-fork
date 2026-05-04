@@ -52,6 +52,7 @@ SRC_PATH="${SRC_BASE#*:}"
 
 failed_syncs=0
 missing_syncs=0
+available_syncs=0
 SSH_OPTS=(-o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
 RSYNC_ARGS=(-av --progress -e "ssh ${SSH_OPTS[*]}")
 
@@ -90,6 +91,7 @@ sync_name() {
     return
   fi
 
+  available_syncs=$((available_syncs + 1))
   echo "Syncing ${src_dir} -> ${dst_dir}"
   if rsync "${RSYNC_ARGS[@]}" "${src_dir}" "${dst_dir}"; then
     echo "✓ Successfully synced ${name}"
@@ -125,6 +127,10 @@ done
 
 if [ $missing_syncs -gt 0 ]; then
   echo "Note: $missing_syncs source dir(s) did not exist on ${SRC_HOST} and were skipped"
+fi
+if [ $available_syncs -eq 0 ]; then
+  echo "Error: no source dirs matched prefix '${PREFIX}' on ${SRC_HOST}; nothing was available to sync"
+  exit 1
 fi
 if [ $failed_syncs -gt 0 ]; then
   echo "Warning: $failed_syncs sync(s) failed"
