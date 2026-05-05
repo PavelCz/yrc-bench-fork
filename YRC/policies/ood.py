@@ -176,29 +176,102 @@ class OODPolicy(Policy):
         decision_function instead of confidence scores. The weak agent is used to
         select actions (via its logits) while we record the OOD scores at each step.
         """
-        assert num_rollouts % env.num_envs == 0
+        from torch.distributions.categorical import Categorical
+
         scores = []
         episode_max_scores = []
-        num_batches = num_rollouts // env.num_envs
+        current_episode_max_scores = [float("-inf")] * env.num_envs
+        seeds_exhausted = np.array([False] * env.num_envs)
+        progress_interval = max(env.num_envs, env.num_envs * 10)
+        next_progress = min(progress_interval, num_rollouts)
+        vector_steps = 0
+        max_vector_steps = max(
+            10000, ((num_rollouts + env.num_envs - 1) // env.num_envs) * 1000
+        )
+
+        agent = self.agent
+        agent.eval()
+
+        if hasattr(env, "get_obs") and getattr(env, "env_obs", None) is not None:
+            obs = env.get_obs()
+        else:
+            obs = env.reset()
+
         logging.info(
             "Generating OOD calibration scores for "
-            f"{num_rollouts} rollouts ({num_batches} batches, num_envs={env.num_envs})"
+            f"{num_rollouts} rollouts (num_envs={env.num_envs})"
         )
-        for batch_idx in range(num_batches):
-            ep_scores, ep_maxes = self._rollout_once(env, batch_idx=batch_idx)
-            scores.extend(ep_scores)
-            episode_max_scores.extend(ep_maxes)
-            if (
-                batch_idx == 0
-                or batch_idx == num_batches - 1
-                or (batch_idx + 1) % 10 == 0
-            ):
+
+        while len(episode_max_scores) < num_rollouts:
+            score = self._compute_scores(obs)
+
+            for i in range(env.num_envs):
+                if seeds_exhausted[i]:
+                    continue
+                score_i = score.item() if env.num_envs == 1 else score[i].item()
+                scores.append(score_i)
+                current_episode_max_scores[i] = max(
+                    current_episode_max_scores[i], score_i
+                )
+
+            logit = agent.forward(obs["env_obs"])
+            dist = Categorical(logits=logit / self.params["explore_temp"])
+            action = dist.sample().cpu().numpy()
+
+            obs, reward, done, info = env.step(action)
+            vector_steps += 1
+
+            for i in range(env.num_envs):
+                if done[i] and not seeds_exhausted[i]:
+                    episode_max_scores.append(current_episode_max_scores[i])
+                    current_episode_max_scores[i] = float("-inf")
+                    if len(episode_max_scores) >= num_rollouts:
+                        break
+
+            for i in range(env.num_envs):
+                if info[i].get("seeds_exhausted", False):
+                    seeds_exhausted[i] = True
+
+            if len(episode_max_scores) >= next_progress:
                 logging.info(
                     "OOD calibration score progress: "
-                    f"{batch_idx + 1}/{num_batches} batches, "
                     f"{len(episode_max_scores)}/{num_rollouts} episodes, "
-                    f"{len(scores)} scores"
+                    f"{len(scores)} scores, {vector_steps} vector steps"
                 )
+                while next_progress <= len(episode_max_scores):
+                    next_progress += progress_interval
+
+            if seeds_exhausted.all():
+                logging.info(
+                    "All calibration environments exhausted their sequential seeds. "
+                    f"Collected {len(episode_max_scores)}/{num_rollouts} episodes."
+                )
+                break
+
+            if vector_steps % 10000 == 0:
+                logging.warning(
+                    "OOD calibration still running after "
+                    f"{vector_steps} vector steps; collected "
+                    f"{len(episode_max_scores)}/{num_rollouts} episodes"
+                )
+
+            if vector_steps >= max_vector_steps:
+                raise RuntimeError(
+                    "OOD calibration exceeded "
+                    f"{max_vector_steps} vector steps while collecting "
+                    f"{len(episode_max_scores)}/{num_rollouts} episodes. "
+                    "This usually means at least one vectorized environment did not "
+                    "emit done or seeds_exhausted during calibration."
+                )
+
+        if len(episode_max_scores) < num_rollouts:
+            logging.warning(
+                "OOD calibration stopped before collecting the requested number of "
+                f"episodes: {len(episode_max_scores)}/{num_rollouts}. "
+                "This can happen when the calibration environment was already reset "
+                "before score generation in sequential seed mode."
+            )
+
         self._train_scores = np.array(scores)
         self._train_episode_max_scores = np.array(episode_max_scores)
         logging.info(
