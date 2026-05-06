@@ -217,6 +217,12 @@ def method_is_filtered(method: str, method_filter: List[str]) -> bool:
     return method in method_filter or base_method in method_filter
 
 
+def method_is_included(method: str, method_include_filter: List[str]) -> bool:
+    """Include robust method variants when either full or base method is included."""
+    base_method, _ = split_robust_method(method)
+    return method in method_include_filter or base_method in method_include_filter
+
+
 def parse_method_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
     """
     Parse method directory name to extract env, method, and experiment ID.
@@ -583,6 +589,7 @@ def plot_icml_results(
     x_data_key: str,
     y_data_key: str,
     method_order: Optional[List[str]] = None,
+    method_include_filter: Optional[List[str]] = None,
     method_filter: Optional[List[str]] = None,
     use_stderr: bool = True,
     disable_horizontal_lines: bool = False,
@@ -603,6 +610,7 @@ def plot_icml_results(
         x_data_key: Key for x-axis data
         y_data_key: Key for y-axis data
         method_order: Order of methods to plot
+        method_include_filter: Methods to include
         method_filter: Methods to exclude
         use_stderr: If True, use standard error; otherwise use standard deviation
         disable_horizontal_lines: Disable weak/oracle reference lines
@@ -624,6 +632,13 @@ def plot_icml_results(
         method_order = sorted(results.keys())
     else:
         method_order = expand_method_order_for_robust_variants(method_order, results)
+
+    if method_include_filter is not None:
+        method_order = [
+            m
+            for m in method_order
+            if method_is_included(m, method_include_filter)
+        ]
 
     if method_filter is not None:
         method_order = [
@@ -713,7 +728,7 @@ def plot_icml_results(
         
         # Print AFHP values for wait policy
         if method == "wait" and x_data_key in ["step_afhp", "level_afhp"]:
-            print(f"\n=== Wait Policy AFHP Values ===")
+            print("\n=== Wait Policy AFHP Values ===")
             for exp_idx, x_values in enumerate(x_arrays):
                 print(f"Experiment {exp_ids[exp_idx]}: {sorted(set(x_values))}")
             all_afhp_values = set()
@@ -1032,6 +1047,13 @@ def main():
         help="Methods to exclude from plot",
     )
     parser.add_argument(
+        "--method_include_filter",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Only include these methods in the plot",
+    )
+    parser.add_argument(
         "--use_std",
         action="store_true",
         help="Use standard deviation instead of standard error for shaded region",
@@ -1099,6 +1121,7 @@ def main():
         x_data_key=args.x_data_key,
         y_data_key=args.y_data_key,
         method_order=method_order,
+        method_include_filter=args.method_include_filter,
         method_filter=args.method_filter,
         use_stderr=not args.use_std,
         disable_horizontal_lines=args.disable_horizontal_lines,
