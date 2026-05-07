@@ -9,6 +9,8 @@ YRC-Bench's original readme follows further down.
 ## Installation
 
 To set up the project, follow the installation steps from the original readme below.
+For the Docker-to-Apptainer workflow used on CARC, see
+[docs/container_workflow.md](docs/container_workflow.md).
 
 ## Reproducing the paper
 

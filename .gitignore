@@ -10,8 +10,12 @@ __pycache__/
 *.pth
 .DS_Store
 slurm
-logs/
+logs/*
+!logs/.gitkeep
 .scripts
+*.sif
+apptainer.def
+.container_cache/
 
 
 # Created by .ignore support plugin (hsz.mobi)
