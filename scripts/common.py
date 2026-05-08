@@ -32,6 +32,14 @@ SERVER_PATHS = {
         "log_base": "/scr/pavel/data/goal-misgen/slurm-logs",
         "evals_base": "/scr/pavel/data/goal-misgen/experiments/evals",
     },
+    "carc": {
+        "checkpoint_base": "/project2/biyik_1165/czempin/data/goal-misgen/policy/icml",
+        "rollouts_base": "/project2/biyik_1165/czempin/data/goal-misgen/rollouts",
+        "seeds_base": "/project2/biyik_1165/czempin/data/goal-misgen/seeds/icml",
+        "svdd_base": "/project2/biyik_1165/czempin/data/goal-misgen/trained_svdd",
+        "log_base": "/project2/biyik_1165/czempin/data/goal-misgen/slurm-logs",
+        "evals_base": "/project2/biyik_1165/czempin/data/goal-misgen/experiments/evals",
+    },
 }
 
 METHOD_CONFIGS = {

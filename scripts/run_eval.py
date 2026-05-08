@@ -283,8 +283,7 @@ def run_preflight_check(conda_env: str, env_name: str, *, show_output: bool) -> 
 
     if result.returncode != 0:
         print(
-            f"Preflight failed with exit code {result.returncode}; "
-            "not submitting jobs."
+            f"Preflight failed with exit code {result.returncode}; not submitting jobs."
         )
         return False
 
@@ -305,7 +304,7 @@ def main():
     )
     parser.add_argument(
         "--server",
-        choices=["chai", "snoopy"],
+        choices=sorted(SERVER_PATHS.keys()),
         default="chai",
         help="Server to use for paths (default: chai)",
     )
@@ -433,9 +432,7 @@ def main():
         robust_checkpoint_key = "robust400"
 
     if robust_checkpoint_key is not None and artifact_env != "maze":
-        print(
-            f"Error: --{robust_checkpoint_key} is currently supported only for maze."
-        )
+        print(f"Error: --{robust_checkpoint_key} is currently supported only for maze.")
         return 1
     if robust_checkpoint_key is not None and args.strong:
         print(f"Error: pass either --strong or --{robust_checkpoint_key}, not both.")
@@ -549,9 +546,7 @@ def main():
             expected_model_path = get_svdd_expected_model_path(
                 artifact_env, exp_id, args.method, svdd_base_path, svdd_prefix
             )
-            print(
-                f"Warning: exp{exp_id} SVDD model not found at {expected_model_path}"
-            )
+            print(f"Warning: exp{exp_id} SVDD model not found at {expected_model_path}")
             missing = True
 
         if args.method in ENSEMBLE_METHODS and ensemble_members:
