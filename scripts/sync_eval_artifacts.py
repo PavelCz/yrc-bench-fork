@@ -47,6 +47,17 @@ class RemotePathResolver:
         command = ["ssh", *self.ssh_options, self.host, remote_command]
         return subprocess.run(command, text=True, capture_output=True)
 
+    def check_reachable(self) -> bool:
+        result = self._run("true")
+        if result.returncode == 0:
+            print(f"Reachability check passed: {self.host}")
+            return True
+
+        print(f"Could not reach source host: {self.host}")
+        if result.stderr:
+            print(result.stderr.strip())
+        return False
+
     def exists(self, path: Path) -> bool:
         result = self._run(f"test -e {shlex.quote(str(path))}")
         return result.returncode == 0
@@ -190,6 +201,12 @@ def build_sync_items(args: argparse.Namespace) -> list[SyncItem]:
     target_svdd_base = Path(target_paths["svdd_base"])
 
     resolver = RemotePathResolver(args.source_host, args.ssh_option)
+    if not resolver.check_reachable():
+        raise RuntimeError(
+            "Source host reachability check failed; fix SSH config or pass "
+            "--source-host before retrying."
+        )
+
     artifact_env = ARTIFACT_ENVS.get(args.env, args.env)
     robust_checkpoint_steps = None
     if args.robust200:
