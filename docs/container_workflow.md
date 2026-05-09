@@ -104,6 +104,59 @@ export REPO_DIR_OVERRIDE=/path/to/yrc-bench-fork
 export YRC_EXTRA_BINDS=/scratch1/$USER:/scratch1/$USER,/project/$USER:/project/$USER
 ```
 
+## CARC Eval Submission
+
+`scripts/run_eval.py` can submit eval jobs that run inside the Apptainer image:
+
+```bash
+python scripts/run_eval.py \
+  --server carc \
+  --use-container \
+  --container-image yrc-bench-procgen.sif \
+  --prefix icml \
+  --exp-ids 0 1 2 3 \
+  --env coinrun \
+  --method max-prob \
+  --runs-per-gpu 4
+```
+
+The CARC wrapper supplies `--server carc --use-container --container-image ...`
+for you:
+
+```bash
+scripts/carc/run_eval_container.sh \
+  --prefix icml \
+  --exp-ids 0 1 2 3 \
+  --env coinrun \
+  --method max-prob \
+  --runs-per-gpu 4
+```
+
+Set `YRC_SIF_PATH` if the image is not at the repo root:
+
+```bash
+YRC_SIF_PATH=/project2/biyik_1165/$USER/images/yrc-bench-procgen.sif \
+  scripts/carc/run_eval_container.sh ...
+```
+
+Relative `--container-image` paths are resolved from the repo root. For `--server carc`,
+the launcher automatically binds:
+
+```text
+/project2/biyik_1165:/project2/biyik_1165
+```
+
+Add extra binds as needed:
+
+```bash
+python scripts/run_eval.py ... \
+  --use-container \
+  --container-bind /scratch1/$USER:/scratch1/$USER
+```
+
+The default execution backend remains conda. `--use-container` is a shortcut for
+`--execution apptainer`.
+
 ## Rebuild Triggers
 
 Rebuild the base image when system packages, CUDA, Python, or PyTorch change.
@@ -116,4 +169,5 @@ Normal changes to `YRC/`, `configs/`, `scripts/`, checkpoints, or analysis code 
 
 - This container path follows the current practical setup: Python 3.8 plus `requirements.txt`, with Procgen-specific local packages made explicit for the image.
 - The image is Procgen-focused. MiniGrid and Cliport dependencies are intentionally not installed.
-- The existing Python Slurm launchers still generate conda-based jobs. Use `scripts/carc/run_container.sbatch` directly for containerized CARC runs, or adapt those launchers later to emit this wrapper instead of `conda activate`.
+- `scripts/run_eval.py` supports containerized Slurm jobs through `--use-container`.
+  Other Python Slurm launchers still generate conda-based jobs.

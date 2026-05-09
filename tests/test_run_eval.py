@@ -95,6 +95,66 @@ def test_packed_sbatch_runs_multiple_eval_steps_on_one_gpu():
     assert "-n coinrun_max-prob_exp3" in command
 
 
+def test_container_sbatch_wraps_eval_in_apptainer():
+    command = run_eval.build_sbatch_command(
+        "job",
+        make_eval_args("job"),
+        "ood-stable",
+        Path("/tmp/logs"),
+        execution="apptainer",
+        container_image=Path("/repo/yrc-bench-procgen.sif"),
+        repo_dir=Path("/repo"),
+        container_binds=["/project2/biyik_1165:/project2/biyik_1165"],
+    )
+
+    assert "conda activate" not in command
+    assert "module load apptainer" in command
+    assert "apptainer exec --nv" in command
+    assert "--bind /repo:/workspace" in command
+    assert "--bind /project2/biyik_1165:/project2/biyik_1165" in command
+    assert "--pwd /workspace /repo/yrc-bench-procgen.sif bash -lc" in command
+    assert "python eval_afhp.py" in command
+    assert "-n job" in command
+
+
+def test_container_packed_sbatch_wraps_each_eval_in_apptainer():
+    command = run_eval.build_packed_sbatch_command(
+        "coinrun_max-prob_exp0-3",
+        [make_job_spec(exp_id) for exp_id in range(4)],
+        "ood-stable",
+        Path("/tmp/logs"),
+        execution="apptainer",
+        container_image=Path("/repo/yrc-bench-procgen.sif"),
+        repo_dir=Path("/repo"),
+        container_binds=["/project2/biyik_1165:/project2/biyik_1165"],
+    )
+
+    assert "conda activate" not in command
+    assert command.count("srun --overlap --ntasks=1 --cpus-per-task=30") == 4
+    assert command.count("apptainer exec --nv") == 4
+    assert command.count("/repo/yrc-bench-procgen.sif bash -lc") == 4
+    assert command.count("python eval_afhp.py") == 4
+
+
+def test_container_preflight_does_not_require_gpu_visibility():
+    command = run_eval.build_preflight_command(
+        "ood-stable",
+        "coinrun_proxy_fail",
+        execution="apptainer",
+        container_image=Path("/repo/yrc-bench-procgen.sif"),
+        repo_dir=Path("/repo"),
+        container_binds=["/project2/biyik_1165:/project2/biyik_1165"],
+    )
+
+    shell_command = command[-1]
+    assert command[:2] == ["bash", "-lc"]
+    assert "apptainer exec" in shell_command
+    assert "--nv" not in shell_command
+    assert (
+        "python -m scripts.preflight_eval_env --env coinrun_proxy_fail" in shell_command
+    )
+
+
 def test_chunk_job_specs_handles_non_multiple_counts():
     chunks = run_eval.chunk_job_specs([make_job_spec(i) for i in range(5)], 4)
 
@@ -244,7 +304,7 @@ def test_main_packs_valid_exp_ids_into_gpu_chunks(monkeypatch, tmp_path):
     submitted = []
 
     def fake_submit_packed_job(
-        job_name, job_specs, conda_env, log_dir, qos="default", dry_run=False
+        job_name, job_specs, conda_env, log_dir, qos="default", dry_run=False, **kwargs
     ):
         submitted.append((job_name, [spec["exp_id"] for spec in job_specs], dry_run))
 

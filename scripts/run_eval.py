@@ -3,8 +3,9 @@
 Script to run evaluation jobs in parallel via SLURM sbatch.
 """
 
-import subprocess
 import re
+import shlex
+import subprocess
 from datetime import date
 from pathlib import Path
 from typing import List, Optional
@@ -28,6 +29,7 @@ from common import (
 
 # Default conda environment
 DEFAULT_CONDA_ENV = "ood-stable"
+DEFAULT_CONTAINER_IMAGE = "yrc-bench-procgen.sif"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # SLURM configuration
@@ -65,6 +67,12 @@ EVAL_ENVS = [*ENVS, "coinrun_proxy_fail", "maze_proxy_fail"]
 ARTIFACT_ENVS = {
     "coinrun_proxy_fail": "coinrun",
     "maze_proxy_fail": "maze",
+}
+
+DEFAULT_CONTAINER_BINDS = {
+    "carc": ["/project2/biyik_1165:/project2/biyik_1165"],
+    "chai": ["/nas/ucb:/nas/ucb"],
+    "snoopy": ["/scr/pavel:/scr/pavel"],
 }
 
 
@@ -165,6 +173,132 @@ def scale_slurm_mem(mem: str, factor: int) -> str:
     return f"{int(value) * factor}{unit}"
 
 
+def shell_join(args: List[str]) -> str:
+    """Quote shell command arguments."""
+    return " ".join(shlex.quote(str(arg)) for arg in args)
+
+
+def normalize_container_binds(binds: Optional[List[str]] = None) -> List[str]:
+    """Allow repeated or comma-separated bind arguments."""
+    normalized = []
+    for bind_value in binds or []:
+        for bind in bind_value.split(","):
+            bind = bind.strip()
+            if bind:
+                normalized.append(bind)
+    return normalized
+
+
+def get_container_binds(
+    server: str, extra_binds: Optional[List[str]] = None
+) -> List[str]:
+    """Return default server binds plus user-provided Apptainer binds."""
+    return [
+        *DEFAULT_CONTAINER_BINDS.get(server, []),
+        *normalize_container_binds(extra_binds),
+    ]
+
+
+def resolve_container_image(container_image: str, repo_dir: Path = REPO_ROOT) -> Path:
+    """Resolve relative container image paths against the repo root."""
+    image_path = Path(container_image).expanduser()
+    if image_path.is_absolute():
+        return image_path
+    return repo_dir / image_path
+
+
+def build_apptainer_command(
+    inner_command: str,
+    *,
+    container_image: Path,
+    repo_dir: Path = REPO_ROOT,
+    container_binds: Optional[List[str]] = None,
+    use_nv: bool = True,
+) -> str:
+    """Wrap a command so it runs inside the Apptainer image."""
+    apptainer_args = [
+        "apptainer",
+        "exec",
+        "--bind",
+        f"{repo_dir}:/workspace",
+    ]
+    if use_nv:
+        apptainer_args.insert(2, "--nv")
+    for bind in container_binds or []:
+        apptainer_args.extend(["--bind", bind])
+    apptainer_args.extend(
+        [
+            "--env",
+            "PYTHONUNBUFFERED=1",
+            "--env",
+            "PYTHONPATH=/workspace",
+            "--env",
+            "MPLCONFIGDIR=/workspace/.container_cache/matplotlib",
+            "--env",
+            "XDG_CACHE_HOME=/workspace/.container_cache/xdg",
+            "--env",
+            "WANDB_CACHE_DIR=/workspace/.container_cache/wandb",
+            "--pwd",
+            "/workspace",
+            str(container_image),
+            "bash",
+            "-lc",
+            inner_command,
+        ]
+    )
+    return shell_join(apptainer_args)
+
+
+def build_runtime_command(
+    python_cmd: str,
+    *,
+    execution: str = "conda",
+    container_image: Optional[Path] = None,
+    repo_dir: Path = REPO_ROOT,
+    container_binds: Optional[List[str]] = None,
+) -> str:
+    """Build the command run by srun for the selected execution backend."""
+    if execution == "conda":
+        return python_cmd
+    if execution == "apptainer":
+        if container_image is None:
+            raise ValueError("container_image is required for apptainer execution")
+        return build_apptainer_command(
+            python_cmd,
+            container_image=container_image,
+            repo_dir=repo_dir,
+            container_binds=container_binds,
+        )
+    raise ValueError(f"Unsupported execution backend: {execution}")
+
+
+def build_runtime_setup(
+    *,
+    execution: str,
+    conda_env: str,
+    container_image: Optional[Path] = None,
+    repo_dir: Path = REPO_ROOT,
+) -> str:
+    """Build shell setup lines for a Slurm job."""
+    if execution == "conda":
+        return f"""echo "Using conda env: {conda_env}"
+eval "$(conda shell.bash hook)"
+conda activate {conda_env}"""
+    if execution == "apptainer":
+        if container_image is None:
+            raise ValueError("container_image is required for apptainer execution")
+        return f"""echo "Using Apptainer image: {container_image}"
+if command -v module >/dev/null 2>&1; then
+    module load apptainer >/dev/null 2>&1 || true
+fi
+if [[ ! -f {shlex.quote(str(container_image))} ]]; then
+    echo "Apptainer image not found: {container_image}"
+    exit 1
+fi
+mkdir -p {shlex.quote(str(repo_dir / ".container_cache"))}"""
+    raise ValueError(f"Unsupported execution backend: {execution}")
+
+
 def build_python_command(eval_args: dict) -> str:
     """Build the eval_afhp.py command for one evaluation."""
     require_non_plain_maze_eval_env(str(eval_args["env_name"]))
@@ -209,7 +343,16 @@ def build_python_command(eval_args: dict) -> str:
 
 
 def build_sbatch_command(
-    job_name: str, eval_args: dict, conda_env: str, log_dir: Path, qos: str = "default"
+    job_name: str,
+    eval_args: dict,
+    conda_env: str,
+    log_dir: Path,
+    qos: str = "default",
+    *,
+    execution: str = "conda",
+    container_image: Optional[Path] = None,
+    repo_dir: Path = REPO_ROOT,
+    container_binds: Optional[List[str]] = None,
 ) -> str:
     """Build the sbatch command string."""
     # Override QOS in SLURM config
@@ -217,6 +360,19 @@ def build_sbatch_command(
     slurm_config["qos"] = qos
     slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
     python_cmd = build_python_command(eval_args)
+    runtime_cmd = build_runtime_command(
+        python_cmd,
+        execution=execution,
+        container_image=container_image,
+        repo_dir=repo_dir,
+        container_binds=container_binds,
+    )
+    runtime_setup = build_runtime_setup(
+        execution=execution,
+        conda_env=conda_env,
+        container_image=container_image,
+        repo_dir=repo_dir,
+    )
 
     sbatch_script = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
@@ -224,10 +380,8 @@ def build_sbatch_command(
 #SBATCH --error={log_dir}/%x_%j.err
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
 
-echo "Using conda env: {conda_env}"
-eval "$(conda shell.bash hook)"
-conda activate {conda_env}
-srun {slurm_args} {python_cmd}
+{runtime_setup}
+srun {slurm_args} {runtime_cmd}
 """
     return sbatch_script
 
@@ -238,6 +392,11 @@ def build_packed_sbatch_command(
     conda_env: str,
     log_dir: Path,
     qos: str = "default",
+    *,
+    execution: str = "conda",
+    container_image: Optional[Path] = None,
+    repo_dir: Path = REPO_ROOT,
+    container_binds: Optional[List[str]] = None,
 ) -> str:
     """Build an sbatch script that runs multiple evals on one allocated GPU."""
     if not job_specs:
@@ -257,14 +416,27 @@ def build_packed_sbatch_command(
     for spec in job_specs:
         eval_name = spec["job_name"]
         python_cmd = build_python_command(spec["eval_args"])
+        runtime_cmd = build_runtime_command(
+            python_cmd,
+            execution=execution,
+            container_image=container_image,
+            repo_dir=repo_dir,
+            container_binds=container_binds,
+        )
         stdout = log_dir / f"{eval_name}_${{SLURM_JOB_ID}}.out"
         stderr = log_dir / f"{eval_name}_${{SLURM_JOB_ID}}.err"
         srun_commands.append(
             f'{srun_prefix} --output="{stdout}" --error="{stderr}" '
-            f'{python_cmd} &\npids+=("$!")'
+            f'{runtime_cmd} &\npids+=("$!")'
         )
 
     launch_block = "\n\n".join(srun_commands)
+    runtime_setup = build_runtime_setup(
+        execution=execution,
+        conda_env=conda_env,
+        container_image=container_image,
+        repo_dir=repo_dir,
+    )
 
     sbatch_script = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
@@ -272,9 +444,7 @@ def build_packed_sbatch_command(
 #SBATCH --error={log_dir}/%x_%j.err
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
 
-echo "Using conda env: {conda_env}"
-eval "$(conda shell.bash hook)"
-conda activate {conda_env}
+{runtime_setup}
 
 pids=()
 {launch_block}
@@ -320,9 +490,24 @@ def submit_job(
     log_dir: Path,
     qos: str = "default",
     dry_run: bool = False,
+    *,
+    execution: str = "conda",
+    container_image: Optional[Path] = None,
+    repo_dir: Path = REPO_ROOT,
+    container_binds: Optional[List[str]] = None,
 ) -> None:
     """Submit a single job via sbatch."""
-    sbatch_script = build_sbatch_command(job_name, eval_args, conda_env, log_dir, qos)
+    sbatch_script = build_sbatch_command(
+        job_name,
+        eval_args,
+        conda_env,
+        log_dir,
+        qos,
+        execution=execution,
+        container_image=container_image,
+        repo_dir=repo_dir,
+        container_binds=container_binds,
+    )
 
     if dry_run:
         print(f"=== Job: {job_name} ===")
@@ -354,10 +539,23 @@ def submit_packed_job(
     log_dir: Path,
     qos: str = "default",
     dry_run: bool = False,
+    *,
+    execution: str = "conda",
+    container_image: Optional[Path] = None,
+    repo_dir: Path = REPO_ROOT,
+    container_binds: Optional[List[str]] = None,
 ) -> None:
     """Submit one Slurm job that runs multiple evals on one GPU."""
     sbatch_script = build_packed_sbatch_command(
-        job_name, job_specs, conda_env, log_dir, qos
+        job_name,
+        job_specs,
+        conda_env,
+        log_dir,
+        qos,
+        execution=execution,
+        container_image=container_image,
+        repo_dir=repo_dir,
+        container_binds=container_binds,
     )
 
     if dry_run:
@@ -381,19 +579,62 @@ def submit_packed_job(
         print(f"Failed to submit {job_name}: {result.stderr}")
 
 
-def run_preflight_check(conda_env: str, env_name: str, *, show_output: bool) -> bool:
-    """Run local dependency checks before submitting SLURM jobs."""
-    command = [
-        "conda",
-        "run",
-        "-n",
-        conda_env,
+def build_preflight_command(
+    conda_env: str,
+    env_name: str,
+    *,
+    execution: str = "conda",
+    container_image: Optional[Path] = None,
+    repo_dir: Path = REPO_ROOT,
+    container_binds: Optional[List[str]] = None,
+) -> List[str]:
+    """Build the local preflight command for the selected execution backend."""
+    preflight_args = [
         "python",
         "-m",
         "scripts.preflight_eval_env",
         "--env",
         env_name,
     ]
+    if execution == "conda":
+        return ["conda", "run", "-n", conda_env, *preflight_args]
+    if execution == "apptainer":
+        if container_image is None:
+            raise ValueError("container_image is required for apptainer execution")
+        apptainer_cmd = build_apptainer_command(
+            shell_join(preflight_args),
+            container_image=container_image,
+            repo_dir=repo_dir,
+            container_binds=container_binds,
+            use_nv=False,
+        )
+        return [
+            "bash",
+            "-lc",
+            "module load apptainer >/dev/null 2>&1 || true; " + apptainer_cmd,
+        ]
+    raise ValueError(f"Unsupported execution backend: {execution}")
+
+
+def run_preflight_check(
+    conda_env: str,
+    env_name: str,
+    *,
+    show_output: bool,
+    execution: str = "conda",
+    container_image: Optional[Path] = None,
+    repo_dir: Path = REPO_ROOT,
+    container_binds: Optional[List[str]] = None,
+) -> bool:
+    """Run local dependency checks before submitting SLURM jobs."""
+    command = build_preflight_command(
+        conda_env,
+        env_name,
+        execution=execution,
+        container_image=container_image,
+        repo_dir=repo_dir,
+        container_binds=container_binds,
+    )
     result = subprocess.run(
         command,
         cwd=REPO_ROOT,
@@ -429,6 +670,34 @@ def main():
         "--conda-env",
         default=DEFAULT_CONDA_ENV,
         help=f"Conda environment to use (default: {DEFAULT_CONDA_ENV})",
+    )
+    parser.add_argument(
+        "--execution",
+        choices=["conda", "apptainer"],
+        default="conda",
+        help="Execution backend for Slurm jobs (default: conda).",
+    )
+    parser.add_argument(
+        "--use-container",
+        action="store_true",
+        help="Shortcut for --execution apptainer.",
+    )
+    parser.add_argument(
+        "--container-image",
+        default=DEFAULT_CONTAINER_IMAGE,
+        help=(
+            "Apptainer .sif image path for --execution apptainer. Relative paths "
+            f"are resolved from the repo root (default: {DEFAULT_CONTAINER_IMAGE})."
+        ),
+    )
+    parser.add_argument(
+        "--container-bind",
+        action="append",
+        default=[],
+        help=(
+            "Extra Apptainer bind mount. Can be repeated or comma-separated. "
+            "The repo and selected server data root are bound automatically."
+        ),
     )
     parser.add_argument(
         "--server",
@@ -549,6 +818,8 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.use_container:
+        args.execution = "apptainer"
     if args.runs_per_gpu <= 0:
         parser.error("--runs-per-gpu must be a positive integer.")
 
@@ -558,6 +829,9 @@ def main():
     seeds_base_path = paths["seeds_base"]
     svdd_base_path = paths["svdd_base"]
     svdd_prefix = args.svdd_prefix
+    repo_dir = REPO_ROOT
+    container_image = resolve_container_image(args.container_image, repo_dir)
+    container_binds = get_container_binds(args.server, args.container_bind)
 
     # `args.env` is the public experiment key. `eval_env_name` is the Procgen
     # environment to instantiate, and `artifact_env` is the namespace used for
@@ -593,7 +867,12 @@ def main():
         print(f"Error: Config file not found: {config_path}")
         return 1
 
-    print(f"Conda env: {args.conda_env}")
+    print(f"Execution: {args.execution}")
+    if args.execution == "conda":
+        print(f"Conda env: {args.conda_env}")
+    else:
+        print(f"Container image: {container_image}")
+        print(f"Container binds: {', '.join(container_binds) or '(none)'}")
 
     # Build log directory path: base / wandb_project / prefix / date
     log_base = Path(paths["log_base"])
@@ -605,6 +884,10 @@ def main():
         args.conda_env,
         eval_env_name,
         show_output=args.dry_run,
+        execution=args.execution,
+        container_image=container_image,
+        repo_dir=repo_dir,
+        container_binds=container_binds,
     ):
         return 1
 
@@ -630,6 +913,9 @@ def main():
             print(f"SVDD prefix: {svdd_prefix}")
             print(f"SVDD base: {Path(svdd_base_path) / svdd_prefix}")
         print(f"Runs per GPU: {args.runs_per_gpu}")
+        if args.execution == "apptainer":
+            print(f"Container image: {container_image}")
+            print(f"Container binds: {', '.join(container_binds) or '(none)'}")
         print()
 
     job_specs = []
@@ -773,6 +1059,10 @@ def main():
                 log_dir,
                 args.qos,
                 dry_run=args.dry_run,
+                execution=args.execution,
+                container_image=container_image,
+                repo_dir=repo_dir,
+                container_binds=container_binds,
             )
     else:
         for chunk in chunk_job_specs(job_specs, args.runs_per_gpu):
@@ -784,6 +1074,10 @@ def main():
                 log_dir,
                 args.qos,
                 dry_run=args.dry_run,
+                execution=args.execution,
+                container_image=container_image,
+                repo_dir=repo_dir,
+                container_binds=container_binds,
             )
 
     return 0
