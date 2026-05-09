@@ -4,6 +4,7 @@ Script to run evaluation jobs in parallel via SLURM sbatch.
 """
 
 import subprocess
+import re
 from datetime import date
 from pathlib import Path
 from typing import List, Optional
@@ -154,18 +155,20 @@ def get_ensemble_member_paths(
     return member_paths
 
 
-def build_sbatch_command(
-    job_name: str, eval_args: dict, conda_env: str, log_dir: Path, qos: str = "default"
-) -> str:
-    """Build the sbatch command string."""
+def scale_slurm_mem(mem: str, factor: int) -> str:
+    """Scale a SLURM memory string like 100G by an integer factor."""
+    match = re.fullmatch(r"(\d+)([KMGTP]?)", mem)
+    if match is None:
+        raise ValueError(f"Unsupported SLURM mem format: {mem}")
+
+    value, unit = match.groups()
+    return f"{int(value) * factor}{unit}"
+
+
+def build_python_command(eval_args: dict) -> str:
+    """Build the eval_afhp.py command for one evaluation."""
     require_non_plain_maze_eval_env(str(eval_args["env_name"]))
 
-    # Override QOS in SLURM config
-    slurm_config = SLURM_CONFIG.copy()
-    slurm_config["qos"] = qos
-    slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
-
-    # Build the python command arguments
     python_args = [
         "python eval_afhp.py",
         f"-c {eval_args['config']}",
@@ -202,8 +205,18 @@ def build_sbatch_command(
         for member_path in eval_args["ensemble_members"]:
             python_args.append(f"    {member_path}")
 
-    # Join python args as single line
-    python_cmd = " ".join(python_args)
+    return " ".join(python_args)
+
+
+def build_sbatch_command(
+    job_name: str, eval_args: dict, conda_env: str, log_dir: Path, qos: str = "default"
+) -> str:
+    """Build the sbatch command string."""
+    # Override QOS in SLURM config
+    slurm_config = SLURM_CONFIG.copy()
+    slurm_config["qos"] = qos
+    slurm_args = " ".join(f"--{k}={v}" for k, v in slurm_config.items())
+    python_cmd = build_python_command(eval_args)
 
     sbatch_script = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
@@ -217,6 +230,87 @@ conda activate {conda_env}
 srun {slurm_args} {python_cmd}
 """
     return sbatch_script
+
+
+def build_packed_sbatch_command(
+    job_name: str,
+    job_specs: List[dict],
+    conda_env: str,
+    log_dir: Path,
+    qos: str = "default",
+) -> str:
+    """Build an sbatch script that runs multiple evals on one allocated GPU."""
+    if not job_specs:
+        raise ValueError("job_specs must not be empty")
+
+    slurm_config = SLURM_CONFIG.copy()
+    slurm_config["qos"] = qos
+    slurm_config["nodes"] = "1"
+    slurm_config["ntasks"] = str(len(job_specs))
+    slurm_config["mem"] = scale_slurm_mem(slurm_config["mem"], len(job_specs))
+
+    srun_prefix = (
+        "srun --overlap --ntasks=1 "
+        f"--cpus-per-task={SLURM_CONFIG['cpus-per-task']} --gres=gpu:1"
+    )
+    srun_commands = []
+    for spec in job_specs:
+        eval_name = spec["job_name"]
+        python_cmd = build_python_command(spec["eval_args"])
+        stdout = log_dir / f"{eval_name}_${{SLURM_JOB_ID}}.out"
+        stderr = log_dir / f"{eval_name}_${{SLURM_JOB_ID}}.err"
+        srun_commands.append(
+            f'{srun_prefix} --output="{stdout}" --error="{stderr}" '
+            f'{python_cmd} &\npids+=("$!")'
+        )
+
+    launch_block = "\n\n".join(srun_commands)
+
+    sbatch_script = f"""#!/bin/bash
+#SBATCH --job-name={job_name}
+#SBATCH --output={log_dir}/%x_%j.out
+#SBATCH --error={log_dir}/%x_%j.err
+{chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
+
+echo "Using conda env: {conda_env}"
+eval "$(conda shell.bash hook)"
+conda activate {conda_env}
+
+pids=()
+{launch_block}
+
+status=0
+for pid in "${{pids[@]}}"; do
+    if ! wait "${{pid}}"; then
+        status=1
+    fi
+done
+exit "${{status}}"
+"""
+    return sbatch_script
+
+
+def chunk_job_specs(job_specs: List[dict], chunk_size: int) -> List[List[dict]]:
+    """Chunk job specs for packed GPU submissions."""
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive")
+    return [
+        job_specs[index : index + chunk_size]
+        for index in range(0, len(job_specs), chunk_size)
+    ]
+
+
+def build_packed_job_name(job_specs: List[dict]) -> str:
+    """Build a compact Slurm job name for a packed eval chunk."""
+    if len(job_specs) == 1:
+        return job_specs[0]["job_name"]
+    first = job_specs[0]
+    exp_ids = [str(spec["exp_id"]) for spec in job_specs]
+    prefix = f"{first['env']}_{first['method']}"
+    robust_checkpoint_key = first.get("robust_checkpoint_key")
+    if robust_checkpoint_key is not None:
+        prefix = f"{prefix}_{robust_checkpoint_key}"
+    return f"{prefix}_exp{'-'.join(exp_ids)}"
 
 
 def submit_job(
@@ -249,6 +343,40 @@ def submit_job(
 
     if result.returncode == 0:
         print(f"Submitted {job_name}: {result.stdout.strip()}")
+    else:
+        print(f"Failed to submit {job_name}: {result.stderr}")
+
+
+def submit_packed_job(
+    job_name: str,
+    job_specs: List[dict],
+    conda_env: str,
+    log_dir: Path,
+    qos: str = "default",
+    dry_run: bool = False,
+) -> None:
+    """Submit one Slurm job that runs multiple evals on one GPU."""
+    sbatch_script = build_packed_sbatch_command(
+        job_name, job_specs, conda_env, log_dir, qos
+    )
+
+    if dry_run:
+        print(f"=== Packed Job: {job_name} ===")
+        print(sbatch_script)
+        print()
+        return
+
+    log_dir.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        ["sbatch"],
+        input=sbatch_script,
+        text=True,
+        capture_output=True,
+    )
+
+    if result.returncode == 0:
+        packed_names = ", ".join(spec["job_name"] for spec in job_specs)
+        print(f"Submitted {job_name}: {result.stdout.strip()} ({packed_names})")
     else:
         print(f"Failed to submit {job_name}: {result.stderr}")
 
@@ -332,6 +460,15 @@ def main():
         help="Experiment IDs to run (default: 0 1 2 3 4)",
     )
     parser.add_argument(
+        "--runs-per-gpu",
+        type=int,
+        default=1,
+        help=(
+            "Number of eval runs to launch concurrently in each one-GPU Slurm "
+            "allocation (default: 1)."
+        ),
+    )
+    parser.add_argument(
         "--num-levels",
         type=int,
         default=EVAL_DEFAULTS["num_levels"],
@@ -412,6 +549,9 @@ def main():
     )
     args = parser.parse_args()
 
+    if args.runs_per_gpu <= 0:
+        parser.error("--runs-per-gpu must be a positive integer.")
+
     # Get server-specific paths
     paths = SERVER_PATHS[args.server]
     checkpoint_base_path = paths["checkpoint_base"]
@@ -489,7 +629,10 @@ def main():
         if args.method in SVDD_METHODS:
             print(f"SVDD prefix: {svdd_prefix}")
             print(f"SVDD base: {Path(svdd_base_path) / svdd_prefix}")
+        print(f"Runs per GPU: {args.runs_per_gpu}")
         print()
+
+    job_specs = []
 
     # Loop over experiment IDs
     for exp_id in args.exp_ids:
@@ -586,7 +729,6 @@ def main():
                 for i, member_path in enumerate(ensemble_members):
                     print(f"    m{i}: {member_path}")
             print()
-            continue
 
         eval_args = {
             "config": config_path,
@@ -611,9 +753,38 @@ def main():
             **checkpoints,
         }
 
-        submit_job(
-            job_name, eval_args, args.conda_env, log_dir, args.qos, dry_run=False
+        job_specs.append(
+            {
+                "job_name": job_name,
+                "eval_args": eval_args,
+                "exp_id": exp_id,
+                "env": args.env,
+                "method": args.method,
+                "robust_checkpoint_key": robust_checkpoint_key,
+            }
         )
+
+    if args.runs_per_gpu == 1:
+        for spec in job_specs:
+            submit_job(
+                spec["job_name"],
+                spec["eval_args"],
+                args.conda_env,
+                log_dir,
+                args.qos,
+                dry_run=args.dry_run,
+            )
+    else:
+        for chunk in chunk_job_specs(job_specs, args.runs_per_gpu):
+            packed_job_name = build_packed_job_name(chunk)
+            submit_packed_job(
+                packed_job_name,
+                chunk,
+                args.conda_env,
+                log_dir,
+                args.qos,
+                dry_run=args.dry_run,
+            )
 
     return 0
 
