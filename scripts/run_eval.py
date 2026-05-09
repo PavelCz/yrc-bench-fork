@@ -216,6 +216,15 @@ def build_apptainer_command(
     use_nv: bool = True,
 ) -> str:
     """Wrap a command so it runs inside the Apptainer image."""
+    container_command = (
+        "if [[ ! -x /opt/venv/bin/python ]]; then "
+        "echo 'Container Python not found: /opt/venv/bin/python'; exit 1; "
+        "fi; "
+        "export VIRTUAL_ENV=/opt/venv; "
+        "export PATH=/opt/venv/bin:${PATH}; "
+        "hash -r; "
+        f"{inner_command}"
+    )
     apptainer_args = [
         "apptainer",
         "exec",
@@ -243,7 +252,7 @@ def build_apptainer_command(
             str(container_image),
             "bash",
             "-lc",
-            inner_command,
+            container_command,
         ]
     )
     return shell_join(apptainer_args)

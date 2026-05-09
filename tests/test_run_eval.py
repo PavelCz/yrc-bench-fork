@@ -113,6 +113,8 @@ def test_container_sbatch_wraps_eval_in_apptainer():
     assert "--bind /repo:/workspace" in command
     assert "--bind /project2/biyik_1165:/project2/biyik_1165" in command
     assert "--pwd /workspace /repo/yrc-bench-procgen.sif bash -lc" in command
+    assert "Container Python not found: /opt/venv/bin/python" in command
+    assert "export PATH=/opt/venv/bin:${PATH}; hash -r; python eval_afhp.py" in command
     assert "python eval_afhp.py" in command
     assert "-n job" in command
 
@@ -150,6 +152,11 @@ def test_container_preflight_does_not_require_gpu_visibility():
     assert command[:2] == ["bash", "-lc"]
     assert "apptainer exec" in shell_command
     assert "--nv" not in shell_command
+    assert "Container Python not found: /opt/venv/bin/python" in shell_command
+    assert (
+        "export PATH=/opt/venv/bin:${PATH}; hash -r; "
+        "python -m scripts.preflight_eval_env" in shell_command
+    )
     assert (
         "python -m scripts.preflight_eval_env --env coinrun_proxy_fail" in shell_command
     )
