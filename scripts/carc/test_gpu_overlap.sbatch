@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=4
 #SBATCH --cpus-per-task=1
-#SBATCH --gpus-per-task=1
+#SBATCH --gres=gpu:1
 #SBATCH --mem=8G
 #SBATCH --time=00:05:00
 #SBATCH --job-name=gpu-overlap-test
@@ -31,7 +31,7 @@ for step_id in $(seq 0 "$((NUM_STEPS - 1))"); do
     srun --overlap \
         --ntasks=1 \
         --cpus-per-task=1 \
-        --gpus-per-task=1 \
+        --gres=gpu:1 \
         bash -lc \
             "echo step=${step_id} start \$(date +%T) CUDA_VISIBLE_DEVICES=\${CUDA_VISIBLE_DEVICES:-unset}; sleep ${SLEEP_SECONDS}; echo step=${step_id} end \$(date +%T)" &
     pids+=("$!")
