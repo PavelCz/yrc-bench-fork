@@ -385,7 +385,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ssh-option",
         action="append",
-        default=["-o", "ConnectTimeout=10"],
+        default=["-o", "ConnectTimeout=10", "-o", "ConnectionAttempts=3"],
         help="Extra ssh option. Can be repeated.",
     )
     parser.add_argument(
