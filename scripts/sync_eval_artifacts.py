@@ -7,6 +7,7 @@ import argparse
 import re
 import shlex
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional
@@ -39,13 +40,30 @@ class SyncItem:
 
 
 class RemotePathResolver:
-    def __init__(self, host: str, ssh_options: list[str]) -> None:
+    def __init__(self, host: str, ssh_options: list[str], ssh_retries: int) -> None:
         self.host = host
         self.ssh_options = ssh_options
+        self.ssh_retries = ssh_retries
 
     def _run(self, remote_command: str) -> subprocess.CompletedProcess[str]:
         command = ["ssh", *self.ssh_options, self.host, remote_command]
-        return subprocess.run(command, text=True, capture_output=True)
+        last_result = None
+        for attempt in range(1, self.ssh_retries + 1):
+            result = subprocess.run(command, text=True, capture_output=True)
+            if result.returncode != 255:
+                return result
+
+            last_result = result
+            if attempt < self.ssh_retries:
+                print(
+                    f"SSH command failed for {self.host}; retrying "
+                    f"({attempt}/{self.ssh_retries})..."
+                )
+                time.sleep(min(attempt, 5))
+
+        if last_result is None:
+            raise RuntimeError("SSH command did not run")
+        return last_result
 
     def check_reachable(self) -> bool:
         result = self._run("true")
@@ -200,7 +218,7 @@ def build_sync_items(args: argparse.Namespace) -> list[SyncItem]:
     source_svdd_base = Path(source_paths["svdd_base"])
     target_svdd_base = Path(target_paths["svdd_base"])
 
-    resolver = RemotePathResolver(args.source_host, args.ssh_option)
+    resolver = RemotePathResolver(args.source_host, args.ssh_option, args.ssh_retries)
     if not resolver.check_reachable():
         raise RuntimeError(
             "Source host reachability check failed; fix SSH config or pass "
@@ -385,8 +403,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ssh-option",
         action="append",
-        default=["-o", "ConnectTimeout=10", "-o", "ConnectionAttempts=3"],
+        default=[
+            "-o",
+            "ConnectTimeout=10",
+            "-o",
+            "ConnectionAttempts=3",
+            "-o",
+            "ControlMaster=auto",
+            "-o",
+            "ControlPersist=120",
+            "-o",
+            "ControlPath=/tmp/yrc-sync-%r@%h:%p",
+        ],
         help="Extra ssh option. Can be repeated.",
+    )
+    parser.add_argument(
+        "--ssh-retries",
+        type=int,
+        default=3,
+        help="Retries for transient ssh transport failures during discovery.",
     )
     parser.add_argument(
         "--dry-run",
