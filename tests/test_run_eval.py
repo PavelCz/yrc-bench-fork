@@ -158,7 +158,8 @@ def test_container_preflight_does_not_require_gpu_visibility():
         "python -m scripts.preflight_eval_env" in shell_command
     )
     assert (
-        "python -m scripts.preflight_eval_env --env coinrun_proxy_fail" in shell_command
+        "python -m scripts.preflight_eval_env --env coinrun_proxy_fail "
+        "--skip-local-path-check" in shell_command
     )
 
 

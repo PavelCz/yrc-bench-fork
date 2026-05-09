@@ -610,8 +610,11 @@ def build_preflight_command(
     if execution == "apptainer":
         if container_image is None:
             raise ValueError("container_image is required for apptainer execution")
+        # acs/procgen are pip-installed into /opt/venv inside the image, not
+        # editable from /workspace/lib, so skip the repo-local import check.
+        container_preflight_args = [*preflight_args, "--skip-local-path-check"]
         apptainer_cmd = build_apptainer_command(
-            shell_join(preflight_args),
+            shell_join(container_preflight_args),
             container_image=container_image,
             repo_dir=repo_dir,
             container_binds=container_binds,
