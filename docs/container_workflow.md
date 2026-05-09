@@ -31,10 +31,10 @@ docker build -f docker/Dockerfile -t yrc-bench-procgen:latest .
 Run a command with the repo bind-mounted:
 
 ```bash
-scripts/container/docker_run.sh python -c "import torch, procgen, acs; print(torch.__version__)"
+scripts/container/docker_run.sh python -c "import torch, procgen, acs, pyod; print(torch.__version__)"
 ```
 
-The image contains dependencies plus installed `acs` and local `procgen`. The repo source is still mounted at `/workspace`, so normal code edits do not require rebuilding unless you change `requirements.txt`, `lib/acs`, or `lib/procgen`.
+The image contains dependencies plus installed `acs`, `procgen`, and `pyod`. The repo source is still mounted at `/workspace`, so normal code edits do not require rebuilding unless you change `requirements.txt`, `lib/acs`, `lib/procgen`, or `lib/pyod`.
 
 ## CARC Apptainer Build
 
@@ -86,7 +86,7 @@ For a quick smoke test:
 
 ```bash
 sbatch scripts/carc/run_container.sbatch \
-  python -c "import torch, procgen, acs; print(torch.cuda.is_available())"
+  python -c "import torch, procgen, acs, pyod; print(torch.cuda.is_available())"
 ```
 
 Runtime defaults:
@@ -161,7 +161,7 @@ The default execution backend remains conda. `--use-container` is a shortcut for
 
 Rebuild the base image when system packages, CUDA, Python, or PyTorch change.
 
-Rebuild the app image or `.sif` when `requirements.txt`, `lib/acs`, or `lib/procgen` changes.
+Rebuild the app image or `.sif` when `requirements.txt`, `lib/acs`, `lib/procgen`, or `lib/pyod` changes.
 
 Normal changes to `YRC/`, `configs/`, `scripts/`, checkpoints, or analysis code are picked up through the runtime bind mount.
 
