@@ -50,7 +50,9 @@ class ThresholdPolicy(Policy):
 
         # Ensemble for ensemble_variance metric
         self.ensemble_members = None
-        self._single_weak_agent = None  # Original weak agent (for ensemble_use_single_weak)
+        self._single_weak_agent = (
+            None  # Original weak agent (for ensemble_use_single_weak)
+        )
         if self.args.metric == "ensemble_variance":
             ensemble_paths = getattr(self.args, "ensemble_members", None)
             if not ensemble_paths:
@@ -121,17 +123,135 @@ class ThresholdPolicy(Policy):
         return action.cpu().numpy()
 
     def generate_scores(self, env, num_rollouts):
-        assert num_rollouts % env.num_envs == 0
+        """Run calibration rollouts and collect per-step / per-episode scores.
+
+        This uses one sequential vector-env rollout instead of resetting once per
+        vector batch. In fixed level-seed mode, repeated resets can consume seeds
+        without letting all workers finish cleanly; tracking completed episodes
+        and seed exhaustion directly avoids hanging during calibration.
+        """
         scores = []
         episode_max_scores = []
-        for i in range(num_rollouts // env.num_envs):
-            ep_scores, ep_maxes = self._rollout_once(env)
-            scores.extend(ep_scores)
-            episode_max_scores.extend(ep_maxes)
+        current_episode_max_scores = [float("-inf")] * env.num_envs
+        seeds_exhausted = np.array([False] * env.num_envs)
+        progress_interval = max(env.num_envs, env.num_envs * 10)
+        next_progress = min(progress_interval, num_rollouts)
+        vector_steps = 0
+        max_vector_steps = max(
+            10000, ((num_rollouts + env.num_envs - 1) // env.num_envs) * 1000
+        )
+
+        agent = self.agent
+        agent.eval()
+        action_agent = self._calibration_action_agent()
+        action_agent.eval()
+
+        if hasattr(env, "get_obs") and getattr(env, "env_obs", None) is not None:
+            obs = env.get_obs()
+        else:
+            obs = env.reset()
+
+        logging.info(
+            "Generating threshold calibration scores for "
+            f"{num_rollouts} rollouts with {self.args.metric} metric "
+            f"(num_envs={env.num_envs})"
+        )
+
+        while len(episode_max_scores) < num_rollouts:
+            score, logit = self._calibration_score_and_logit(obs, action_agent)
+
+            for i in range(env.num_envs):
+                if seeds_exhausted[i]:
+                    continue
+                score_i = score.item() if env.num_envs == 1 else score[i].item()
+                scores.append(score_i)
+                current_episode_max_scores[i] = max(
+                    current_episode_max_scores[i], score_i
+                )
+
+            dist = Categorical(logits=logit / self.params["explore_temp"])
+            action = dist.sample().cpu().numpy()
+
+            obs, reward, done, info = env.step(action)
+            done = np.asarray(done, dtype=bool)
+            vector_steps += 1
+
+            for i in range(env.num_envs):
+                if done[i] and not seeds_exhausted[i]:
+                    episode_max_scores.append(current_episode_max_scores[i])
+                    current_episode_max_scores[i] = float("-inf")
+                    self.reset_rolling_average_buffer(i)
+                    if len(episode_max_scores) >= num_rollouts:
+                        break
+
+            for i in range(env.num_envs):
+                if info[i].get("seeds_exhausted", False):
+                    seeds_exhausted[i] = True
+                    self.reset_rolling_average_buffer(i)
+
+            if len(episode_max_scores) >= next_progress:
+                logging.info(
+                    "Threshold calibration score progress: "
+                    f"{len(episode_max_scores)}/{num_rollouts} episodes, "
+                    f"{len(scores)} scores, {vector_steps} vector steps"
+                )
+                while next_progress <= len(episode_max_scores):
+                    next_progress += progress_interval
+
+            if seeds_exhausted.all():
+                logging.info(
+                    "All calibration environments exhausted their sequential seeds. "
+                    f"Collected {len(episode_max_scores)}/{num_rollouts} episodes."
+                )
+                break
+
+            if vector_steps % 10000 == 0:
+                logging.warning(
+                    "Threshold calibration still running after "
+                    f"{vector_steps} vector steps; collected "
+                    f"{len(episode_max_scores)}/{num_rollouts} episodes"
+                )
+
+            if vector_steps >= max_vector_steps:
+                raise RuntimeError(
+                    "Threshold calibration exceeded "
+                    f"{max_vector_steps} vector steps while collecting "
+                    f"{len(episode_max_scores)}/{num_rollouts} episodes. "
+                    "This usually means at least one vectorized environment did not "
+                    "emit done or seeds_exhausted during calibration."
+                )
+
+        if len(episode_max_scores) < num_rollouts:
+            logging.warning(
+                "Threshold calibration stopped before collecting the requested "
+                f"number of episodes: {len(episode_max_scores)}/{num_rollouts}. "
+                "This can happen when the calibration environment was already reset "
+                "before score generation in sequential seed mode."
+            )
+
         # Store scores for percentile computation (used in AFHP eval)
         self._train_scores = np.array(scores)
         self._train_episode_max_scores = np.array(episode_max_scores)
+        logging.info(
+            "Generated threshold calibration scores: "
+            f"{len(scores)} step scores, {len(episode_max_scores)} episode max scores"
+        )
         return scores
+
+    def _calibration_action_agent(self):
+        use_single_weak = getattr(self.args, "ensemble_use_single_weak", False)
+        if use_single_weak and self._single_weak_agent is not None:
+            return self._single_weak_agent
+        return self.agent
+
+    def _calibration_score_and_logit(self, obs, action_agent):
+        if self.args.metric == "ensemble_variance":
+            score = self._compute_ensemble_score(obs["env_obs"])
+            logit = action_agent.forward(obs["env_obs"])
+        else:
+            logit = self.agent.forward(obs["env_obs"])
+            score = self._compute_score(logit)
+        return score, logit
 
     def _rollout_once(self, env):
         def sample_action(logit):
@@ -195,7 +315,7 @@ class ThresholdPolicy(Policy):
             score = 1.0 - score
         elif metric == "margin":
             raise NotImplementedError(
-                f"Margin metric not implemented for threshold policy"
+                "Margin metric not implemented for threshold policy"
             )
             if logit.size(-1) > 1:
                 # Original behavior for multi-class case
@@ -208,12 +328,12 @@ class ThresholdPolicy(Policy):
                 score = logit.sigmoid().squeeze(-1)
         elif metric == "neg_entropy":
             raise NotImplementedError(
-                f"Neg entropy metric not implemented for threshold policy"
+                "Neg entropy metric not implemented for threshold policy"
             )
             score = -Categorical(logits=logit).entropy()
         elif metric == "neg_energy":
             raise NotImplementedError(
-                f"Neg energy metric not implemented for threshold policy"
+                "Neg energy metric not implemented for threshold policy"
             )
             score = logit.logsumexp(dim=-1)
         elif metric == "ensemble_variance":
