@@ -59,6 +59,7 @@ def make_eval_args(name="name"):
         "strong": "strong.pth",
         "level_seeds_file": "seeds.json",
         "coverage_fraction": 0.05,
+        "calibration_levels": None,
     }
 
 
@@ -117,6 +118,20 @@ def test_container_sbatch_wraps_eval_in_apptainer():
     assert "export PATH=/opt/venv/bin:${PATH}; hash -r; python eval_afhp.py" in command
     assert "python eval_afhp.py" in command
     assert "-n job" in command
+
+
+def test_eval_sbatch_passes_calibration_level_override():
+    eval_args = make_eval_args("job")
+    eval_args["calibration_levels"] = 64
+
+    command = run_eval.build_sbatch_command(
+        "job",
+        eval_args,
+        "ood-stable",
+        Path("/tmp/logs"),
+    )
+
+    assert "-calibration_levels 64" in command
 
 
 def test_container_packed_sbatch_wraps_each_eval_in_apptainer():

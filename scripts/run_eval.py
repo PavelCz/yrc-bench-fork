@@ -332,6 +332,9 @@ def build_python_command(eval_args: dict) -> str:
         f"-coverage_fraction {eval_args['coverage_fraction']}",
     ]
 
+    if eval_args.get("calibration_levels") is not None:
+        python_args.append(f"-calibration_levels {eval_args['calibration_levels']}")
+
     # Add wandb project if specified
     if eval_args.get("wandb_project"):
         python_args.append(f"-wandb_project {eval_args['wandb_project']}")
@@ -786,6 +789,15 @@ def main():
         help=f"Coverage fraction for threshold sampling (default: {EVAL_DEFAULTS['coverage_fraction']})",
     )
     parser.add_argument(
+        "--calibration-levels",
+        type=int,
+        default=None,
+        help=(
+            "Number of validation split seeds to use for percentile calibration "
+            "during eval. Default uses the full validation split."
+        ),
+    )
+    parser.add_argument(
         "--wandb-project",
         default=None,
         help="Override wandb project name",
@@ -1043,6 +1055,7 @@ def main():
             "video_logging_mode": args.video_logging_mode,
             "video_filter_mode": args.video_filter_mode,
             "coverage_fraction": args.coverage_fraction,
+            "calibration_levels": args.calibration_levels,
             "wandb_project": args.wandb_project,
             "level_seeds_file": str(level_seeds_file),
             "svdd_model_path": svdd_model_path,

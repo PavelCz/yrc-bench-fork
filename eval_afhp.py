@@ -41,6 +41,22 @@ def _require_calibration_split_and_count(envs, cal_seeds):
     return "cal", len(cal_seeds)
 
 
+def _select_calibration_seeds(config, seeds):
+    calibration_levels = getattr(config.evaluation, "calibration_levels", None)
+    cal_seeds = seeds["validation"]
+    if calibration_levels is None:
+        return cal_seeds
+    if calibration_levels <= 0:
+        raise ValueError("evaluation.calibration_levels must be positive when set.")
+    if calibration_levels > len(cal_seeds):
+        raise ValueError(
+            "Requested evaluation.calibration_levels="
+            f"{calibration_levels}, but validation split contains only "
+            f"{len(cal_seeds)} seeds."
+        )
+    return cal_seeds[:calibration_levels]
+
+
 def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs, cal_seeds):
     """Calibrate the policy's train_percentile_step/level methods.
 
@@ -175,11 +191,11 @@ def main():
 
     # Load all seed splits, then explicitly map semantic seed splits to env splits.
     seeds = load_level_seed_splits(config, required_splits=("ood_eval", "validation"))
+    cal_seeds = _select_calibration_seeds(config, seeds)
     level_seeds_by_split = {
         "test": seeds["ood_eval"],
-        "cal": seeds["validation"],
+        "cal": cal_seeds,
     }
-    cal_seeds = seeds["validation"]
 
     # Create environment factory for the sampler
     # Each evaluation gets fresh environments with the same seeds in sequential order

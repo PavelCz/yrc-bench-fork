@@ -373,6 +373,15 @@ def make():
         ),
     )
     parser.add_argument(
+        "-calibration_levels",
+        "--evaluation.calibration_levels",
+        type=int,
+        help=(
+            "number of validation split seeds to use for percentile calibration "
+            "during eval. If omitted, eval_afhp.py uses the full validation split."
+        ),
+    )
+    parser.add_argument(
         "-threshold_sampler",
         "--evaluation.threshold_sampler",
         type=str,
