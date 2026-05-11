@@ -253,52 +253,6 @@ class ThresholdPolicy(Policy):
             score = self._compute_score(logit)
         return score, logit
 
-    def _rollout_once(self, env):
-        def sample_action(logit):
-            dist = Categorical(logits=logit / self.params["explore_temp"])
-            return dist.sample().cpu().numpy()
-
-        agent = self.agent
-        agent.eval()
-
-        # Determine which agent to use for actions
-        use_single_weak = getattr(self.args, "ensemble_use_single_weak", False)
-        if use_single_weak and self._single_weak_agent is not None:
-            action_agent = self._single_weak_agent
-            action_agent.eval()
-        else:
-            action_agent = agent
-
-        obs = env.reset()
-        has_done = np.array([False] * env.num_envs)
-        scores = []
-        episode_max_scores = [float("-inf")] * env.num_envs
-
-        while not has_done.all():
-            if self.args.metric == "ensemble_variance":
-                score = self._compute_ensemble_score(obs["env_obs"])
-                logit = action_agent.forward(obs["env_obs"])
-            else:
-                logit = agent.forward(obs["env_obs"])
-                score = self._compute_score(logit)
-
-            if env.num_envs == 1:
-                scores.append(score.item())
-                episode_max_scores[0] = max(episode_max_scores[0], score.item())
-            else:
-                for i in range(env.num_envs):
-                    if not has_done[i]:
-                        scores.append(score[i].item())
-                        episode_max_scores[i] = max(
-                            episode_max_scores[i], score[i].item()
-                        )
-
-            action = sample_action(logit)
-            obs, reward, done, info = env.step(action)
-            has_done |= done
-
-        return scores, episode_max_scores
-
     def _compute_score(self, logit):
         # NOTE: higher score = more certain for some of the metrics, but not all.
         metric = self.args.metric
