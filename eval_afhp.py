@@ -310,6 +310,23 @@ def main():
             wandb_run=exp,
         )
     elif threshold_sampler == "level_afhp":
+        level_sampler_kwargs = {}
+        # ConfigDict.__getattr__ returns None for missing keys, which makes
+        # `getattr(config_dict, key, default)` ignore the default. Forward
+        # overrides only when they are explicitly set, so the function's own
+        # defaults apply otherwise.
+        for kwarg_name, config_key in (
+            ("image_svdd_degenerate_strategy", "image_svdd_degenerate_strategy"),
+            ("image_svdd_expansion_max_evals", "image_svdd_expansion_max_evals"),
+            (
+                "image_svdd_expansion_initial_delta_fraction",
+                "image_svdd_expansion_initial_delta_fraction",
+            ),
+        ):
+            value = getattr(config.evaluation, config_key, None)
+            if value is not None:
+                level_sampler_kwargs[kwarg_name] = value
+
         sampler = create_level_afhp_threshold_sampler(
             policy=policy,
             evaluator=evaluator,
@@ -319,21 +336,7 @@ def main():
             max_total_evals=max_total_evals,
             logger=wandb_logger,
             wandb_run=exp,
-            image_svdd_degenerate_strategy=getattr(
-                config.evaluation,
-                "image_svdd_degenerate_strategy",
-                "expand_above_id",
-            ),
-            image_svdd_expansion_max_evals=getattr(
-                config.evaluation,
-                "image_svdd_expansion_max_evals",
-                12,
-            ),
-            image_svdd_expansion_initial_delta_fraction=getattr(
-                config.evaluation,
-                "image_svdd_expansion_initial_delta_fraction",
-                1e-4,
-            ),
+            **level_sampler_kwargs,
         )
     else:
         raise ValueError(f"Invalid threshold sampler: {threshold_sampler}")
