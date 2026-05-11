@@ -18,13 +18,17 @@ Run on a GPU node (the checkpoint pickles cuda tensors). Example::
 """
 
 import argparse
+import sys
 import traceback
 from pathlib import Path
 from typing import Dict
 
 import numpy as np
 import torch
-from joblib import load
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from joblib import load  # noqa: E402
 
 
 def _summary(name: str, scores: np.ndarray) -> str:
