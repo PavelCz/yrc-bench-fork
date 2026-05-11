@@ -34,6 +34,7 @@ required_paths=(
     "lib/acs/pyproject.toml"
     "lib/procgen/setup.py"
     "lib/procgen/procgen/src/game-registry.cpp"
+    "lib/pyod/setup.py"
     "lib/pytorch_vae/models/__init__.py"
 )
 
