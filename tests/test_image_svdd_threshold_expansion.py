@@ -160,6 +160,72 @@ def test_raw_threshold_sampler_searches_above_id_threshold():
     assert result.total_evals <= 20
 
 
+def test_raw_threshold_sampler_picks_threshold_adjacent_pair_across_afhp_boundary():
+    sampler = ImageSVDDRawThresholdSampler(
+        eval_with_threshold=lambda threshold: (_ for _ in ()).throw(
+            AssertionError("eval_with_threshold should not be called in this test")
+        ),
+        id_threshold=0.320000022649765,
+        coverage_fraction=0.2,
+        max_total_evals=30,
+    )
+
+    # Reconstruct the rnn smoke-test (job 1132772) point cloud after 21 raw
+    # evaluations. Order of insertion matters: stable-sort tie-breaking on
+    # AFHP-only used to put eval 7 at the head of the AFHP=1 cluster, even
+    # though eval 21 (added later) is the one threshold-adjacent to eval 20.
+    eval_7 = {
+        "threshold": 0.320000022649765,
+        "afhp": 1.0,
+        "performance": 1.0,
+        "meta": {},
+    }
+    eval_8 = {
+        "threshold": float(np.nextafter(0.320000022649765, float("inf"))),
+        "afhp": 1.0,
+        "performance": 1.0,
+        "meta": {},
+    }
+    # Earlier expansion / bisects: AFHP=0 with larger thresholds than eval 20.
+    earlier_afhp0 = [
+        {"threshold": 0.32003202, "afhp": 0.0, "performance": 0.0, "meta": {}},
+        {"threshold": 0.32000050, "afhp": 0.0, "performance": 0.0, "meta": {}},
+    ]
+    eval_20 = {
+        "threshold": 0.3200000382747661,
+        "afhp": 0.0,
+        "performance": 0.0,
+        "meta": {},
+    }
+    eval_21 = {
+        "threshold": 0.32000003046226555,
+        "afhp": 1.0,
+        "performance": 1.0,
+        "meta": {},
+    }
+
+    insertion_order = [eval_7, eval_8, *earlier_afhp0, eval_20, eval_21]
+    for order, point in enumerate(insertion_order, start=1):
+        point["key"] = sampler._threshold_key(point["threshold"])
+        point["order"] = order
+        sampler.points.append(point)
+        sampler.seen_thresholds.add(point["key"])
+
+    interval = sampler._select_widest_fillable_interval()
+
+    assert interval is not None
+    left, right = interval
+    # Boundary pair must be the threshold-adjacent eval-20 / eval-21 pair.
+    assert left["threshold"] == eval_20["threshold"]
+    assert right["threshold"] == eval_21["threshold"]
+
+    # Their midpoint must not collide with any previously-seen threshold,
+    # otherwise _fill_afhp_bins would still bail with duplicate_threshold.
+    midpoint = sampler._midpoint_threshold(left["threshold"], right["threshold"])
+    assert midpoint is not None
+    assert sampler._threshold_key(midpoint) not in sampler.seen_thresholds
+
+
 def test_raw_threshold_sampler_stops_on_unfillable_step_function():
     def eval_with_threshold(threshold):
         afhp = 1.0 if threshold <= 0.32 else 0.0

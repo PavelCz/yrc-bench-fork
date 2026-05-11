@@ -433,7 +433,13 @@ class ImageSVDDRawThresholdSampler:
         return len(self._filled_bin_indices())
 
     def _select_widest_fillable_interval(self):
-        ordered = sorted(self.points, key=lambda point: point["afhp"])
+        # Tie-break ascending AFHP by descending threshold so the
+        # threshold-closest pair across an AFHP step ends up adjacent.
+        # Assumes AFHP is monotone non-increasing in threshold, which holds
+        # for the image-SVDD raw-threshold path above the ID plateau.
+        ordered = sorted(
+            self.points, key=lambda point: (point["afhp"], -point["threshold"])
+        )
         best_interval = None
         best_gap = -1.0
         for left, right in zip(ordered[:-1], ordered[1:]):
