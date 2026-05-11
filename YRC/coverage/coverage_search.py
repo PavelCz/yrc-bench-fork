@@ -5,10 +5,11 @@ This module provides YRC-specific convenience functions that wrap the generic
 ACS library for the specific use case of threshold evaluation in YRC.
 """
 
-from typing import Tuple, Any, Dict, Optional
+from typing import Tuple, Any, Dict, Optional, Callable, List
 
 # Import the joint-coverage sampler from the external ACS library
 from acs import BinarySearchSampler
+from acs.types import CurvePoint, SamplingResult
 from acs.wait_policy_sampler import WaitPolicyAwareSampler
 from YRC.policies.ood import OODPolicy
 from YRC.policies.lightning_ae import LightningAEPolicy
@@ -27,6 +28,13 @@ try:
     import wandb
 except ImportError:
     wandb = None
+
+
+IMAGE_SVDD_DEGENERATE_STRATEGY = "expand_above_id"
+DEFAULT_IMAGE_SVDD_EXPANSION_MAX_EVALS = 12
+DEFAULT_IMAGE_SVDD_EXPANSION_INITIAL_DELTA_FRACTION = 1e-4
+DEFAULT_SCORE_TOLERANCE_ABS = 1e-8
+DEFAULT_SCORE_TOLERANCE_REL = 1e-6
 
 
 class EvalStepTracker:
@@ -71,6 +79,364 @@ class EvalStepTracker:
             )
 
 
+def image_svdd_calibration_diagnostics(
+    policy,
+    *,
+    score_tolerance_abs: float = DEFAULT_SCORE_TOLERANCE_ABS,
+    score_tolerance_rel: float = DEFAULT_SCORE_TOLERANCE_REL,
+) -> Dict[str, Any]:
+    """Return calibration-collapse diagnostics for image DeepSVDD policies."""
+    diagnostics = {
+        "is_image_svdd": False,
+        "is_degenerate": False,
+        "num_scores": 0,
+        "num_finite_scores": 0,
+        "unique_count": 0,
+        "min_score": None,
+        "max_score": None,
+        "score_range": None,
+        "tolerance": None,
+    }
+
+    if not isinstance(policy, OODPolicy):
+        return diagnostics
+    if getattr(policy, "clf_name", None) != "DeepSVDD":
+        return diagnostics
+    if getattr(policy, "feature_type", None) != "obs":
+        return diagnostics
+
+    diagnostics["is_image_svdd"] = True
+    scores = getattr(policy, "_train_episode_max_scores", None)
+    if scores is None:
+        return diagnostics
+
+    scores = np.asarray(scores, dtype=float)
+    finite_scores = scores[np.isfinite(scores)]
+    diagnostics["num_scores"] = int(scores.size)
+    diagnostics["num_finite_scores"] = int(finite_scores.size)
+    if finite_scores.size == 0:
+        return diagnostics
+
+    min_score = float(np.min(finite_scores))
+    max_score = float(np.max(finite_scores))
+    score_range = float(max_score - min_score)
+    tolerance = float(max(score_tolerance_abs, abs(max_score) * score_tolerance_rel))
+    sorted_scores = np.sort(finite_scores)
+    unique_count = int(1 + np.count_nonzero(np.diff(sorted_scores) > tolerance))
+
+    diagnostics.update(
+        {
+            "unique_count": unique_count,
+            "min_score": min_score,
+            "max_score": max_score,
+            "score_range": score_range,
+            "tolerance": tolerance,
+            "is_degenerate": unique_count < 2 or score_range <= tolerance,
+        }
+    )
+    return diagnostics
+
+
+class ImageSVDDRawThresholdSampler:
+    """Fallback sampler for image SVDD when ID percentile scores collapse.
+
+    The standard sampler searches percentile space. If all ID calibration
+    episode-max scores are the same, every interior percentile maps to the same
+    threshold. This sampler searches raw thresholds above the ID plateau.
+    """
+
+    def __init__(
+        self,
+        *,
+        eval_with_threshold: Callable[[float], Tuple[float, float, Dict[str, Any]]],
+        id_threshold: float,
+        coverage_fraction: float,
+        max_total_evals: int,
+        expansion_max_evals: int = DEFAULT_IMAGE_SVDD_EXPANSION_MAX_EVALS,
+        expansion_initial_delta_fraction: float = (
+            DEFAULT_IMAGE_SVDD_EXPANSION_INITIAL_DELTA_FRACTION
+        ),
+        strategy_name: str = IMAGE_SVDD_DEGENERATE_STRATEGY,
+        diagnostics: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not np.isfinite(id_threshold):
+            raise ValueError(
+                "Image SVDD raw-threshold fallback needs a finite ID threshold."
+            )
+        if not (0.0 < coverage_fraction <= 1.0):
+            raise ValueError("coverage_fraction must be in (0, 1].")
+        if max_total_evals < 2:
+            raise ValueError("max_total_evals must be at least 2.")
+
+        self.eval_with_threshold = eval_with_threshold
+        self.id_threshold = float(id_threshold)
+        self.coverage_fraction = float(coverage_fraction)
+        self.max_total_evals = int(max_total_evals)
+        self.expansion_max_evals = int(expansion_max_evals)
+        self.expansion_initial_delta_fraction = float(expansion_initial_delta_fraction)
+        self.strategy_name = strategy_name
+        self.diagnostics = diagnostics or {}
+
+        self.points: List[Dict[str, Any]] = []
+        self.seen_thresholds = set()
+        self.unfillable_intervals: List[Dict[str, Any]] = []
+        self.early_stop_reason: Optional[str] = None
+        self.upper_threshold: Optional[float] = None
+
+    def run(self) -> SamplingResult:
+        self._evaluate_threshold(self.id_threshold, role="id_threshold")
+
+        next_threshold = float(np.nextafter(self.id_threshold, float("inf")))
+        next_point = self._evaluate_threshold(next_threshold, role="id_threshold_next")
+        if next_point["afhp"] <= self._low_afhp_target():
+            self.upper_threshold = next_threshold
+        else:
+            self.upper_threshold = self._expand_upper_threshold()
+
+        if self.upper_threshold is None and len(self.points) < self.max_total_evals:
+            self._evaluate_threshold(float("inf"), role="upper_extreme")
+
+        self._fill_afhp_bins()
+        return self._sampling_result()
+
+    def _low_afhp_target(self) -> float:
+        return self.coverage_fraction / 2.0
+
+    def _threshold_key(self, threshold: float) -> Tuple[bool, float]:
+        if np.isposinf(threshold):
+            return (True, float("inf"))
+        if np.isneginf(threshold):
+            return (True, float("-inf"))
+        return (False, float(threshold))
+
+    def _evaluate_threshold(self, threshold: float, *, role: str) -> Dict[str, Any]:
+        key = self._threshold_key(threshold)
+        for point in self.points:
+            if point["key"] == key:
+                return point
+
+        if len(self.points) >= self.max_total_evals:
+            self.early_stop_reason = "max_total_evals"
+            raise RuntimeError("Image SVDD threshold sampler exceeded max_total_evals.")
+
+        afhp, performance, meta = self.eval_with_threshold(float(threshold))
+        metadata = dict(meta or {})
+        metadata.update(
+            {
+                "threshold_strategy": self.strategy_name,
+                "degenerate_calibration_detected": True,
+                "id_threshold": self.id_threshold,
+                "raw_threshold": float(threshold),
+                "threshold_role": role,
+            }
+        )
+
+        point = {
+            "threshold": float(threshold),
+            "key": key,
+            "afhp": float(afhp),
+            "performance": float(performance),
+            "meta": metadata,
+            "order": len(self.points) + 1,
+        }
+        self.points.append(point)
+        self.seen_thresholds.add(key)
+        return point
+
+    def _expand_upper_threshold(self) -> Optional[float]:
+        delta = max(
+            abs(self.id_threshold) * self.expansion_initial_delta_fraction,
+            1e-6,
+        )
+        for expansion_index in range(self.expansion_max_evals):
+            if len(self.points) >= self.max_total_evals:
+                self.early_stop_reason = "max_total_evals"
+                return None
+            threshold = self.id_threshold + delta * (2**expansion_index)
+            point = self._evaluate_threshold(
+                threshold,
+                role=f"expansion_{expansion_index + 1}",
+            )
+            if point["afhp"] <= self._low_afhp_target():
+                return float(threshold)
+
+        self.early_stop_reason = "expansion_upper_not_found"
+        return None
+
+    def _fill_afhp_bins(self) -> None:
+        while not self._coverage_satisfied():
+            if len(self.points) >= self.max_total_evals:
+                self.early_stop_reason = "max_total_evals"
+                return
+
+            interval = self._select_widest_fillable_interval()
+            if interval is None:
+                if self.early_stop_reason is None:
+                    self.early_stop_reason = "unfillable_afhp_intervals"
+                return
+
+            left, right = interval
+            threshold_left = left["threshold"]
+            threshold_right = right["threshold"]
+            midpoint = self._midpoint_threshold(threshold_left, threshold_right)
+            if midpoint is None:
+                self._record_unfillable_interval(left, right, "threshold_precision")
+                continue
+            if self._threshold_key(midpoint) in self.seen_thresholds:
+                self._record_unfillable_interval(left, right, "duplicate_threshold")
+                continue
+
+            self._evaluate_threshold(midpoint, role="bisect")
+
+    def _midpoint_threshold(self, left: float, right: float) -> Optional[float]:
+        if not (np.isfinite(left) and np.isfinite(right)):
+            return None
+        midpoint = float((left + right) / 2.0)
+        if midpoint == left or midpoint == right:
+            return None
+        return midpoint
+
+    def _coverage_satisfied(self) -> bool:
+        return self._bins_filled() == self._num_bins()
+
+    def _num_bins(self) -> int:
+        return int(1.0 / self.coverage_fraction)
+
+    def _bin_edges(self):
+        return np.linspace(0.0, 1.0, self._num_bins() + 1)
+
+    def _bin_index(self, afhp: float) -> int:
+        afhp = min(max(float(afhp), 0.0), 1.0)
+        edges = self._bin_edges()
+        bin_index = int(np.searchsorted(edges, afhp, side="right") - 1)
+        return min(max(bin_index, 0), self._num_bins() - 1)
+
+    def _filled_bin_indices(self) -> set:
+        return {self._bin_index(point["afhp"]) for point in self.points}
+
+    def _bins_filled(self) -> int:
+        return len(self._filled_bin_indices())
+
+    def _select_widest_fillable_interval(self):
+        ordered = sorted(self.points, key=lambda point: point["afhp"])
+        best_interval = None
+        best_gap = -1.0
+        for left, right in zip(ordered[:-1], ordered[1:]):
+            gap = right["afhp"] - left["afhp"]
+            if gap <= self.coverage_fraction:
+                continue
+            if not self._interval_has_unfilled_bin(left["afhp"], right["afhp"]):
+                continue
+            if self._interval_recorded_unfillable(left, right):
+                continue
+            if not (np.isfinite(left["threshold"]) and np.isfinite(right["threshold"])):
+                self._record_unfillable_interval(left, right, "infinite_threshold")
+                continue
+            if gap > best_gap:
+                best_gap = gap
+                best_interval = (left, right)
+        return best_interval
+
+    def _interval_has_unfilled_bin(self, afhp_left: float, afhp_right: float) -> bool:
+        filled = self._filled_bin_indices()
+        edges = self._bin_edges()
+        for bin_index, (low, high) in enumerate(zip(edges[:-1], edges[1:])):
+            if afhp_left < high and low < afhp_right and bin_index not in filled:
+                return True
+        return False
+
+    def _interval_recorded_unfillable(self, left, right) -> bool:
+        keys = {left["key"], right["key"]}
+        for interval in self.unfillable_intervals:
+            if interval["keys"] == keys:
+                return True
+        return False
+
+    def _record_unfillable_interval(self, left, right, reason: str) -> None:
+        if self._interval_recorded_unfillable(left, right):
+            return
+        self.unfillable_intervals.append(
+            {
+                "keys": {left["key"], right["key"]},
+                "threshold_low_afhp": left["threshold"],
+                "threshold_high_afhp": right["threshold"],
+                "afhp_low": left["afhp"],
+                "afhp_high": right["afhp"],
+                "reason": reason,
+            }
+        )
+
+    def _coverage_gap(self) -> float:
+        values = sorted(min(max(point["afhp"], 0.0), 1.0) for point in self.points)
+        boundaries = [0.0, *values, 1.0]
+        return max(
+            boundaries[index + 1] - boundaries[index]
+            for index in range(len(boundaries) - 1)
+        )
+
+    def _sampling_result(self) -> SamplingResult:
+        upper_threshold = self.upper_threshold
+        if upper_threshold is None:
+            finite_thresholds = [
+                point["threshold"]
+                for point in self.points
+                if np.isfinite(point["threshold"])
+            ]
+            upper_threshold = (
+                max(finite_thresholds) if finite_thresholds else self.id_threshold
+            )
+
+        threshold_span = max(float(upper_threshold) - self.id_threshold, 0.0)
+        curve_points = []
+        for point in self.points:
+            threshold = point["threshold"]
+            if np.isposinf(threshold):
+                desired_percentile = 1.0
+            elif threshold_span > 0.0:
+                desired_percentile = (threshold - self.id_threshold) / threshold_span
+                desired_percentile = min(max(float(desired_percentile), 0.0), 1.0)
+            else:
+                desired_percentile = 0.0
+
+            point["meta"]["expansion_upper_threshold"] = upper_threshold
+            curve_points.append(
+                CurvePoint(
+                    desired_percentile=desired_percentile,
+                    afhp=point["afhp"],
+                    performance=point["performance"],
+                    repeats_used=1,
+                    order=point["order"],
+                    meta=point["meta"],
+                )
+            )
+
+        unfillable_intervals = [
+            {key: value for key, value in interval.items() if key != "keys"}
+            for interval in self.unfillable_intervals
+        ]
+        info = {
+            "threshold_strategy": self.strategy_name,
+            "degenerate_calibration_detected": True,
+            "id_threshold": self.id_threshold,
+            "expansion_upper_threshold": upper_threshold,
+            "unfillable_afhp_intervals": unfillable_intervals,
+            "bins_filled": self._bins_filled(),
+            "total_bins": self._num_bins(),
+            "coverage_percentage": 100.0 * self._bins_filled() / self._num_bins(),
+            "early_stop_reason": self.early_stop_reason,
+            "calibration_diagnostics": self.diagnostics,
+        }
+        return SamplingResult(
+            points=curve_points,
+            coverage_x_max_gap=self._coverage_gap(),
+            coverage_y_max_gap=0.0,
+            total_evals=len(self.points),
+            early_stop_reason=self.early_stop_reason,
+            monotonicity_violations_remaining=False,
+            info=info,
+        )
+
+
 def create_level_afhp_threshold_sampler(
     policy,
     evaluator: Evaluator,
@@ -81,6 +447,11 @@ def create_level_afhp_threshold_sampler(
     max_total_evals: int = 200,
     logger=None,
     wandb_run=None,
+    image_svdd_degenerate_strategy: str = IMAGE_SVDD_DEGENERATE_STRATEGY,
+    image_svdd_expansion_max_evals: int = DEFAULT_IMAGE_SVDD_EXPANSION_MAX_EVALS,
+    image_svdd_expansion_initial_delta_fraction: float = (
+        DEFAULT_IMAGE_SVDD_EXPANSION_INITIAL_DELTA_FRACTION
+    ),
 ):
     """
     Create the joint-coverage sampler for threshold evaluation.
@@ -175,6 +546,31 @@ def create_level_afhp_threshold_sampler(
 
     # Convert coverate fraction to num_bins
     num_bins = int(1.0 / coverage_fraction)
+
+    image_svdd_diagnostics = image_svdd_calibration_diagnostics(policy)
+    if (
+        image_svdd_degenerate_strategy == IMAGE_SVDD_DEGENERATE_STRATEGY
+        and image_svdd_diagnostics["is_degenerate"]
+    ):
+        id_threshold = image_svdd_diagnostics["max_score"]
+        message = (
+            "Image SVDD calibration scores are degenerate; using raw threshold "
+            f"expansion above ID threshold {id_threshold:.8g}. "
+            f"Diagnostics: {image_svdd_diagnostics}"
+        )
+        print(message)
+        logging.warning(message)
+        return ImageSVDDRawThresholdSampler(
+            eval_with_threshold=_eval_with_threshold,
+            id_threshold=id_threshold,
+            coverage_fraction=coverage_fraction,
+            max_total_evals=max_total_evals,
+            expansion_max_evals=image_svdd_expansion_max_evals,
+            expansion_initial_delta_fraction=(
+                image_svdd_expansion_initial_delta_fraction
+            ),
+            diagnostics=image_svdd_diagnostics,
+        )
 
     # Use WaitPolicyAwareSampler if we have a WaitPolicy, otherwise use regular BinarySearchSampler
     if isinstance(policy, WaitPolicy):

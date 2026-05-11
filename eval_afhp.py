@@ -174,9 +174,7 @@ def main():
     start_time = time.time()
 
     # Load all seed splits, then explicitly map semantic seed splits to env splits.
-    seeds = load_level_seed_splits(
-        config, required_splits=("ood_eval", "validation")
-    )
+    seeds = load_level_seed_splits(config, required_splits=("ood_eval", "validation"))
     level_seeds_by_split = {
         "test": seeds["ood_eval"],
         "cal": seeds["validation"],
@@ -297,6 +295,21 @@ def main():
             max_total_evals=max_total_evals,
             logger=wandb_logger,
             wandb_run=exp,
+            image_svdd_degenerate_strategy=getattr(
+                config.evaluation,
+                "image_svdd_degenerate_strategy",
+                "expand_above_id",
+            ),
+            image_svdd_expansion_max_evals=getattr(
+                config.evaluation,
+                "image_svdd_expansion_max_evals",
+                12,
+            ),
+            image_svdd_expansion_initial_delta_fraction=getattr(
+                config.evaluation,
+                "image_svdd_expansion_initial_delta_fraction",
+                1e-4,
+            ),
         )
     else:
         raise ValueError(f"Invalid threshold sampler: {threshold_sampler}")
@@ -317,6 +330,11 @@ def main():
         f"Coverage x-gap: {sampling_result.coverage_x_max_gap:.3f}, "
         f"y-gap: {sampling_result.coverage_y_max_gap:.3f}"
     )
+    if sampling_result.info is not None:
+        logging.info("Sampling info: %s", sampling_result.info)
+        threshold_strategy = sampling_result.info.get("threshold_strategy")
+        if threshold_strategy is not None:
+            print(f"Threshold strategy: {threshold_strategy}")
 
     # TODO: Rename
     # The sort metric is called afhp for legacy reasons, sort metric or threshold metric
@@ -344,6 +362,7 @@ def main():
         desired_percentiles=np.array([pt.desired_percentile for pt in sorted_points]),
         meta=np.array([pt.meta for pt in sorted_points]),
         order=np.array([pt.order for pt in sorted_points]),
+        sampling_info=np.array([sampling_result.info], dtype=object),
     )
 
     end_time = time.time()

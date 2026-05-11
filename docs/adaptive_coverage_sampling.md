@@ -98,6 +98,8 @@ The `threshold_sampler` config option selects the output axis:
 - `"step_afhp"`: Covers the step AFHP axis (% of steps where help is requested).
 - `"level_afhp"`: Covers the level AFHP axis (% of episodes where help is requested).
 
-Both use the same `BinarySearchSampler` algorithm; they differ only in which metric defines the output bins.
+By default, both use the same `BinarySearchSampler` algorithm; they differ only in which metric defines the output bins.
 
 There is also a `WaitPolicyAwareSampler` (in `lib/acs/src/acs/wait_policy_sampler.py`) that extends the binary search to detect regions where the output doesn't change despite varying the threshold — it declares these "unfillable" and stops searching there.
+
+For image DeepSVDD (`svdd-image`), eval detects the case where ID calibration episode-max scores collapse to a single threshold. In that case, percentile sampling cannot reach thresholds above the ID plateau, so eval falls back to a raw-threshold expansion sampler. The fallback evaluates full AFHP runs at thresholds above the ID maximum, bisects finite threshold intervals that can fill AFHP bins, and stops with diagnostic metadata when intervals are unfillable instead of repeatedly evaluating duplicate percentile thresholds.
