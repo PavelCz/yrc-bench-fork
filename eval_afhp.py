@@ -57,6 +57,27 @@ def _select_calibration_seeds(config, seeds):
     return cal_seeds[:calibration_levels]
 
 
+def create_eval_wandb_logger(config):
+    if not config.use_wandb:
+        return None, None
+
+    save_dir = Path(str(get_global_variable("experiment_dir")))
+    exp = init_eval_wandb_run(
+        config,
+        name=config.exp_name,
+        job_type="train",
+        run_config=config,
+        tolerate_failure=True,
+    )
+    if exp is None:
+        return None, None
+
+    return exp, WandbLogger(
+        save_dir=save_dir,
+        experiment=exp,
+    )
+
+
 def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs, cal_seeds):
     """Calibrate the policy's train_percentile_step/level methods.
 
@@ -266,20 +287,7 @@ def main():
     if coverage_fraction < 0.01:
         raise ValueError("Coverage fraction must be at least 0.01")
 
-    # Initialize wandb logger
-    save_dir = Path(str(get_global_variable("experiment_dir")))
-
-    exp = init_eval_wandb_run(
-        config,
-        name=config.exp_name,
-        job_type="train",
-        run_config=config,
-    )
-
-    wandb_logger = WandbLogger(
-        save_dir=save_dir,
-        experiment=exp,
-    )
+    exp, wandb_logger = create_eval_wandb_logger(config)
 
     split = "test"
 
