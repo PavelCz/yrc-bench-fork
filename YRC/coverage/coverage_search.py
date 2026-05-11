@@ -788,11 +788,28 @@ def create_level_afhp_threshold_sampler(
     num_bins = int(1.0 / coverage_fraction)
 
     image_svdd_diagnostics = image_svdd_calibration_diagnostics(policy)
+    logging.info(
+        "Sampler dispatch: policy_type=%s, clf_name=%s, feature_type=%s, "
+        "image_svdd_degenerate_strategy=%r, image_svdd_diagnostics=%s",
+        type(policy).__name__,
+        getattr(policy, "clf_name", None),
+        getattr(policy, "feature_type", None),
+        image_svdd_degenerate_strategy,
+        image_svdd_diagnostics,
+    )
     if (
         image_svdd_degenerate_strategy == IMAGE_SVDD_DEGENERATE_STRATEGY
         and image_svdd_diagnostics["is_image_svdd"]
         and image_svdd_diagnostics["max_score"] is not None
     ):
+        logging.info(
+            "Sampler dispatch: selecting ImageSVDDProbeSampler "
+            "(strategy=%s, max_score=%.8g, unique_count=%d, is_degenerate=%s)",
+            image_svdd_degenerate_strategy,
+            image_svdd_diagnostics["max_score"],
+            image_svdd_diagnostics.get("unique_count", -1),
+            image_svdd_diagnostics["is_degenerate"],
+        )
         return ImageSVDDProbeSampler(
             diagnostics=image_svdd_diagnostics,
             coverage_fraction=coverage_fraction,
@@ -817,6 +834,7 @@ def create_level_afhp_threshold_sampler(
 
     # Use WaitPolicyAwareSampler if we have a WaitPolicy, otherwise use regular BinarySearchSampler
     if isinstance(policy, WaitPolicy):
+        logging.info("Sampler dispatch: selecting WaitPolicyAwareSampler")
         return WaitPolicyAwareSampler(
             policy_checker=lambda: isinstance(policy, WaitPolicy),
             thresholds_evaluated=thresholds_evaluated,
@@ -829,6 +847,10 @@ def create_level_afhp_threshold_sampler(
             output_range=(0.0, 1.0),
         )
     else:
+        logging.info(
+            "Sampler dispatch: selecting BinarySearchSampler "
+            "(image_svdd probe NOT triggered)"
+        )
         return BinarySearchSampler(
             eval_at_percentile=eval_at_percentile,
             eval_at_lower_extreme=eval_at_lower_extreme,
