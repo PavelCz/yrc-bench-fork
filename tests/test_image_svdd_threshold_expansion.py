@@ -5,9 +5,11 @@ import torch
 
 from YRC.core.configs.global_configs import set_global_variable
 from YRC.coverage.coverage_search import (
+    ImageSVDDProbeSampler,
     ImageSVDDRawThresholdSampler,
     create_level_afhp_threshold_sampler,
     image_svdd_calibration_diagnostics,
+    image_svdd_probe_decision,
 )
 from YRC.policies.ood import OODPolicy
 
@@ -51,7 +53,7 @@ def test_image_svdd_degenerate_calibration_is_detected():
     assert diagnostics["max_score"] == 0.32
 
 
-def test_non_degenerate_or_non_image_calibration_does_not_trigger():
+def test_non_degenerate_or_non_image_calibration_diagnostics():
     image_policy = make_ood_policy(scores=[0.32, 0.33, 0.34])
     latent_policy = make_ood_policy(feature_type="hidden", scores=[0.32, 0.32, 0.32])
 
@@ -71,7 +73,47 @@ def test_create_level_sampler_selects_image_svdd_raw_threshold_fallback():
         coverage_fraction=0.25,
     )
 
-    assert isinstance(sampler, ImageSVDDRawThresholdSampler)
+    assert isinstance(sampler, ImageSVDDProbeSampler)
+
+
+def test_image_svdd_probe_decision_triggers_on_non_degenerate_high_afhp_probes():
+    diagnostics = image_svdd_calibration_diagnostics(
+        make_ood_policy(scores=[0.32, 0.33, 0.34])
+    )
+    finite_probe_points = [
+        {"threshold": 0.3201, "afhp": 1.0},
+        {"threshold": 0.325, "afhp": 1.0},
+        {"threshold": 0.33, "afhp": 1.0},
+    ]
+
+    decision = image_svdd_probe_decision(
+        diagnostics,
+        finite_probe_points,
+        coverage_fraction=0.25,
+    )
+
+    assert decision["should_expand"]
+    assert decision["reason"] == "all_finite_probes_high_afhp"
+
+
+def test_image_svdd_probe_decision_keeps_healthy_percentile_search():
+    diagnostics = image_svdd_calibration_diagnostics(
+        make_ood_policy(scores=[0.32, 0.33, 0.34])
+    )
+    finite_probe_points = [
+        {"threshold": 0.3201, "afhp": 0.95},
+        {"threshold": 0.325, "afhp": 0.55},
+        {"threshold": 0.33, "afhp": 0.10},
+    ]
+
+    decision = image_svdd_probe_decision(
+        diagnostics,
+        finite_probe_points,
+        coverage_fraction=0.25,
+    )
+
+    assert not decision["should_expand"]
+    assert decision["reason"] == "probe_percentile_search_healthy"
 
 
 def test_raw_threshold_sampler_searches_above_id_threshold():

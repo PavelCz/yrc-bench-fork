@@ -33,6 +33,8 @@ except ImportError:
 IMAGE_SVDD_DEGENERATE_STRATEGY = "expand_above_id"
 DEFAULT_IMAGE_SVDD_EXPANSION_MAX_EVALS = 12
 DEFAULT_IMAGE_SVDD_EXPANSION_INITIAL_DELTA_FRACTION = 1e-4
+DEFAULT_IMAGE_SVDD_PROBE_PERCENTILES = (0.25, 0.5, 0.75, 0.9)
+DEFAULT_IMAGE_SVDD_HIGH_AFHP_THRESHOLD = 0.99
 DEFAULT_SCORE_TOLERANCE_ABS = 1e-8
 DEFAULT_SCORE_TOLERANCE_REL = 1e-6
 
@@ -56,7 +58,7 @@ class EvalStepTracker:
 
         # Print to console
         message = (
-            f"[Eval {self.step:3d}] threshold={threshold:10.4f}, "
+            f"[Eval {self.step:3d}] threshold={threshold:14.8g}, "
             f"step_afhp={step_afhp:6.2f}%, level_afhp={level_afhp:6.2f}%, "
             f"performance={performance:.4f}"
         )
@@ -135,6 +137,117 @@ def image_svdd_calibration_diagnostics(
         }
     )
     return diagnostics
+
+
+def _unique_count(values: np.ndarray, tolerance: float) -> int:
+    if values.size == 0:
+        return 0
+    sorted_values = np.sort(values)
+    return int(1 + np.count_nonzero(np.diff(sorted_values) > tolerance))
+
+
+def _afhp_bin_index(afhp: float, coverage_fraction: float) -> int:
+    num_bins = int(1.0 / coverage_fraction)
+    afhp = min(max(float(afhp), 0.0), 1.0)
+    edges = np.linspace(0.0, 1.0, num_bins + 1)
+    bin_index = int(np.searchsorted(edges, afhp, side="right") - 1)
+    return min(max(bin_index, 0), num_bins - 1)
+
+
+def image_svdd_probe_decision(
+    diagnostics: Dict[str, Any],
+    finite_probe_points: List[Dict[str, Any]],
+    *,
+    coverage_fraction: float,
+    high_afhp_threshold: float = DEFAULT_IMAGE_SVDD_HIGH_AFHP_THRESHOLD,
+) -> Dict[str, Any]:
+    """Decide whether image SVDD should switch from percentile search to raw expansion."""
+    if not diagnostics.get("is_image_svdd", False):
+        return {"should_expand": False, "reason": "not_image_svdd"}
+    if diagnostics.get("max_score") is None:
+        return {"should_expand": False, "reason": "missing_id_threshold"}
+    if diagnostics.get("is_degenerate", False):
+        return {"should_expand": True, "reason": "degenerate_calibration"}
+    if not finite_probe_points:
+        return {"should_expand": False, "reason": "no_finite_probe_points"}
+
+    tolerance = float(
+        diagnostics.get("tolerance")
+        or max(
+            DEFAULT_SCORE_TOLERANCE_ABS,
+            abs(float(diagnostics["max_score"])) * DEFAULT_SCORE_TOLERANCE_REL,
+        )
+    )
+    finite_thresholds = np.asarray(
+        [
+            point["threshold"]
+            for point in finite_probe_points
+            if np.isfinite(point["threshold"])
+        ],
+        dtype=float,
+    )
+    if finite_thresholds.size == 0:
+        return {"should_expand": False, "reason": "no_finite_probe_thresholds"}
+
+    threshold_unique_count = _unique_count(finite_thresholds, tolerance)
+    if threshold_unique_count < 2:
+        return {
+            "should_expand": True,
+            "reason": "duplicate_finite_thresholds",
+            "threshold_unique_count": threshold_unique_count,
+        }
+
+    finite_afhps = np.asarray(
+        [point["afhp"] for point in finite_probe_points], dtype=float
+    )
+    if np.all(finite_afhps >= high_afhp_threshold):
+        return {
+            "should_expand": True,
+            "reason": "all_finite_probes_high_afhp",
+            "min_probe_afhp": float(np.min(finite_afhps)),
+            "max_probe_afhp": float(np.max(finite_afhps)),
+        }
+
+    probe_bins = {
+        _afhp_bin_index(point["afhp"], coverage_fraction)
+        for point in finite_probe_points
+    }
+    return {
+        "should_expand": False,
+        "reason": "probe_percentile_search_healthy",
+        "threshold_unique_count": threshold_unique_count,
+        "probe_bin_count": len(probe_bins),
+        "min_probe_afhp": float(np.min(finite_afhps)),
+        "max_probe_afhp": float(np.max(finite_afhps)),
+    }
+
+
+def _log_image_svdd_probe_point(label: str, threshold: float, afhp: float) -> None:
+    logging.info(
+        "Image SVDD probe %s: threshold=%.8g, level_afhp=%.4f",
+        label,
+        threshold,
+        afhp,
+    )
+
+
+def _augment_sampling_result_with_probe_info(
+    result: SamplingResult,
+    *,
+    probe_info: Dict[str, Any],
+    probe_eval_count: int,
+) -> SamplingResult:
+    info = dict(result.info or {})
+    info.update(probe_info)
+    return SamplingResult(
+        points=result.points,
+        coverage_x_max_gap=result.coverage_x_max_gap,
+        coverage_y_max_gap=result.coverage_y_max_gap,
+        total_evals=result.total_evals + probe_eval_count,
+        early_stop_reason=result.early_stop_reason,
+        monotonicity_violations_remaining=result.monotonicity_violations_remaining,
+        info=info,
+    )
 
 
 class ImageSVDDRawThresholdSampler:
@@ -224,7 +337,9 @@ class ImageSVDDRawThresholdSampler:
         metadata.update(
             {
                 "threshold_strategy": self.strategy_name,
-                "degenerate_calibration_detected": True,
+                "degenerate_calibration_detected": bool(
+                    self.diagnostics.get("is_degenerate", False)
+                ),
                 "id_threshold": self.id_threshold,
                 "raw_threshold": float(threshold),
                 "threshold_role": role,
@@ -416,7 +531,9 @@ class ImageSVDDRawThresholdSampler:
         ]
         info = {
             "threshold_strategy": self.strategy_name,
-            "degenerate_calibration_detected": True,
+            "degenerate_calibration_detected": bool(
+                self.diagnostics.get("is_degenerate", False)
+            ),
             "id_threshold": self.id_threshold,
             "expansion_upper_threshold": upper_threshold,
             "unfillable_afhp_intervals": unfillable_intervals,
@@ -434,6 +551,129 @@ class ImageSVDDRawThresholdSampler:
             early_stop_reason=self.early_stop_reason,
             monotonicity_violations_remaining=False,
             info=info,
+        )
+
+
+class ImageSVDDProbeSampler:
+    """Probe percentile-space behavior before choosing the image-SVDD sampler path."""
+
+    def __init__(
+        self,
+        *,
+        diagnostics: Dict[str, Any],
+        coverage_fraction: float,
+        eval_at_percentile: Callable[[float], Tuple[float, float, Dict[str, Any]]],
+        eval_at_lower_extreme: Callable[[], Tuple[float, float, Dict[str, Any]]],
+        eval_at_upper_extreme: Callable[[], Tuple[float, float, Dict[str, Any]]],
+        eval_with_threshold: Callable[[float], Tuple[float, float, Dict[str, Any]]],
+        binary_sampler_factory: Callable[[], Any],
+        max_total_evals: int,
+        expansion_max_evals: int,
+        expansion_initial_delta_fraction: float,
+        strategy_name: str,
+        probe_percentiles: Tuple[float, ...] = DEFAULT_IMAGE_SVDD_PROBE_PERCENTILES,
+    ) -> None:
+        self.diagnostics = diagnostics
+        self.coverage_fraction = coverage_fraction
+        self.eval_at_percentile = eval_at_percentile
+        self.eval_at_lower_extreme = eval_at_lower_extreme
+        self.eval_at_upper_extreme = eval_at_upper_extreme
+        self.eval_with_threshold = eval_with_threshold
+        self.binary_sampler_factory = binary_sampler_factory
+        self.max_total_evals = max_total_evals
+        self.expansion_max_evals = expansion_max_evals
+        self.expansion_initial_delta_fraction = expansion_initial_delta_fraction
+        self.strategy_name = strategy_name
+        self.probe_percentiles = tuple(probe_percentiles)
+
+    def run(self) -> SamplingResult:
+        logging.info(
+            "Image SVDD percentile probe starting with percentiles=%s",
+            self.probe_percentiles,
+        )
+        probe_points = []
+
+        lower_afhp, _, lower_meta = self.eval_at_lower_extreme()
+        lower_threshold = float(lower_meta["threshold"])
+        _log_image_svdd_probe_point("lower_extreme", lower_threshold, lower_afhp)
+        probe_points.append(
+            {"label": "lower_extreme", "threshold": lower_threshold, "afhp": lower_afhp}
+        )
+
+        upper_afhp, _, upper_meta = self.eval_at_upper_extreme()
+        upper_threshold = float(upper_meta["threshold"])
+        _log_image_svdd_probe_point("upper_extreme", upper_threshold, upper_afhp)
+        probe_points.append(
+            {"label": "upper_extreme", "threshold": upper_threshold, "afhp": upper_afhp}
+        )
+
+        finite_probe_points = []
+        for percentile in self.probe_percentiles:
+            afhp, _, meta = self.eval_at_percentile(percentile)
+            threshold = float(meta["threshold"])
+            label = f"p={percentile:.2f}"
+            _log_image_svdd_probe_point(label, threshold, afhp)
+            point = {
+                "label": label,
+                "percentile": percentile,
+                "threshold": threshold,
+                "afhp": afhp,
+            }
+            probe_points.append(point)
+            if np.isfinite(threshold):
+                finite_probe_points.append(point)
+
+        decision = image_svdd_probe_decision(
+            self.diagnostics,
+            finite_probe_points,
+            coverage_fraction=self.coverage_fraction,
+        )
+        probe_info = {
+            "image_svdd_probe_triggered": True,
+            "image_svdd_probe_points": probe_points,
+            "image_svdd_probe_reason": decision["reason"],
+        }
+        probe_info.update(
+            {
+                key: value
+                for key, value in decision.items()
+                if key not in {"should_expand", "reason"}
+            }
+        )
+
+        if decision["should_expand"]:
+            id_threshold = float(self.diagnostics["max_score"])
+            logging.warning(
+                "Image SVDD percentile search collapsed; switching to raw threshold expansion above ID threshold %.8g. Reason=%s Diagnostics=%s",
+                id_threshold,
+                decision["reason"],
+                self.diagnostics,
+            )
+            result = ImageSVDDRawThresholdSampler(
+                eval_with_threshold=self.eval_with_threshold,
+                id_threshold=id_threshold,
+                coverage_fraction=self.coverage_fraction,
+                max_total_evals=max(self.max_total_evals - len(probe_points), 2),
+                expansion_max_evals=self.expansion_max_evals,
+                expansion_initial_delta_fraction=self.expansion_initial_delta_fraction,
+                strategy_name=self.strategy_name,
+                diagnostics=self.diagnostics,
+            ).run()
+            return _augment_sampling_result_with_probe_info(
+                result,
+                probe_info=probe_info,
+                probe_eval_count=len(probe_points),
+            )
+
+        logging.info(
+            "Image SVDD percentile probe looks healthy; continuing with percentile sampler. Decision=%s",
+            decision,
+        )
+        result = self.binary_sampler_factory().run()
+        return _augment_sampling_result_with_probe_info(
+            result,
+            probe_info=probe_info,
+            probe_eval_count=len(probe_points),
         )
 
 
@@ -550,26 +790,29 @@ def create_level_afhp_threshold_sampler(
     image_svdd_diagnostics = image_svdd_calibration_diagnostics(policy)
     if (
         image_svdd_degenerate_strategy == IMAGE_SVDD_DEGENERATE_STRATEGY
-        and image_svdd_diagnostics["is_degenerate"]
+        and image_svdd_diagnostics["is_image_svdd"]
+        and image_svdd_diagnostics["max_score"] is not None
     ):
-        id_threshold = image_svdd_diagnostics["max_score"]
-        message = (
-            "Image SVDD calibration scores are degenerate; using raw threshold "
-            f"expansion above ID threshold {id_threshold:.8g}. "
-            f"Diagnostics: {image_svdd_diagnostics}"
-        )
-        print(message)
-        logging.warning(message)
-        return ImageSVDDRawThresholdSampler(
-            eval_with_threshold=_eval_with_threshold,
-            id_threshold=id_threshold,
+        return ImageSVDDProbeSampler(
+            diagnostics=image_svdd_diagnostics,
             coverage_fraction=coverage_fraction,
+            eval_at_percentile=eval_at_percentile,
+            eval_at_lower_extreme=eval_at_lower_extreme,
+            eval_at_upper_extreme=eval_at_upper_extreme,
+            eval_with_threshold=_eval_with_threshold,
+            binary_sampler_factory=lambda: BinarySearchSampler(
+                eval_at_percentile=eval_at_percentile,
+                eval_at_lower_extreme=eval_at_lower_extreme,
+                eval_at_upper_extreme=eval_at_upper_extreme,
+                num_bins=num_bins,
+                output_range=(0.0, 1.0),
+            ),
             max_total_evals=max_total_evals,
             expansion_max_evals=image_svdd_expansion_max_evals,
             expansion_initial_delta_fraction=(
                 image_svdd_expansion_initial_delta_fraction
             ),
-            diagnostics=image_svdd_diagnostics,
+            strategy_name=image_svdd_degenerate_strategy,
         )
 
     # Use WaitPolicyAwareSampler if we have a WaitPolicy, otherwise use regular BinarySearchSampler
