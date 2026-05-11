@@ -62,8 +62,22 @@ def test_non_degenerate_or_non_image_calibration_diagnostics():
     assert not image_svdd_calibration_diagnostics(latent_policy)["is_degenerate"]
 
 
-def test_create_level_sampler_selects_image_svdd_raw_threshold_fallback():
+def test_create_level_sampler_selects_image_svdd_probe_sampler():
     policy = make_ood_policy(scores=[0.32, 0.32, 0.32])
+
+    sampler = create_level_afhp_threshold_sampler(
+        policy=policy,
+        evaluator=object(),
+        envs_factory=lambda: None,
+        split="test",
+        coverage_fraction=0.25,
+    )
+
+    assert isinstance(sampler, ImageSVDDProbeSampler)
+
+
+def test_create_level_sampler_selects_probe_sampler_for_non_degenerate_image_svdd():
+    policy = make_ood_policy(scores=[0.31, 0.32, 0.33, 0.34])
 
     sampler = create_level_afhp_threshold_sampler(
         policy=policy,
