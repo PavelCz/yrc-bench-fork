@@ -49,6 +49,20 @@ def test_deep_svdd_logs_validation_loss_when_validation_data_is_provided():
     assert "val/best_loss" in metrics
 
 
+def test_deep_svdd_defaults_drop_explicit_weight_regularizer():
+    clf = DeepSVDD(
+        n_features=2,
+        hidden_neurons=[4, 2],
+        epochs=1,
+        batch_size=4,
+        feature_type="hidden",
+        benchmark="procgen",
+        input_shape=(1, 4),
+    )
+
+    assert clf.explicit_wd_coef == 0.0
+
+
 def test_deep_svdd_omits_validation_loss_without_validation_data():
     logger = RecordingLogger()
     clf = DeepSVDD(
@@ -210,6 +224,23 @@ def test_run_svdd_train_command_passes_seed_file_and_validation_levels():
     assert "-rollout_max_levels 128" in command
     assert 'export SM_OUTPUT_DIR="/svdd/prefix"' in command
     assert "#SBATCH --output=/logs/svdd_train/prefix/2026-04-29/%x_%j.out" in command
+
+
+def test_run_svdd_train_presets_only_include_paper_regularized():
+    scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+    sys.path.insert(0, str(scripts_dir))
+    try:
+        import run_svdd_train
+    finally:
+        sys.path.pop(0)
+
+    assert set(run_svdd_train.VARIANT_PRESETS) == {"paper-regularized"}
+    preset_prefix, preset_flags = run_svdd_train.VARIANT_PRESETS["paper-regularized"]
+    assert preset_prefix == "paper-regularized"
+    assert preset_flags == [
+        "-center_init_post_activation true",
+        "-l2_regularizer 1e-6",
+    ]
 
 
 def test_run_svdd_train_default_rollout_dir_matches_gather_output_layout():

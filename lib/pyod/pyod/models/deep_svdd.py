@@ -120,9 +120,9 @@ class InnerDeepSVDD(nn.Module):
         intermediate_output = {}
         # When center_init_post_activation is True, the center c is captured
         # from image(phi) — i.e. after the trailing activation — as required
-        # by Ruff et al. (2018) §3.1, §4.1. The default (False) reproduces
-        # the unpatched modanesh/pyod behaviour. See
-        # docs/image_svdd_collapse_bugs.md, Bug 2.
+        # by Ruff et al. (2018) §3.1, §4.1. The default (False) preserves
+        # the inherited PyOD center-init hook behavior. See the
+        # paper-regularized preset in docs/image_svdd_collapse_bugs.md.
         hook_target_name = (
             f"hidden_activation_e{len(self.hidden_neurons)}"
             if self.center_init_post_activation
@@ -364,7 +364,7 @@ class DeepSVDD(BaseDetector):
         contamination=0.1,
         input_shape=None,
         logger=None,
-        explicit_wd_coef=1.0,
+        explicit_wd_coef=0.0,
         center_init_post_activation=False,
     ):
         super(DeepSVDD, self).__init__(contamination=contamination)
@@ -391,8 +391,9 @@ class DeepSVDD(BaseDetector):
         self.input_shape = input_shape
         self.logger = logger  # Wandb logger for training metrics
         # Coefficient on the explicit Frobenius w_d term in _loss.
-        # Defaults to 1.0 (modanesh/pyod behaviour); set to 0.0 to drop the
-        # term entirely. See docs/image_svdd_collapse_bugs.md, Bug 3.
+        # This fork defaults to 0.0 so the optimiser's weight_decay is the
+        # only active weight regulariser. Set to 1.0 to reproduce legacy
+        # modanesh/pyod behaviour.
         self.explicit_wd_coef = explicit_wd_coef
         # See InnerDeepSVDD.__init__.
         self.center_init_post_activation = center_init_post_activation
@@ -668,8 +669,8 @@ class DeepSVDD(BaseDetector):
     ):
         intermediate_output = {}
         # Mirrors InnerDeepSVDD._init_c: capture c from image(phi) iff
-        # center_init_post_activation is set. See
-        # docs/image_svdd_collapse_bugs.md, Bug 2.
+        # center_init_post_activation is set. See the paper-regularized
+        # preset in docs/image_svdd_collapse_bugs.md.
         hook_target_name = (
             f"hidden_activation_e{len(self.hidden_neurons)}"
             if self.center_init_post_activation
@@ -782,11 +783,8 @@ class DeepSVDD(BaseDetector):
 
     def _loss(self, outputs, batch_x):
         dist = torch.sum((outputs - self.c) ** 2, dim=-1)
-        # explicit_wd_coef defaults to 1.0 (modanesh/pyod behaviour). Set to
-        # 0.0 to drop the explicit regulariser and rely solely on the
-        # optimiser's weight_decay (upstream yzhao062/pyod uses 1e-6 here,
-        # which is functionally equivalent to 0.0). See
-        # docs/image_svdd_collapse_bugs.md, Bug 3.
+        # explicit_wd_coef defaults to 0.0 in this fork. Set it to 1.0 to
+        # reproduce the legacy modanesh/pyod full-strength explicit term.
         w_d = self.explicit_wd_coef * sum(
             [torch.linalg.norm(w) for w in self.model_.parameters()]
         )

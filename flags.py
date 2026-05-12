@@ -246,15 +246,15 @@ def make():
         ),
     )
 
-    # DeepSVDD bugfix-variant toggles (see docs/image_svdd_collapse_bugs.md).
+    # DeepSVDD knobs (see docs/image_svdd_collapse_bugs.md).
     parser.add_argument(
         "-explicit_wd_coef",
         "--algorithm.explicit_wd_coef",
         type=float,
         help=(
             "Coefficient on the explicit Frobenius w_d term in DeepSVDD._loss. "
-            "Defaults to 1.0 (modanesh/pyod behaviour); set to 0.0 to drop the "
-            "term and rely on the optimiser's weight_decay only."
+            "Defaults to 0.0 in this fork; set to 1.0 to reproduce legacy "
+            "modanesh/pyod behaviour."
         ),
     )
     parser.add_argument(

@@ -36,18 +36,14 @@ TRAIN_DEFAULTS = {
 # Feature type choices
 FEATURE_TYPES = ["obs", "hidden"]
 
-# Bugfix-variant presets. See docs/image_svdd_collapse_bugs.md.
-# Each entry maps a variant name to (prefix override, extra train_svdd.py
-# CLI flags). v1 reproduces current behaviour; v2 also drops the explicit
-# w_d term; v3 also moves the center-init hook to image(phi) and lowers
-# the optimiser's weight_decay toward the paper's lambda = 1e-6.
+# Optional DeepSVDD presets. See docs/image_svdd_collapse_bugs.md.
+# Each entry maps a preset name to (prefix override, extra train_svdd.py
+# CLI flags). The default path already includes the collapse bug fixes; the
+# preset below additionally applies the paper-aligned regularisation settings.
 VARIANT_PRESETS = {
-    "v1": ("bugfix-v1", []),
-    "v2": ("bugfix-v2", ["-explicit_wd_coef 0.0"]),
-    "v3": (
-        "bugfix-v3",
+    "paper-regularized": (
+        "paper-regularized",
         [
-            "-explicit_wd_coef 0.0",
             "-center_init_post_activation true",
             "-l2_regularizer 1e-6",
         ],
@@ -175,17 +171,17 @@ def main():
     parser.add_argument(
         "--prefix",
         help=(
-            "Experiment group prefix. Required unless --variant is set, in which "
-            "case --variant chooses the prefix (bugfix-v{1,2,3})."
+            "Experiment group prefix for normal runs. Required unless selecting "
+            "an optional preset with --variant."
         ),
     )
     parser.add_argument(
         "--variant",
         choices=list(VARIANT_PRESETS.keys()),
         help=(
-            "Bugfix variant preset (see docs/image_svdd_collapse_bugs.md). "
-            "Overrides --prefix and adds the variant's DeepSVDD CLI flags to "
-            "train_svdd.py."
+            "Optional DeepSVDD preset (currently: paper-regularized; see "
+            "docs/image_svdd_collapse_bugs.md). Overrides --prefix and adds "
+            "the preset's DeepSVDD CLI flags to train_svdd.py."
         ),
     )
     parser.add_argument(
@@ -298,10 +294,7 @@ def main():
     seeds_base_path = paths["seeds_base"]
     svdd_output_dir = get_svdd_output_dir(paths["svdd_base"], args.prefix)
     log_dir = (
-        Path(paths["log_base"])
-        / "svdd_train"
-        / args.prefix
-        / date.today().isoformat()
+        Path(paths["log_base"]) / "svdd_train" / args.prefix / date.today().isoformat()
     )
     rollouts_prefix = args.rollouts_prefix
 
