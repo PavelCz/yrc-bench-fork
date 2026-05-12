@@ -142,13 +142,18 @@ class InnerDeepSVDD(nn.Module):
         else:
             channels = self.input_shape[1]
         layers = nn.Sequential()
+        # bias=False on every encoder layer is a Deep SVDD requirement
+        # (Ruff et al. 2018, Proposition 2 / §4.1); see
+        # docs/image_svdd_collapse_bugs.md.
         layers.add_module(
-            "cnn_layer1", nn.Conv2d(channels, 16, kernel_size=3, stride=1, padding=1)
+            "cnn_layer1",
+            nn.Conv2d(channels, 16, kernel_size=3, stride=1, padding=1, bias=False),
         )
         layers.add_module("cnn_activation1", nn.ReLU())
         layers.add_module("cnn_pool", nn.MaxPool2d(kernel_size=2, stride=2))
         layers.add_module(
-            "cnn_layer2", nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1)
+            "cnn_layer2",
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1, bias=False),
         )
         layers.add_module("cnn_activation2", nn.ReLU())
         layers.add_module("cnn_adaptive_pool", nn.AdaptiveMaxPool2d((32, 32)))

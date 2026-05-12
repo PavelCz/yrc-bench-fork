@@ -29,11 +29,14 @@ The trained checkpoint reports:
 produces for any input. The `2.26e-8` offset is float32 noise on the forward
 pass.
 
-Reading `lib/pyod/pyod/models/deep_svdd.py` reveals two architectural bugs
-and an over-regularisation factor that, jointly, make this collapse the
-inevitable equilibrium of the training stack as currently written. None of
-them depend on the data — retraining the same code on any dataset would
-produce the same constant.
+Reading `lib/pyod/pyod/models/deep_svdd.py` originally revealed three issues
+that, jointly, made this collapse the inevitable equilibrium of the training
+stack: two architectural bugs and an over-regularisation factor. One of the
+architectural bugs (Conv2d encoder biases) has been fixed in this fork and is
+documented in the *Fixed in this fork* section below. The other two
+(`c ∉ image(φ)` in the centre init, and ~10⁵× over-regularisation) are still
+open. None of these depend on the data — retraining the unmodified upstream
+code on any dataset would still produce a constant decision function.
 
 The claims below were verified against the original Deep SVDD paper
 (Ruff et al., ICML 2018) by an independent reading; references in each
@@ -41,11 +44,16 @@ section. The prompt used and the assistant's full answer live in
 [`image_svdd_paper_verification_prompt.md`](image_svdd_paper_verification_prompt.md)
 and `claude_answer.md` in the same directory.
 
-## Bug 1 — Conv2d encoder layers have `bias=True`
+## Fixed in this fork — Conv2d encoder biases
 
-`InnerDeepSVDD._build_embedder`, lines 146 and 151:
+### What the bug was
+
+`InnerDeepSVDD._build_embedder`, lines 146 and 151 *as inherited from
+`modanesh/pyod`*, constructed the two encoder Conv2d layers without
+specifying `bias`, leaving PyTorch's default `bias=True` in effect:
 
 ```python
+# inherited / upstream version (now patched in this fork):
 nn.Conv2d(channels, 16, kernel_size=3, stride=1, padding=1)      # bias defaults to True
 nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1)             # bias defaults to True
 ```
@@ -54,7 +62,9 @@ The Linear layers further down (`cnn_fc`, `input_layer`, `net_output`, hidden,
 decoder) all correctly pass `bias=False`. The two Conv2d layers in the encoder
 slipped through.
 
-**What the paper says.** Proposition 2 (§3.3) shows that if any hidden layer
+### Why this is a bug
+
+Proposition 2 (§3.3 of Ruff et al., ICML 2018) shows that if any hidden layer
 in `φ(· ; W) : X → F` has a bias term, there exist parameters `W*` such that
 `φ(x; W*) = c` for every input `x ∈ X` — a trivial collapse solution that
 satisfies the SVDD loss with zero radius and zero data-distance regardless of
@@ -69,8 +79,10 @@ And the experimental section, §4.1, "Deep Baselines and Deep SVDD":
 > "For Deep SVDD, we remove the bias terms in all network units to prevent a
 > hypersphere collapse as explained in Section 3.3."
 
-The implementation contradicts both the theoretical requirement and the
-paper's own experimental practice on the two Conv2d layers.
+The unpatched implementation contradicts both the theoretical requirement and
+the paper's own experimental practice on the two Conv2d layers.
+
+### Provenance
 
 This bug was introduced when the CNN encoder was added to `pyod`. The
 original `pyod` (`yzhao062/pyod`) has no Conv2d layers — `_build_model` is
@@ -78,7 +90,25 @@ a pure MLP. The CNN `_build_embedder` was added in `modanesh/pyod` (the
 fork that upstream YRC-Bench `main` consumes as a git submodule pinned at
 commit `4a2080874a…`), and the Conv2d-without-`bias=False` was part of
 that addition. That same commit is the current `HEAD` of `modanesh/pyod`,
-so merging from upstream YRC-Bench will not fix Bug 1.
+so merging from upstream YRC-Bench will not fix it.
+
+### How we fixed it
+
+`lib/pyod/pyod/models/deep_svdd.py`, in `InnerDeepSVDD._build_embedder`,
+both `nn.Conv2d` calls now pass `bias=False` explicitly, with a short
+comment pointing back to this document. This is a one-line change per
+layer and aligns the encoder with Proposition 2 and the §4.1 experimental
+recipe.
+
+### Relationship to upstream
+
+This is a deliberate divergence from upstream YRC-Bench / `modanesh/pyod`.
+If a future merge from upstream YRC-Bench bumps the `lib/pyod` submodule
+and we re-flatten it, the `bias=False` arguments will be removed unless
+the merge is done with conflict awareness. The corresponding upstream fix
+belongs in `modanesh/pyod`'s `_build_embedder`; a PR there would
+simultaneously fix upstream YRC-Bench. Until that happens, this fork
+must keep the patched version of the two lines.
 
 ## Bug 2 — `c` lives in a different space than the embedding
 
@@ -136,11 +166,11 @@ that no training can drive to zero, regardless of the data.
 
 The captured `c` for this checkpoint, `[−0.1, +0.1, −0.1, +0.1, +0.1, −0.1, …]`
 (32-d, all ±0.1, from the ε-push in lines 136–137 / 687–688), has roughly half
-its components in the unreachable half-space. Combined with Bug 1 and Bug 3
-below, the optimiser settles on `f(x) ≈ 0` for every input, which gives
-`dist = ‖0 − c‖² = ‖c‖² = 32 × 0.01 = 0.32`, matching the observed
-`0.32000002264977` to within float32 noise. `‖c‖ = 0.5657… = √0.32` is the
-geometric residual of a center the embedding cannot reach.
+its components in the unreachable half-space. Combined with the now-fixed
+Conv2d-bias bug and Bug 3 below, the optimiser settles on `f(x) ≈ 0` for every
+input, which gives `dist = ‖0 − c‖² = ‖c‖² = 32 × 0.01 = 0.32`, matching the
+observed `0.32000002264977` to within float32 noise. `‖c‖ = 0.5657… = √0.32`
+is the geometric residual of a center the embedding cannot reach.
 
 **Corollary on the trailing ReLU.** It is tempting to also call the trailing
 ReLU itself a bug ("the embedding shouldn't be sign-restricted"), but the
@@ -242,16 +272,17 @@ Three layers of `pyod` are involved:
   submodule). Differs from `modanesh/pyod` only in `black`/`ruff`-style
   formatting; substantive code at the bug sites is identical.
 
-| # | Bug | Where it lives | Latest pyod (v3.4.0)? |
-|---|-----|----------------|-----------------------|
-| 1 | `bias=True` on the two `Conv2d` layers in `_build_embedder` | Introduced in `modanesh/pyod`; still in its `HEAD`; pinned by upstream YRC-Bench `main`; inherited verbatim here | n/a (no CNN in `yzhao062/pyod`) |
-| 2 | `_init_c` hook on the `net_output` Linear module captures values outside `image(φ)` | Original `yzhao062/pyod`; inherited unchanged by `modanesh/pyod` and this fork | Still present |
-| 3 | Weight regularisation ~10⁵× the paper's setting (dual term + `weight_decay=0.1`) | Dual-term structure and `weight_decay=0.1` default are in `yzhao062/pyod`; the `1e-6` coefficient on the explicit term was dropped in `modanesh/pyod`, not here | Dual structure + `weight_decay=0.1` default still present; the `1e-6` coefficient is intact upstream |
+| # | Bug | Where it lives | Status in this fork | Latest pyod (v3.4.0)? |
+|---|-----|----------------|---------------------|-----------------------|
+| 1 | `bias=True` on the two `Conv2d` layers in `_build_embedder` | Introduced in `modanesh/pyod`; still in its `HEAD`; pinned by upstream YRC-Bench `main` | **Fixed** (`bias=False` added to both Conv2d) | n/a (no CNN in `yzhao062/pyod`) |
+| 2 | `_init_c` hook on the `net_output` Linear module captures values outside `image(φ)` | Original `yzhao062/pyod`; inherited unchanged by `modanesh/pyod` | Open | Still present |
+| 3 | Weight regularisation ~10⁵× the paper's setting (dual term + `weight_decay=0.1`) | Dual-term structure and `weight_decay=0.1` default are in `yzhao062/pyod`; the `1e-6` coefficient on the explicit term was dropped in `modanesh/pyod`, not here | Open | Dual structure + `weight_decay=0.1` default still present; the `1e-6` coefficient is intact upstream |
 
-Merging from upstream YRC-Bench `main` will not fix any of these — upstream
-YRC pins `modanesh/pyod` as a submodule, and the latest commit of that
-fork still contains all three bugs at the same lines. Upgrading
-`yzhao062/pyod` to v3.4.0 doesn't help either (the relevant file is
+Merging from upstream YRC-Bench `main` will not fix Bug 2 or Bug 3, and will
+*reintroduce* Bug 1 unless the local `bias=False` lines are preserved during
+the merge. Upstream YRC pins `modanesh/pyod` as a submodule, and the latest
+commit of that fork still contains all three issues at the same lines.
+Upgrading `yzhao062/pyod` to v3.4.0 doesn't help either (the relevant file is
 unchanged).
 
 ## Minimum-change patch recipe
@@ -259,13 +290,11 @@ unchanged).
 The goal is to bring the trained SVDD architecture into line with what the
 paper prescribes, so that decision scores can actually vary across inputs.
 This does not by itself guarantee the SVDD will then *discriminate* well on
-coinrun — that's a separate question — but it is a precondition.
+coinrun — that's a separate question — but it is a precondition. Bug 1 is
+already patched in this fork (see *Fixed in this fork* above); the
+remaining work is on Bugs 2 and 3.
 
-1. **Bug 1 fix.** `lib/pyod/pyod/models/deep_svdd.py:146` and `:151` — pass
-   `bias=False` to both `nn.Conv2d` calls in `_build_embedder`. Aligns with
-   Proposition 2 and §4.1.
-
-2. **Bug 2 fix (choose one).** Make `c` and `φ(x)` live in the same space, as
+1. **Bug 2 fix (choose one).** Make `c` and `φ(x)` live in the same space, as
    required by §3.1 and the init rule in §4.1. Any of these are equivalent:
    - Move the `register_forward_hook` from `net_output` to the activation
      module that follows it (`hidden_activation_e{len(...)}`), or to
@@ -277,7 +306,7 @@ coinrun — that's a separate question — but it is a precondition.
      (leaky ReLU, tanh, identity). Not ideal — Proposition 3 recommends ReLU
      specifically — but does fix the reachability issue.
 
-3. **Bug 3 fix.** Two changes, not one:
+2. **Bug 3 fix.** Two changes, not one:
    - Drop the explicit `w_d` term in `_loss` (line 751), *or* restore the
      upstream `1e-6` coefficient on it.
    - Lower the optimiser's `weight_decay` from `0.1` toward the paper's
@@ -297,13 +326,16 @@ required.
 ## Where to land the patches
 
 `lib/pyod/` is vendored in this repo as plain files (not a git submodule;
-not a wheel). The immediate patches can land directly in the vendored copy.
+not a wheel). The immediate patches for Bugs 2 and 3 can land directly in
+the vendored copy, alongside the Conv2d-bias fix that's already there.
 
 If you also want the fixes available outside this fork, the natural upstream
 target differs by bug:
 
-- **Bug 1** was introduced in `modanesh/pyod`. The fix belongs there, and
-  would simultaneously fix upstream YRC-Bench (which pins that fork).
+- **Bug 1 (fixed locally)** was introduced in `modanesh/pyod`. The same
+  patch would belong there and would simultaneously fix upstream YRC-Bench
+  (which pins that fork). Until that happens, this fork must keep its local
+  fix and watch for re-introduction on submodule bumps.
 - **Bug 2** is in the original `yzhao062/pyod` as well as in
   `modanesh/pyod`. A PR to `yzhao062/pyod` would reach the broader pyod
   user base; the paper references in this document make the case directly.
