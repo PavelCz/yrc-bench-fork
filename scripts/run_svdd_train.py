@@ -97,11 +97,16 @@ def build_sbatch_command(job_name: str, train_args: dict, log_dir: Path) -> str:
         f"-num_rollouts {train_args['num_rollouts']}",
         f"-level_seeds_file {train_args['level_seeds_file']}",
         f"-svdd_val_levels {train_args['svdd_val_levels']}",
-        "-wandb",
         f"-query_cost {train_args['query_cost']}",
         f"-seed {train_args['seed']}",
         "-over",
     ]
+    if train_args.get("use_wandb", True):
+        python_args.append("-wandb")
+    else:
+        # Force the second wandb.init in train_svdd.py to use disabled mode
+        # so it doesn't try to authenticate.
+        python_args.append("-wandb_mode disabled")
     if train_args["rollout_max_levels"] is not None:
         python_args.append(f"-rollout_max_levels {train_args['rollout_max_levels']}")
     for extra_flag in train_args.get("extra_python_args", []):
@@ -250,6 +255,15 @@ def main():
     parser.add_argument("--sim", help="Override sim weak checkpoint path")
     parser.add_argument("--weak", help="Override weak checkpoint path")
     parser.add_argument("--strong", help="Override strong checkpoint path")
+    parser.add_argument(
+        "--no-wandb",
+        action="store_true",
+        help=(
+            "Disable wandb logging for this submission. Pass when running on a "
+            "cluster node without a configured wandb API key. Equivalent to "
+            "dropping the -wandb flag and passing -wandb_mode disabled."
+        ),
+    )
     args = parser.parse_args()
 
     # Resolve --variant before --prefix is needed downstream.
@@ -394,6 +408,7 @@ def main():
             "output_dir": str(svdd_output_dir),
             "seed": seed,
             "extra_python_args": extra_python_args,
+            "use_wandb": not args.no_wandb,
             **checkpoints,
         }
 
