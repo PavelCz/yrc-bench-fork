@@ -383,6 +383,18 @@ class OODPolicy(Policy):
 
         if self.args.method == "DeepSVDD":
             self.clf_name = "DeepSVDD"
+            # Forward the variant-toggle knobs only when explicitly set, so
+            # DeepSVDD's constructor defaults still apply otherwise. See
+            # docs/image_svdd_collapse_bugs.md for what each knob controls.
+            svdd_kwargs = {}
+            for key in (
+                "explicit_wd_coef",
+                "center_init_post_activation",
+                "l2_regularizer",
+            ):
+                value = getattr(args, key, None)
+                if value is not None:
+                    svdd_kwargs[key] = value
             self.clf = deep_svdd.DeepSVDD(
                 n_features=args.feature_size,
                 use_ae=args.use_ae,
@@ -393,6 +405,7 @@ class OODPolicy(Policy):
                 feature_type=self.feature_type,
                 benchmark=get_global_variable("benchmark"),
                 logger=self.logger,
+                **svdd_kwargs,
             )
             self.clf.model_.to(self.device)
         elif self.args.method == "AutoEncoder":

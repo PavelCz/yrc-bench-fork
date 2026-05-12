@@ -246,6 +246,39 @@ def make():
         ),
     )
 
+    # DeepSVDD bugfix-variant toggles (see docs/image_svdd_collapse_bugs.md).
+    parser.add_argument(
+        "-explicit_wd_coef",
+        "--algorithm.explicit_wd_coef",
+        type=float,
+        help=(
+            "Coefficient on the explicit Frobenius w_d term in DeepSVDD._loss. "
+            "Defaults to 1.0 (modanesh/pyod behaviour); set to 0.0 to drop the "
+            "term and rely on the optimiser's weight_decay only."
+        ),
+    )
+    parser.add_argument(
+        "-center_init_post_activation",
+        "--algorithm.center_init_post_activation",
+        type=parse_bool,
+        nargs="?",
+        const=True,
+        help=(
+            "If true, capture the DeepSVDD center c from image(phi) by hooking "
+            "the activation that follows net_output instead of net_output "
+            "itself. Paper-faithful (Ruff et al. 2018 §3.1)."
+        ),
+    )
+    parser.add_argument(
+        "-l2_regularizer",
+        "--algorithm.l2_regularizer",
+        type=float,
+        help=(
+            "Weight-decay coefficient passed to Adam in DeepSVDD.fit. Defaults "
+            "to 0.1 (pyod default). The paper's experiments use 1e-6."
+        ),
+    )
+
     # random baseline policy
     parser.add_argument(
         "-cp_base",
