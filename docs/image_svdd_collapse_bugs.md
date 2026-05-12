@@ -29,11 +29,17 @@ The trained checkpoint reports:
 produces for any input. The `2.26e-8` offset is float32 noise on the forward
 pass.
 
-Reading `lib/pyod/pyod/models/deep_svdd.py` reveals three architectural bugs
-and a compounding regularisation factor that, jointly, make this collapse the
+Reading `lib/pyod/pyod/models/deep_svdd.py` reveals two architectural bugs
+and an over-regularisation factor that, jointly, make this collapse the
 inevitable equilibrium of the training stack as currently written. None of
 them depend on the data — retraining the same code on any dataset would
 produce the same constant.
+
+The claims below were verified against the original Deep SVDD paper
+(Ruff et al., ICML 2018) by an independent reading; references in each
+section. The prompt used and the assistant's full answer live in
+[`image_svdd_paper_verification_prompt.md`](image_svdd_paper_verification_prompt.md)
+and `claude_answer.md` in the same directory.
 
 ## Bug 1 — Conv2d encoder layers have `bias=True`
 
@@ -46,15 +52,31 @@ nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1)             # bias default
 
 The Linear layers further down (`cnn_fc`, `input_layer`, `net_output`, hidden,
 decoder) all correctly pass `bias=False`. The two Conv2d layers in the encoder
-slipped through. The DeepSVDD theorem requires bias-free layers throughout
-the encoder — with biases, the encoder can produce a constant output
-independent of the input.
+slipped through.
+
+**What the paper says.** Proposition 2 (§3.3) shows that if any hidden layer
+in `φ(· ; W) : X → F` has a bias term, there exist parameters `W*` such that
+`φ(x; W*) = c` for every input `x ∈ X` — a trivial collapse solution that
+satisfies the SVDD loss with zero radius and zero data-distance regardless of
+the data. The paper's prescription, immediately after Proposition 2:
+
+> "It follows that bias terms should not be used in neural networks with Deep
+> SVDD since the network can learn the constant function mapping directly to
+> the hypersphere center, leading to hypersphere collapse."
+
+And the experimental section, §4.1, "Deep Baselines and Deep SVDD":
+
+> "For Deep SVDD, we remove the bias terms in all network units to prevent a
+> hypersphere collapse as explained in Section 3.3."
+
+The implementation contradicts both the theoretical requirement and the
+paper's own experimental practice on the two Conv2d layers.
 
 This bug is **YRC-introduced**: upstream `pyod`'s `_build_model` has no Conv2d
 layers at all (it's a pure MLP). The CNN `_build_embedder` was added by the
-YRC fork.
+YRC fork, and the Conv2d-without-`bias=False` is part of that addition.
 
-## Bug 2 — `c` lives in pre-activation space, but the embedding lives in post-activation space
+## Bug 2 — `c` lives in a different space than the embedding
 
 Center init (both `InnerDeepSVDD._init_c` at line 119 and
 `DeepSVDD._init_c_from_dataloader` at line 644) registers a forward hook on
@@ -68,46 +90,85 @@ layers.add_module(f"hidden_activation_e{len(...)}",
                   get_activation_by_name(self.hidden_activation))                     # ReLU by default
 ```
 
-But the loss (line 749–755) and `decision_function` (line 768–792) both use
-`self.model_(X)`, which returns the **full** forward pass — that is,
-post-activation. The center and the embedding live in different spaces.
-With ReLU as that activation, the embedding is non-negative, but `c` can have
-negative components.
+But the loss (lines 749–755) and `decision_function` (lines 768–792) both use
+`self.model_(X)`, which returns the **full** forward pass — including the
+trailing ReLU. So the center `c` is computed in `ℝ³²` while the embedding
+`f(x) = self.model_(X)` is constrained to `[0, ∞)³²`.
 
-The actual collapse mechanism for this checkpoint is exactly what this bug
-plus bug 3 predict:
+**What the paper says.** Section 3.1 defines `c` as a point in the *output
+space of `φ`* — the same space `f(x)` lives in:
 
-- The captured `c = [-0.1, +0.1, -0.1, +0.1, +0.1, -0.1, …]` (32-d, all ±0.1) —
-  every component was within ε of zero at init, so `_init_c`'s lines 136–137
-  (and 687–688) pushed each to ±ε, preserving the (essentially random) sign
-  from the init forward pass.
-- The post-ReLU embedding can never match any negative `c_i`. The structural
-  minimum of `‖f(x) − c‖²` is bounded below by `Σ_{c_i < 0} c_i² > 0` no
-  matter what the network learns.
-- Combined with bug 1 and the doubled regulariser below, the optimiser
-  settles on `f(x) ≈ 0` for every input, which makes
-  `dist = ‖0 − c‖² = ‖c‖² = 32 × 0.01 = 0.32` — matching the observed
-  `0.32000002264977` to within float32 noise.
-- `‖c‖ = 0.5657… = √0.32` is therefore not a coincidence; it's the geometric
-  residual of a center that the embedding architecture cannot reach.
+> "let `φ(· ; W) : X → F` be a neural network … The aim of Deep SVDD then is
+> to jointly learn the network parameters `W` together with minimizing the
+> volume of a data-enclosing hypersphere in output space `F` that is
+> characterized by radius `R > 0` and center `c ∈ F`."
+
+Equation (5) defines the anomaly score as `s(x) = ‖φ(x; W*) − c‖²`, with the
+same `φ` used in training. There is no notion in the paper of `c` and
+`φ(x)` living in different spaces.
+
+For the init rule specifically, §3.3:
+
+> "We found empirically that fixing `c` as the mean of the network
+> representations that result from performing an initial forward pass on some
+> training data sample to be a good strategy."
+
+and §4.1:
+
+> "we set the hypersphere center `c` to the mean of the mapped data after
+> performing an initial forward pass."
+
+"Mapped data" / "network representations" is the output of `φ`. The
+implementation instead averages the *pre-activation* output of the penultimate
+linear, which is not `φ(x)`. So `c` ends up in `ℝ³²` while `φ(x) ∈ [0, ∞)³²`,
+and any component `c_i < 0` is structurally unreachable. The per-sample loss
+acquires a non-zero infimum
+
+```
+L_min(x) ≥ Σ_{i: c_i < 0} c_i²
+```
+
+that no training can drive to zero, regardless of the data.
+
+The captured `c` for this checkpoint, `[−0.1, +0.1, −0.1, +0.1, +0.1, −0.1, …]`
+(32-d, all ±0.1, from the ε-push in lines 136–137 / 687–688), has roughly half
+its components in the unreachable half-space. Combined with Bug 1 and Bug 3
+below, the optimiser settles on `f(x) ≈ 0` for every input, which gives
+`dist = ‖0 − c‖² = ‖c‖² = 32 × 0.01 = 0.32`, matching the observed
+`0.32000002264977` to within float32 noise. `‖c‖ = 0.5657… = √0.32` is the
+geometric residual of a center the embedding cannot reach.
+
+**Corollary on the trailing ReLU.** It is tempting to also call the trailing
+ReLU itself a bug ("the embedding shouldn't be sign-restricted"), but the
+paper does not support that framing. Proposition 3 (§3.3) is concerned with
+activations that have `sup σ ≠ 0` or `inf σ ≠ 0` — ReLU has `inf σ = 0` and is
+outside the proposition's scope. The paragraph after Proposition 3 explicitly
+recommends it:
+
+> "unbounded activation functions (or functions only bounded by 0) such as the
+> ReLU should be preferred in Deep SVDD to avoid a hypersphere collapse due to
+> 'learned' bias terms."
+
+So the final ReLU is paper-endorsed. The problem is not the ReLU; the problem
+is that the hook captures `c` from a different layer than the network output,
+so `c ∉ image(φ)`. Any of the following resolves Bug 2 equivalently — they
+are not three independent fixes:
+
+- Move the `register_forward_hook` from `net_output` to the activation
+  module that follows it (or to `fc_part` as a whole), so `c` is captured
+  in `image(φ)`.
+- Remove the trailing activation, making layer 12's output *be* `φ(x)` so
+  the existing hook captures the right tensor.
+- Switch `hidden_activation` to a sign-preserving activation (leaky ReLU,
+  tanh, identity); `c` is still captured in the wrong layer, but at least
+  every component of `c` is reachable by `f(x)`.
 
 This bug is **upstream pyod**, present unchanged from v2.0.2 through v3.4.0.
 
-## Bug 3 — ReLU is the final embedding activation
-
-The default `hidden_activation="relu"` is also applied after `net_output`,
-so the SVDD embedding is non-negative. Ruff et al. (2018) call this out
-explicitly: a sign-restrictive activation on the embedding output is
-structurally incompatible with the SVDD objective. The reference DeepSVDD
-implementation uses leaky ReLU intermediates and *no* final activation on
-the embedding.
-
-This bug is **upstream pyod**, also present unchanged from v2.0.2 through v3.4.0.
-
-## Bug 4 — Doubled weight regularisation (compounding factor)
+## Bug 3 — Weight regularisation is ~10⁵× the paper's setting
 
 `DeepSVDD.fit` line 477 builds the optimiser with
-`weight_decay=self.l2_regularizer` (default `0.1`). `_loss` (line 751) **also**
+`weight_decay=self.l2_regularizer` (default `0.1`). `_loss` (line 751) also
 adds an explicit Frobenius penalty on every parameter:
 
 ```python
@@ -115,68 +176,102 @@ w_d = sum([torch.linalg.norm(w) for w in self.model_.parameters()])
 return torch.mean(dist) + w_d
 ```
 
-So every parameter is being shrunk by both the optimiser's L2 weight decay
-*and* an explicit sum-of-Frobenius-norms term in the loss. This stacks
-pressure toward `weights ≈ 0`, which (given bug 1's allowed bias absorbing
-the data dependence) lands at the constant-near-zero output and matches
-what we observe.
+Every parameter is shrunk by both the optimiser's L2 weight decay *and* an
+explicit sum-of-Frobenius-norms term in the loss.
 
-Upstream `pyod` has the same dual structure, but multiplies the explicit
-Frobenius term by `1e-6`, making it negligible next to the optimiser's
-`weight_decay`. The YRC fork dropped that `1e-6` coefficient, so the explicit
-term operates at full strength alongside `weight_decay`.
+**What the paper says.** The Deep SVDD objective in equations (3) and (4) has
+exactly one weight-decay term with one hyperparameter `λ`:
 
-This bug is **upstream pyod in form, YRC-amplified in magnitude**.
+> Eq. (3): `… + (λ/2) Σ_{ℓ=1}^L ‖W_ℓ‖_F²`
+> Eq. (4): `… + (λ/2) Σ_{ℓ=1}^L ‖W_ℓ‖_F²`
+> "The last term is a weight decay regularizer on the network parameters `W`
+> with hyperparameter `λ > 0`, where `‖·‖_F` denotes the Frobenius norm." (§3.1)
+
+And both reported experiments fix that hyperparameter to `10⁻⁶`:
+
+> "We use a batch size of 200 and set the weight decay hyperparameter to
+> `λ = 10⁻⁶`." (§4.2)
+> "We train with a smaller batch size of 64, due to the dataset size and set
+> again hyperparameter `λ = 10⁻⁶`." (§4.3)
+
+The structural deviation ("one regulariser in the paper, two in the
+implementation") is real but minor — both terms are L2-on-weights, so the
+combination is mathematically equivalent to "one larger λ" with some
+weighting. The substantive deviation is **magnitude**: the paper uses
+`λ = 10⁻⁶` throughout, while the implementation's `weight_decay` alone is
+`0.1 = 10⁵ × 10⁻⁶`, with the explicit Frobenius term layered on top. The
+network is being regularised orders of magnitude harder than the paper's
+recipe, which by itself biases the optimum toward `weights ≈ 0` and the
+constant-near-zero output.
+
+Upstream `pyod` has the same dual structure as the YRC fork, but multiplies
+the explicit Frobenius term by `1e-6`, making it negligible next to the
+optimiser's `weight_decay`. The YRC fork dropped that `1e-6` coefficient, so
+the explicit term operates at full strength. Even upstream, however, the
+optimiser's `weight_decay = 0.1` already departs from the paper's
+`λ = 10⁻⁶` by 5 orders of magnitude — the YRC fork makes a deviation that
+existed upstream worse, rather than introducing a new one.
+
+This bug is **upstream pyod in form** (dual-term structure plus
+`weight_decay = 0.1` default), **YRC-amplified in magnitude** (1e-6 coefficient
+on the explicit term dropped).
 
 ## Upstream-vs-YRC attribution summary
 
 | # | Bug | Where it lives | Latest pyod (v3.4.0)? |
 |---|-----|----------------|-----------------------|
 | 1 | `bias=True` on the two `Conv2d` layers in `_build_embedder` | YRC-introduced | n/a |
-| 2 | `_init_c` hook on the `net_output` Linear module captures pre-ReLU | Upstream pyod | Still present |
-| 3 | Trailing ReLU added to `_build_fc` after `net_output` | Upstream pyod | Still present |
-| 4 | Doubled regularisation (`weight_decay` + explicit `w_d` in `_loss`) | Pattern upstream, magnitude YRC-amplified | Pattern still present; magnitude unchanged upstream |
+| 2 | `_init_c` hook on the `net_output` Linear module captures values outside `image(φ)` | Upstream pyod | Still present |
+| 3 | Weight regularisation ~10⁵× the paper's setting (dual term + `weight_decay=0.1`) | Upstream form, YRC-amplified magnitude | Still present |
 
 Upgrading pyod will not fix anything: `deep_svdd.py` is bit-identical from
 v2.0.2 through v3.4.0 (`diff` returned no output).
 
 ## Minimum-change patch recipe
 
-Producing a checkpoint whose decision scores can actually vary requires
-fixing bugs 1, 2, and 3 (any one of which is independently sufficient to
-make `||f(x) − c||²` non-constant in principle, but all three are needed to
-match the paper). Bug 4 is optional but should be cleaned up.
+The goal is to bring the trained SVDD architecture into line with what the
+paper prescribes, so that decision scores can actually vary across inputs.
+This does not by itself guarantee the SVDD will then *discriminate* well on
+coinrun — that's a separate question — but it is a precondition.
 
-1. `lib/pyod/pyod/models/deep_svdd.py:146` and `:151` — pass `bias=False` to
-   both `nn.Conv2d` calls in `_build_embedder`.
-2. `lib/pyod/pyod/models/deep_svdd.py:187-190` — remove the trailing
-   activation after `net_output`. The embedding linear shouldn't be
-   activation-transformed; that's what makes the captured `c` consistent
-   with `self.model_(X)`.
-   - Equivalent alternative: move the `register_forward_hook` from
-     `net_output` to the activation module that follows it, so `c` is
-     captured in the same space as `self.model_(X)`.
-   - Equivalent alternative: switch `hidden_activation` to a sign-preserving
-     activation (leaky ReLU, tanh, identity) so the embedding can reach
-     negative `c_i`.
-3. Drop one of the two regularisers in
-   `lib/pyod/pyod/models/deep_svdd.py:751` and `:477`. Most reference DeepSVDD
-   implementations use only the optimiser's `weight_decay`; keep that and
-   remove the explicit `w_d` term, or restore the upstream `1e-6` coefficient.
+1. **Bug 1 fix.** `lib/pyod/pyod/models/deep_svdd.py:146` and `:151` — pass
+   `bias=False` to both `nn.Conv2d` calls in `_build_embedder`. Aligns with
+   Proposition 2 and §4.1.
+
+2. **Bug 2 fix (choose one).** Make `c` and `φ(x)` live in the same space, as
+   required by §3.1 and the init rule in §4.1. Any of these are equivalent:
+   - Move the `register_forward_hook` from `net_output` to the activation
+     module that follows it (`hidden_activation_e{len(...)}`), or to
+     `fc_part` itself. *Preferred*: keeps the paper-endorsed ReLU at the
+     output (Proposition 3) and uses the existing init code path.
+   - Remove the trailing activation in `_build_fc` (lines 187–190), making
+     layer 12's output *be* `φ(x)`.
+   - Switch `hidden_activation` from `relu` to a sign-preserving activation
+     (leaky ReLU, tanh, identity). Not ideal — Proposition 3 recommends ReLU
+     specifically — but does fix the reachability issue.
+
+3. **Bug 3 fix.** Two changes, not one:
+   - Drop the explicit `w_d` term in `_loss` (line 751), *or* restore the
+     upstream `1e-6` coefficient on it.
+   - Lower the optimiser's `weight_decay` from `0.1` toward the paper's
+     `λ = 10⁻⁶` (§4.2, §4.3). The exact value can be tuned, but `0.1` is
+     ~10⁵× too high regardless of what happens with the explicit term.
+   The first change alone is insufficient because the optimiser's
+   `weight_decay = 0.1` is already several orders of magnitude above the
+   paper's setting.
 
 After those changes, regenerate
 `svdd_coinrun_image_exp0/trained.joblib` and re-run
 `scripts/probe_image_svdd_synthetic.py` — synthetic inputs should now yield
-a *range* of decision scores. (Confirming that the SVDD then actually
-*discriminates* on coinrun is a separate question; the patches make the
-model capable of varying its output, but DeepSVDD has known training
-stability issues even with a correct architecture.)
+a *range* of decision scores. DeepSVDD has known training stability issues
+even with a paper-faithful architecture, so further iteration may still be
+required.
 
 ## Where to land the patches
 
 `lib/pyod/` is vendored in this repo as plain files (not a git submodule;
-not a wheel). The patches can land directly in the vendored copy. Bugs 2,
-3, and 4 are also genuine upstream bugs in `pyod`; if the user wants to
-upstream them, the maintainers should be receptive given that the
-behaviour we observed is the structural worst case of the paper's
-warnings.
+not a wheel). The patches can land directly in the vendored copy. Bug 2 and
+the upstream-form parts of Bug 3 are also genuine bugs in `pyod` itself;
+upstreaming via a PR to `pyod` should be feasible given that the behaviour
+we observed is the structural worst case of the paper's warnings, and the
+paper references in this document make the case directly.
