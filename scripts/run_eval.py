@@ -50,7 +50,7 @@ EVAL_DEFAULTS = {
     "video_logging_mode": "folder",
     "video_filter_mode": "any",
     "coverage_fraction": 0.05,
-    "svdd_prefix": "neurips04",
+    "svdd_prefix": "neurips05",
 }
 
 # Default number of ensemble members (excluding weak agent which is added automatically)
