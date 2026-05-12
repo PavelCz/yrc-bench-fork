@@ -82,6 +82,7 @@ class InnerDeepSVDD(nn.Module):
         feature_type,
         benchmark,
         input_shape=None,
+        center_init_post_activation=False,
     ):
         super(InnerDeepSVDD, self).__init__()
         self.use_ae = use_ae
@@ -93,6 +94,7 @@ class InnerDeepSVDD(nn.Module):
         self.feature_type = feature_type
         self.benchmark = benchmark
         self.input_shape = input_shape
+        self.center_init_post_activation = center_init_post_activation
 
         if self.feature_type in ["obs", "obs_dist", "hidden_obs", "obs_hidden_dist"]:
             self.embedder_features = n_features
@@ -116,7 +118,17 @@ class InnerDeepSVDD(nn.Module):
 
     def _init_c(self, X_norm, eps=0.1):
         intermediate_output = {}
-        hook_handle = self.fc_part._modules.get("net_output").register_forward_hook(
+        # When center_init_post_activation is True, the center c is captured
+        # from image(phi) — i.e. after the trailing activation — as required
+        # by Ruff et al. (2018) §3.1, §4.1. The default (False) reproduces
+        # the unpatched modanesh/pyod behaviour. See
+        # docs/image_svdd_collapse_bugs.md, Bug 2.
+        hook_target_name = (
+            f"hidden_activation_e{len(self.hidden_neurons)}"
+            if self.center_init_post_activation
+            else "net_output"
+        )
+        hook_handle = self.fc_part._modules.get(hook_target_name).register_forward_hook(
             lambda module, input, output: intermediate_output.update(
                 {"net_output": output}
             )
@@ -352,6 +364,8 @@ class DeepSVDD(BaseDetector):
         contamination=0.1,
         input_shape=None,
         logger=None,
+        explicit_wd_coef=1.0,
+        center_init_post_activation=False,
     ):
         super(DeepSVDD, self).__init__(contamination=contamination)
 
@@ -376,6 +390,12 @@ class DeepSVDD(BaseDetector):
         self.best_model_dict = None
         self.input_shape = input_shape
         self.logger = logger  # Wandb logger for training metrics
+        # Coefficient on the explicit Frobenius w_d term in _loss.
+        # Defaults to 1.0 (modanesh/pyod behaviour); set to 0.0 to drop the
+        # term entirely. See docs/image_svdd_collapse_bugs.md, Bug 3.
+        self.explicit_wd_coef = explicit_wd_coef
+        # See InnerDeepSVDD.__init__.
+        self.center_init_post_activation = center_init_post_activation
 
         if self.random_state is not None:
             torch.manual_seed(self.random_state)
@@ -395,6 +415,7 @@ class DeepSVDD(BaseDetector):
             feature_type=self.feature_type,
             benchmark=self.benchmark,
             input_shape=self.input_shape,
+            center_init_post_activation=self.center_init_post_activation,
         )
 
     def fit(self, X, X_threshold, y=None, X_val=None, batch_transform=None):
@@ -646,8 +667,16 @@ class DeepSVDD(BaseDetector):
         self, dataloader, model_device, batch_transform=None, eps=0.1
     ):
         intermediate_output = {}
+        # Mirrors InnerDeepSVDD._init_c: capture c from image(phi) iff
+        # center_init_post_activation is set. See
+        # docs/image_svdd_collapse_bugs.md, Bug 2.
+        hook_target_name = (
+            f"hidden_activation_e{len(self.hidden_neurons)}"
+            if self.center_init_post_activation
+            else "net_output"
+        )
         hook_handle = self.model_.fc_part._modules.get(
-            "net_output"
+            hook_target_name
         ).register_forward_hook(
             lambda module, input, output: intermediate_output.update(
                 {"net_output": output}
@@ -753,7 +782,14 @@ class DeepSVDD(BaseDetector):
 
     def _loss(self, outputs, batch_x):
         dist = torch.sum((outputs - self.c) ** 2, dim=-1)
-        w_d = sum([torch.linalg.norm(w) for w in self.model_.parameters()])
+        # explicit_wd_coef defaults to 1.0 (modanesh/pyod behaviour). Set to
+        # 0.0 to drop the explicit regulariser and rely solely on the
+        # optimiser's weight_decay (upstream yzhao062/pyod uses 1e-6 here,
+        # which is functionally equivalent to 0.0). See
+        # docs/image_svdd_collapse_bugs.md, Bug 3.
+        w_d = self.explicit_wd_coef * sum(
+            [torch.linalg.norm(w) for w in self.model_.parameters()]
+        )
 
         if self.use_ae:
             return torch.mean(dist) + w_d + torch.mean(torch.square(outputs - batch_x))
