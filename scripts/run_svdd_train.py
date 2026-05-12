@@ -3,12 +3,35 @@
 Script to run DeepSVDD training jobs in parallel via SLURM sbatch.
 """
 
+import netrc
 import os
+import shlex
 import subprocess
 from datetime import date
 from pathlib import Path
+from typing import Optional
 
 from common import ENVS, EXP_ID_TO_SEED, SERVER_PATHS, get_checkpoints
+
+
+def _get_wandb_api_key() -> Optional[str]:
+    """Look up the wandb API key on the submitter side.
+
+    Checks the WANDB_API_KEY environment variable first, then ~/.netrc for the
+    api.wandb.ai entry. Returns None if neither is available.
+    """
+    env_key = os.environ.get("WANDB_API_KEY")
+    if env_key:
+        return env_key
+    try:
+        rc = netrc.netrc()
+    except (FileNotFoundError, netrc.NetrcParseError, OSError):
+        return None
+    auth = rc.authenticators("api.wandb.ai")
+    if not auth:
+        return None
+    _login, _account, password = auth
+    return password or None
 
 
 # Conda environment
@@ -74,8 +97,19 @@ def resolve_rollout_path_for_check(rollout_dir: str) -> Path:
     return Path(os.getenv("SM_OUTPUT_DIR", "experiments")) / rollout_path
 
 
-def build_sbatch_command(job_name: str, train_args: dict, log_dir: Path) -> str:
-    """Build the sbatch command string."""
+def build_sbatch_command(
+    job_name: str,
+    train_args: dict,
+    log_dir: Path,
+    *,
+    redact_secrets: bool = False,
+) -> str:
+    """Build the sbatch command string.
+
+    When ``redact_secrets`` is True, any embedded wandb API key is replaced
+    with ``<redacted>``. Use this when printing the script (e.g. ``--dry-run``)
+    so the key does not end up in stdout / shell history.
+    """
     slurm_args = " ".join(f"--{k}={v}" for k, v in SLURM_CONFIG.items())
 
     python_args = [
@@ -109,6 +143,19 @@ def build_sbatch_command(job_name: str, train_args: dict, log_dir: Path) -> str:
         python_args.append(extra_flag)
     python_cmd = " ".join(python_args)
 
+    wandb_key = train_args.get("wandb_api_key") or None
+    if wandb_key:
+        embedded_key = "<redacted>" if redact_secrets else wandb_key
+        # trap ensures WANDB_API_KEY is unset on any script exit (success,
+        # failure, or interrupt). The key only lives for the duration of the
+        # job process and never escapes into the post-job environment.
+        wandb_env_block = (
+            "trap 'unset WANDB_API_KEY' EXIT\n"
+            f"export WANDB_API_KEY={shlex.quote(embedded_key)}\n"
+        )
+    else:
+        wandb_env_block = ""
+
     sbatch_script = f"""#!/bin/bash
 #SBATCH --job-name={job_name}
 #SBATCH --output={log_dir}/%x_%j.out
@@ -117,7 +164,7 @@ def build_sbatch_command(job_name: str, train_args: dict, log_dir: Path) -> str:
 
 eval "$(conda shell.bash hook)"
 conda activate {CONDA_ENV}
-export SM_OUTPUT_DIR="{train_args["output_dir"]}"
+{wandb_env_block}export SM_OUTPUT_DIR="{train_args["output_dir"]}"
 srun {slurm_args} {python_cmd}
 """
     return sbatch_script
@@ -127,13 +174,16 @@ def submit_job(
     job_name: str, train_args: dict, log_dir: Path, dry_run: bool = False
 ) -> None:
     """Submit a single job via sbatch."""
-    sbatch_script = build_sbatch_command(job_name, train_args, log_dir)
-
     if dry_run:
+        sbatch_script = build_sbatch_command(
+            job_name, train_args, log_dir, redact_secrets=True
+        )
         print(f"=== Job: {job_name} ===")
         print(sbatch_script)
         print()
         return
+
+    sbatch_script = build_sbatch_command(job_name, train_args, log_dir)
 
     # Ensure logs directory exists
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -260,6 +310,19 @@ def main():
             "dropping the -wandb flag and passing -wandb_mode disabled."
         ),
     )
+    parser.add_argument(
+        "--no-export-wandb-key",
+        action="store_true",
+        help=(
+            "Do not embed the submitter's WANDB_API_KEY into the sbatch script. "
+            "By default the key is read from $WANDB_API_KEY (preferred) or "
+            "~/.netrc on the submitter, exported on the compute node for the "
+            "duration of the job, and unset on exit via a trap. Use this flag "
+            "if you don't want the key to appear in the job script (and your "
+            "cluster's $HOME is shared with compute nodes, so ~/.netrc-based "
+            "auth already works there)."
+        ),
+    )
     args = parser.parse_args()
 
     # Resolve --variant before --prefix is needed downstream.
@@ -286,6 +349,20 @@ def main():
     if args.svdd_val_levels <= 0:
         print(f"Error: --svdd-val-levels must be positive, got {args.svdd_val_levels}")
         return 1
+
+    # Resolve the wandb API key once on the submitter and embed it in the
+    # sbatch script(s) below. Skipped when wandb is disabled or the user opted
+    # out of key export. A `trap`+`unset` in the sbatch script ensures the key
+    # never leaks past the job process.
+    wandb_api_key: Optional[str] = None
+    if not args.no_wandb and not args.no_export_wandb_key:
+        wandb_api_key = _get_wandb_api_key()
+        if wandb_api_key is None:
+            print(
+                "Warning: --no-export-wandb-key not set, but no WANDB_API_KEY "
+                "in env and no api.wandb.ai entry in ~/.netrc. The job will "
+                "fall back to whatever wandb auth exists on the compute node."
+            )
 
     # Get server-specific paths
     paths = SERVER_PATHS[args.server]
@@ -402,6 +479,7 @@ def main():
             "seed": seed,
             "extra_python_args": extra_python_args,
             "use_wandb": not args.no_wandb,
+            "wandb_api_key": wandb_api_key,
             **checkpoints,
         }
 
