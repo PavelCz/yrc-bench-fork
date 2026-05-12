@@ -36,6 +36,24 @@ TRAIN_DEFAULTS = {
 # Feature type choices
 FEATURE_TYPES = ["obs", "hidden"]
 
+# Bugfix-variant presets. See docs/image_svdd_collapse_bugs.md.
+# Each entry maps a variant name to (prefix override, extra train_svdd.py
+# CLI flags). v1 reproduces current behaviour; v2 also drops the explicit
+# w_d term; v3 also moves the center-init hook to image(phi) and lowers
+# the optimiser's weight_decay toward the paper's lambda = 1e-6.
+VARIANT_PRESETS = {
+    "v1": ("bugfix-v1", []),
+    "v2": ("bugfix-v2", ["-explicit_wd_coef 0.0"]),
+    "v3": (
+        "bugfix-v3",
+        [
+            "-explicit_wd_coef 0.0",
+            "-center_init_post_activation true",
+            "-l2_regularizer 1e-6",
+        ],
+    ),
+}
+
 
 def get_rollout_dir(
     env: str, exp_id: int, rollouts_base_path: str, rollouts_prefix: str
@@ -86,6 +104,8 @@ def build_sbatch_command(job_name: str, train_args: dict, log_dir: Path) -> str:
     ]
     if train_args["rollout_max_levels"] is not None:
         python_args.append(f"-rollout_max_levels {train_args['rollout_max_levels']}")
+    for extra_flag in train_args.get("extra_python_args", []):
+        python_args.append(extra_flag)
     python_cmd = " ".join(python_args)
 
     sbatch_script = f"""#!/bin/bash
@@ -147,7 +167,22 @@ def main():
     parser.add_argument(
         "--env", required=True, choices=ENVS, help="Environment to train on"
     )
-    parser.add_argument("--prefix", required=True, help="Experiment group prefix")
+    parser.add_argument(
+        "--prefix",
+        help=(
+            "Experiment group prefix. Required unless --variant is set, in which "
+            "case --variant chooses the prefix (bugfix-v{1,2,3})."
+        ),
+    )
+    parser.add_argument(
+        "--variant",
+        choices=list(VARIANT_PRESETS.keys()),
+        help=(
+            "Bugfix variant preset (see docs/image_svdd_collapse_bugs.md). "
+            "Overrides --prefix and adds the variant's DeepSVDD CLI flags to "
+            "train_svdd.py."
+        ),
+    )
     parser.add_argument(
         "--exp-ids",
         type=int,
@@ -216,6 +251,23 @@ def main():
     parser.add_argument("--weak", help="Override weak checkpoint path")
     parser.add_argument("--strong", help="Override strong checkpoint path")
     args = parser.parse_args()
+
+    # Resolve --variant before --prefix is needed downstream.
+    extra_python_args: list[str] = []
+    if args.variant is not None:
+        preset_prefix, preset_flags = VARIANT_PRESETS[args.variant]
+        if args.prefix is not None and args.prefix != preset_prefix:
+            print(
+                f"Error: --variant {args.variant} already sets --prefix to "
+                f"{preset_prefix}; passing --prefix {args.prefix} is "
+                "inconsistent. Drop one or the other."
+            )
+            return 1
+        args.prefix = preset_prefix
+        extra_python_args = list(preset_flags)
+    elif args.prefix is None:
+        print("Error: either --prefix or --variant must be provided.")
+        return 1
 
     # Validate config file exists
     if not Path(args.config).exists():
@@ -341,6 +393,7 @@ def main():
             "svdd_val_levels": args.svdd_val_levels,
             "output_dir": str(svdd_output_dir),
             "seed": seed,
+            "extra_python_args": extra_python_args,
             **checkpoints,
         }
 
