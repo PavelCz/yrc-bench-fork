@@ -72,9 +72,13 @@ And the experimental section, §4.1, "Deep Baselines and Deep SVDD":
 The implementation contradicts both the theoretical requirement and the
 paper's own experimental practice on the two Conv2d layers.
 
-This bug is **YRC-introduced**: upstream `pyod`'s `_build_model` has no Conv2d
-layers at all (it's a pure MLP). The CNN `_build_embedder` was added by the
-YRC fork, and the Conv2d-without-`bias=False` is part of that addition.
+This bug was introduced when the CNN encoder was added to `pyod`. The
+original `pyod` (`yzhao062/pyod`) has no Conv2d layers — `_build_model` is
+a pure MLP. The CNN `_build_embedder` was added in `modanesh/pyod` (the
+fork that upstream YRC-Bench `main` consumes as a git submodule pinned at
+commit `4a2080874a…`), and the Conv2d-without-`bias=False` was part of
+that addition. That same commit is the current `HEAD` of `modanesh/pyod`,
+so merging from upstream YRC-Bench will not fix Bug 1.
 
 ## Bug 2 — `c` lives in a different space than the embedding
 
@@ -163,7 +167,10 @@ are not three independent fixes:
   tanh, identity); `c` is still captured in the wrong layer, but at least
   every component of `c` is reachable by `f(x)`.
 
-This bug is **upstream pyod**, present unchanged from v2.0.2 through v3.4.0.
+This bug is present in the original `yzhao062/pyod` (unchanged from v2.0.2
+through v3.4.0) and in `modanesh/pyod`. It is therefore present in your
+local vendored copy and in upstream YRC-Bench's pinned `modanesh/pyod`
+submodule.
 
 ## Bug 3 — Weight regularisation is ~10⁵× the paper's setting
 
@@ -204,28 +211,48 @@ network is being regularised orders of magnitude harder than the paper's
 recipe, which by itself biases the optimum toward `weights ≈ 0` and the
 constant-near-zero output.
 
-Upstream `pyod` has the same dual structure as the YRC fork, but multiplies
+The original `yzhao062/pyod` has the same dual structure, but multiplies
 the explicit Frobenius term by `1e-6`, making it negligible next to the
-optimiser's `weight_decay`. The YRC fork dropped that `1e-6` coefficient, so
-the explicit term operates at full strength. Even upstream, however, the
-optimiser's `weight_decay = 0.1` already departs from the paper's
-`λ = 10⁻⁶` by 5 orders of magnitude — the YRC fork makes a deviation that
-existed upstream worse, rather than introducing a new one.
+optimiser's `weight_decay`. `modanesh/pyod` dropped that `1e-6` coefficient,
+so the explicit term operates at full strength. The drop predates this
+fork — your vendored copy and upstream YRC-Bench's pinned submodule both
+inherit the post-drop version. Even so, the optimiser's
+`weight_decay = 0.1` default (present in `yzhao062/pyod` already) departs
+from the paper's `λ = 10⁻⁶` by 5 orders of magnitude, so the dropped
+coefficient is not the only thing that needs fixing.
 
-This bug is **upstream pyod in form** (dual-term structure plus
-`weight_decay = 0.1` default), **YRC-amplified in magnitude** (1e-6 coefficient
-on the explicit term dropped).
+This bug is **upstream-`pyod` in form** (dual-term structure plus
+`weight_decay = 0.1` default) and **upstream-`modanesh/pyod`-amplified in
+magnitude** (1e-6 coefficient on the explicit term dropped, not by this
+fork).
 
-## Upstream-vs-YRC attribution summary
+## Provenance and attribution
+
+Three layers of `pyod` are involved:
+
+- **`yzhao062/pyod`** — the original PyOD library. Pure MLP DeepSVDD, no
+  Conv2d encoder. `deep_svdd.py` is bit-identical between v2.0.2 and
+  v3.4.0 (`diff` returned no output).
+- **`modanesh/pyod`** — a fork that adds the CNN `_build_embedder`, the
+  streaming-DataLoader code, and image-handling extensions. Current `HEAD`
+  is commit `4a2080874a…` ("removing learnable features + minigrid
+  updates"). Upstream YRC-Bench (`modanesh/YRC-Bench`) consumes this as a
+  git submodule pinned to that commit.
+- **This fork's `lib/pyod/`** — a flattened copy of `modanesh/pyod` (no
+  submodule). Differs from `modanesh/pyod` only in `black`/`ruff`-style
+  formatting; substantive code at the bug sites is identical.
 
 | # | Bug | Where it lives | Latest pyod (v3.4.0)? |
 |---|-----|----------------|-----------------------|
-| 1 | `bias=True` on the two `Conv2d` layers in `_build_embedder` | YRC-introduced | n/a |
-| 2 | `_init_c` hook on the `net_output` Linear module captures values outside `image(φ)` | Upstream pyod | Still present |
-| 3 | Weight regularisation ~10⁵× the paper's setting (dual term + `weight_decay=0.1`) | Upstream form, YRC-amplified magnitude | Still present |
+| 1 | `bias=True` on the two `Conv2d` layers in `_build_embedder` | Introduced in `modanesh/pyod`; still in its `HEAD`; pinned by upstream YRC-Bench `main`; inherited verbatim here | n/a (no CNN in `yzhao062/pyod`) |
+| 2 | `_init_c` hook on the `net_output` Linear module captures values outside `image(φ)` | Original `yzhao062/pyod`; inherited unchanged by `modanesh/pyod` and this fork | Still present |
+| 3 | Weight regularisation ~10⁵× the paper's setting (dual term + `weight_decay=0.1`) | Dual-term structure and `weight_decay=0.1` default are in `yzhao062/pyod`; the `1e-6` coefficient on the explicit term was dropped in `modanesh/pyod`, not here | Dual structure + `weight_decay=0.1` default still present; the `1e-6` coefficient is intact upstream |
 
-Upgrading pyod will not fix anything: `deep_svdd.py` is bit-identical from
-v2.0.2 through v3.4.0 (`diff` returned no output).
+Merging from upstream YRC-Bench `main` will not fix any of these — upstream
+YRC pins `modanesh/pyod` as a submodule, and the latest commit of that
+fork still contains all three bugs at the same lines. Upgrading
+`yzhao062/pyod` to v3.4.0 doesn't help either (the relevant file is
+unchanged).
 
 ## Minimum-change patch recipe
 
@@ -270,8 +297,21 @@ required.
 ## Where to land the patches
 
 `lib/pyod/` is vendored in this repo as plain files (not a git submodule;
-not a wheel). The patches can land directly in the vendored copy. Bug 2 and
-the upstream-form parts of Bug 3 are also genuine bugs in `pyod` itself;
-upstreaming via a PR to `pyod` should be feasible given that the behaviour
-we observed is the structural worst case of the paper's warnings, and the
-paper references in this document make the case directly.
+not a wheel). The immediate patches can land directly in the vendored copy.
+
+If you also want the fixes available outside this fork, the natural upstream
+target differs by bug:
+
+- **Bug 1** was introduced in `modanesh/pyod`. The fix belongs there, and
+  would simultaneously fix upstream YRC-Bench (which pins that fork).
+- **Bug 2** is in the original `yzhao062/pyod` as well as in
+  `modanesh/pyod`. A PR to `yzhao062/pyod` would reach the broader pyod
+  user base; the paper references in this document make the case directly.
+- **Bug 3**: the dual-term structure and the `weight_decay = 0.1` default
+  are in `yzhao062/pyod`; the dropped `1e-6` coefficient on the explicit
+  term is `modanesh`-specific. The `weight_decay` default is arguably
+  configuration-not-bug (callers can set their own `l2_regularizer` /
+  `weight_decay`), so the cleanest upstream change is to restore the
+  `1e-6` coefficient in `modanesh/pyod`. For this fork's purposes, the
+  more pragmatic fix is to pin both values to paper-faithful settings at
+  training time rather than rely on library defaults.
