@@ -28,7 +28,9 @@ Confirm the expected commit SHA is at the top before submitting.
 ## Submitting an eval smoke job
 
 The standard pattern is to invoke `scripts/run_eval.py` over SSH inside
-`ood-stable`:
+`ood-stable`. The flags below are the smoke-test defaults — small enough
+to finish quickly while still exercising the calibration + sampler path
+end to end:
 
 ```bash
 ssh rnn 'cd /nas/ucb/czempin/code/goal-misgen/yrc-bench-fork \
@@ -39,15 +41,27 @@ ssh rnn 'cd /nas/ucb/czempin/code/goal-misgen/yrc-bench-fork \
        --method <method-key> \
        --prefix <experiment-prefix> \
        --exp-ids 0 \
-       --num-levels <N> \
-       --coverage-fraction <fraction> \
-       --calibration-levels <K> \
+       --num-levels 16 \
+       --coverage-fraction 0.2 \
        --video-episodes 0 \
        --video-filter all \
        --cp-rolling-average none \
        --video-logging-mode folder \
        --video-filter-mode any'
 ```
+
+Notes on the defaults:
+
+- `--num-levels 16` — number of OOD-eval levels each threshold is scored
+  against (not the total sampler iteration count).
+- `--coverage-fraction 0.2` — coarse bin granularity for the AFHP
+  coverage sampler, so fewer iterations are needed to mark coverage as
+  complete.
+- `--video-episodes 0` — skip video recording.
+- `--calibration-levels` is omitted, so calibration uses the full
+  validation split. Pass `--calibration-levels 64` to override
+  (e.g. for image-SVDD smoke tests).
+- `--exp-ids 0` runs one experiment; extend to a list for more coverage.
 
 The script prints `Submitted <job_name>: Submitted batch job <JOBID>`.
 Record `JOBID`.
