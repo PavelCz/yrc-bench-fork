@@ -6,10 +6,11 @@ PROJECT_ROOT="$(realpath "$(dirname "$SCRIPT_DIR")")"
 TRAIN_DIR="${PROJECT_ROOT}/lib/train-procgen-pytorch"
 
 # Default configuration
-CONDA_ENV="ood-stable"
+CONDA_ENV="ood"
 EXP_PREFIX="icml2"
 LEVEL_SEEDS_FOLDER="/nas/ucb/czempin/data/goal-misgen/seeds/icml"
 LOG_DIR="/nas/ucb/czempin/data/goal-misgen/logs/train_policies"
+CHECKPOINT_BASE="/nas/ucb/czempin/data/goal-misgen/policy/icml"
 RANDOM_PERCENTS=(0 50 100)
 
 # Usage function
@@ -237,6 +238,7 @@ for random_percent in "${RANDOM_PERCENTS[@]}"; do
             --num_checkpoints 10 \
             --num_threads 4 \
             --seed $SEED \
+            --logdir_base $CHECKPOINT_BASE \
             $EXTRA_ARGS"
 done
 

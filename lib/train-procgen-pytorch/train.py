@@ -89,6 +89,16 @@ if __name__ == "__main__":
     parser.add_argument("--model_file", type=str)
     parser.add_argument("--use_wandb", action="store_true")
     parser.add_argument("--disable_backgrounds", action="store_true")
+    parser.add_argument(
+        "--logdir_base",
+        type=str,
+        default=os.path.join("logs", "train"),
+        help=(
+            "Base directory for training output. Final path: "
+            "{logdir_base}/{env_name}/{exp_name}/{run_name}/. Defaults to the "
+            "in-repo 'logs/train' for backward compatibility."
+        ),
+    )
 
     parser.add_argument("--wandb_tags", type=str, nargs="+")
     parser.add_argument(
@@ -342,7 +352,7 @@ if __name__ == "__main__":
 
     print("INITIALIZING LOGGER...")
 
-    logdir = os.path.join("logs", "train", env_name, exp_name)
+    logdir = os.path.join(args.logdir_base, env_name, exp_name)
     if args.model_file == "auto":  # try to figure out which file to load
         logdirs_with_model = [
             d
