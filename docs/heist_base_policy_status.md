@@ -22,8 +22,11 @@ to heist (ID = `heist_aisc_many_chests`, OOD = `heist_aisc_many_keys`).
 
 ## Repo layout on rnn
 
-- **Heist clone** (this branch): `/home/pavel/code/goal-misgen/heist-yrc-bench-fork`
-- **OOD-stable clone** (parallel, do not touch): `/home/pavel/code/goal-misgen/yrc-bench-fork`
+The rnn account is `czempin` (the user's local machine uses `pavel`; on rnn the
+equivalent paths are `/home/czempin/...`).
+
+- **Heist clone** (this branch): `/home/czempin/code/goal-misgen/heist-yrc-bench-fork`
+- **OOD clone** (parallel, do not touch): `/home/czempin/code/goal-misgen/yrc-bench-fork` (currently on branch `ood`)
 
 All commands below assume the heist clone.
 
@@ -50,14 +53,23 @@ status as needed if the plan file isn't accessible from a fresh machine).
   the rnn install is what actually matters and gets verified in Step 2.
 
 ### Step 2 — rnn pre-flight (SSH)
-- [ ] `ssh rnn "cd /home/pavel/code/goal-misgen/heist-yrc-bench-fork && git fetch && git checkout heist && git pull"`
-- [ ] Verify `ood` env on rnn exposes `heist_afh`:
-  ```bash
-  ssh rnn "conda run -n ood python -c \"from procgen import ProcgenGym3Env; e = ProcgenGym3Env(num=1, env_name='heist_afh', random_percent=0, distribution_mode='hard'); print(e.ob_space, e.ac_space)\""
-  ```
-  - If this fails: rebuild + `pip install -e lib/procgen` from the heist clone
-    inside `ood` (does NOT affect `ood-stable`).
-- [ ] `ssh rnn "ls /nas/ucb/czempin/data/goal-misgen/policy/icml/maze_afh/icml2_maze_exp0_0p/"` — sanity check existing maze layout.
+- [x] Heist clone exists at `/home/czempin/code/goal-misgen/heist-yrc-bench-fork`
+  on branch `heist`, up to date with `origin/heist` (HEAD `4adbab2`). User
+  created the clone fresh from GitHub. Submodules (`Minigrid`, `cliport`,
+  `pytorch_vae`) are uninitialized — not needed since this fork is
+  Procgen-only and `lib/procgen` / `lib/train-procgen-pytorch` are vendored
+  in the main repo, not submoduled.
+- [x] `ood` env on rnn exposes `heist_afh`. The first `from procgen import
+  ProcgenGym3Env; ProcgenGym3Env(env_name='heist_afh', ...)` triggered a
+  procgen auto-rebuild (`building procgen...done`) and returned
+  `Dict(rgb=D256[64,64,3]) D15[]` — correct obs/action spaces. No manual
+  rebuild required.
+  - To re-run: `ssh rnn "source /nas/ucb/czempin/anaconda3/etc/profile.d/conda.sh && conda activate ood && python -c \"from procgen import ProcgenGym3Env; print(ProcgenGym3Env(num=1, env_name='heist_afh', random_percent=0, distribution_mode='hard').ob_space)\""`
+- [x] Existing maze layout confirmed:
+  `/nas/ucb/czempin/data/goal-misgen/policy/icml/maze_afh/icml2_maze_exp0_0p/2026-01-13__15-01-05__seed_1080/model_200015872.pth`
+  (plus 10 intermediate checkpoints). This is exactly the layout
+  `train_policies.sh -e heist -x 0` will produce after the `--logdir_base`
+  edits.
 
 ### Step 3 — Smoke training run on rnn (4M timesteps)
 - [ ] Submit:
