@@ -69,6 +69,16 @@ python eval_policy.py -c configs/procgen_threshold.yaml \
 python scripts/run_eval.py --env coinrun --method max-prob --exp-ids 0 1 2 3
 ```
 
+### Smoke tests on rnn
+
+End-to-end smoke tests against the frozen `ood-stable` env run on the
+`rnn` server via SSH + `scripts/run_eval.py`. See
+[`docs/rnn_smoke_tests.md`](docs/rnn_smoke_tests.md) for the full
+workflow: prerequisites, pulling the latest commit, submitting a job,
+log paths under `/nas/ucb/czempin/data/goal-misgen/slurm-logs/`, tailing
+in real time, cancelling, and baseline timing. The same SSH/conda
+wrapper is used for one-off diagnostic scripts on rnn.
+
 ### Analysis
 ```bash
 # Parse raw results

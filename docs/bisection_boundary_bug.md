@@ -137,34 +137,16 @@ points pre-loaded and confirms the next bisection target is
 
 ---
 
-## 2. Running the smoke test on rnn
+## 2. Reproducing the bug on rnn
 
 The smoke test reproduces the exact failure mode the sampler is
 designed to handle (degenerate calibration scores, near-step AFHP
 curve on eval). It is the cheapest end-to-end check that any sampler
 patch behaves correctly.
 
-### Prerequisites
-
-- SSH access to `rnn` configured as host alias `rnn`.
-- The branch under test must be pushed to `origin/ood`. The smoke test
-  pulls from `origin/ood` on rnn before submitting.
-- Conda env `ood-stable` must exist at
-  `/nas/ucb/czempin/anaconda3/envs/ood-stable` (frozen experiment env).
-- The repo on rnn is at `/nas/ucb/czempin/code/goal-misgen/yrc-bench-fork`.
-
-### Pulling the latest commit
-
-```bash
-ssh rnn 'cd /nas/ucb/czempin/code/goal-misgen/yrc-bench-fork \
-  && git fetch origin ood \
-  && git pull --ff-only \
-  && git log --oneline -3'
-```
-
-Confirm the expected commit SHA is at the top.
-
-### Submitting the job
+See [`docs/rnn_smoke_tests.md`](rnn_smoke_tests.md) for the generic
+rnn workflow (prerequisites, pulling, log paths, tailing, cancelling,
+timing). The bug-specific submission is:
 
 ```bash
 ssh rnn 'cd /nas/ucb/czempin/code/goal-misgen/yrc-bench-fork \
@@ -185,26 +167,8 @@ ssh rnn 'cd /nas/ucb/czempin/code/goal-misgen/yrc-bench-fork \
        --video-filter-mode any'
 ```
 
-The script prints a line like
-`Submitted coinrun_svdd-image_exp0: Submitted batch job <JOBID>`.
-Record `JOBID`.
-
-To preview the sbatch script without submitting, add `--dry-run`.
-
-### Log locations
-
-For job `JOBID`, the two SLURM files are at
-
-```
-/nas/ucb/czempin/data/goal-misgen/slurm-logs/default/debug-image-svdd-threshold/YYYY-MM-DD/coinrun_svdd-image_exp0_<JOBID>.err
-/nas/ucb/czempin/data/goal-misgen/slurm-logs/default/debug-image-svdd-threshold/YYYY-MM-DD/coinrun_svdd-image_exp0_<JOBID>.out
-```
-
-The `.err` file holds the per-run log (everything from `logging.info`,
-including the eval tracker's per-iteration lines and the sampler
-dispatch / probe diagnostics). The `.out` file holds only the
-launcher shell's stdout, which is mostly empty for a still-running job
-because Python stdout is block-buffered.
+The job name is `coinrun_svdd-image_exp0`; logs land under
+`/nas/ucb/czempin/data/goal-misgen/slurm-logs/default/debug-image-svdd-threshold/<YYYY-MM-DD>/`.
 
 ### Signals to watch for in `.err`
 
@@ -240,25 +204,10 @@ In rough chronological order:
      `coverage_percentage`, `unfillable_afhp_intervals`,
      `bins_filled`, `total_bins`.
 
-### Tailing in real time
-
-```bash
-ssh rnn 'tail -F /nas/ucb/czempin/data/goal-misgen/slurm-logs/default/debug-image-svdd-threshold/YYYY-MM-DD/coinrun_svdd-image_exp0_<JOBID>.err'
-```
-
-### Cancelling
-
-```bash
-ssh rnn 'scancel <JOBID>'
-```
-
-### Typical timing on rnn (`ood-stable` env, single GPU)
-
-- Calibration: about 2 minutes for 64 episodes.
-- Per evaluation (any threshold): about 1 to 2 minutes.
-- The probe burns 6 evals before the dispatch decision, so the
-  earliest signal that the probe selected raw expansion arrives
-  roughly 10 minutes after submission.
+The probe burns 6 evals before the dispatch decision, so the earliest
+signal that the probe selected raw expansion arrives roughly 10 minutes
+after submission (see [`rnn_smoke_tests.md`](rnn_smoke_tests.md) for
+baseline per-eval timing).
 
 ---
 
@@ -349,19 +298,19 @@ Key numbers to print:
 
 ### Running on rnn
 
-Copy or rsync the script into the rnn checkout, then
+Copy or rsync the script into the rnn checkout, then run it via the
+generic SSH/conda wrapper documented in
+[`rnn_smoke_tests.md`](rnn_smoke_tests.md) ("Running an arbitrary script
+on rnn"). The bug-specific invocation is:
 
 ```bash
-ssh rnn 'cd /nas/ucb/czempin/code/goal-misgen/yrc-bench-fork \
-  && source /nas/ucb/czempin/anaconda3/etc/profile.d/conda.sh \
-  && conda activate ood-stable \
-  && python scripts/inspect_image_svdd_scores.py \
-       -c configs/eval/coinrun/image_svdd.yaml \
-       -en coinrun \
-       -sim <weak.pth> -weak <weak.pth> -strong <strong.pth> \
-       -f_n /nas/ucb/czempin/data/goal-misgen/trained_svdd/neurips04/svdd_coinrun_image_exp0/trained.joblib \
-       -level_seeds_file /nas/ucb/czempin/data/goal-misgen/seeds/icml/0.json'
+python scripts/inspect_image_svdd_scores.py \
+    -c configs/eval/coinrun/image_svdd.yaml \
+    -en coinrun \
+    -sim <weak.pth> -weak <weak.pth> -strong <strong.pth> \
+    -f_n /nas/ucb/czempin/data/goal-misgen/trained_svdd/neurips04/svdd_coinrun_image_exp0/trained.joblib \
+    -level_seeds_file /nas/ucb/czempin/data/goal-misgen/seeds/icml/0.json
 ```
 
-GPU is not strictly required but is much faster. Run for a few thousand
-frames; one minute or two is enough to get a clean distribution.
+Run for a few thousand frames; one minute or two is enough to get a
+clean distribution.
