@@ -71,27 +71,40 @@ status as needed if the plan file isn't accessible from a fresh machine).
   `train_policies.sh -e heist -x 0` will produce after the `--logdir_base`
   edits.
 
-### Step 3 — Smoke training run on rnn (4M timesteps)
-- [ ] Submit:
-  ```bash
-  ssh rnn "cd /home/pavel/code/goal-misgen/heist-yrc-bench-fork && scripts/train_policies.sh -e heist -x 0 --random-percent 0 --num-timesteps 4000000 --days 1"
-  ```
-- [ ] SLURM job ID: _____
-- [ ] Checkpoint appears at
-      `/nas/ucb/czempin/data/goal-misgen/policy/icml/heist_afh/icml2_heist_exp0_0p/<timestamp>__seed_1111/model_*.pth`
-- [ ] Wandb run shows non-trivial reward curve.
-- [ ] `python -c "from scripts.common import get_checkpoints; print(get_checkpoints('heist', 0, '/nas/ucb/czempin/data/goal-misgen/policy/icml'))"`
-  resolves the new path.
+### Step 3 — Smoke training run on rnn (100k timesteps)
+- [x] Submitted job 1134987 via
+  `ssh rnn "cd /home/czempin/code/goal-misgen/heist-yrc-bench-fork && scripts/train_policies.sh -e heist -x 0 --random-percent 0 --num-timesteps 100000 --days 1"`.
+  **State**: COMPLETED in 60s (setup 4.78s, training 49s, ~2038 steps/s).
+- [x] Checkpoints written to
+  `/nas/ucb/czempin/data/goal-misgen/policy/icml/heist_afh/icml2_heist_exp0_0p/2026-05-14__01-36-03__seed_1111/`:
+  `model_65536.pth`, `model_131072.pth`.
+- [x] `get_checkpoints('heist', 0, '/nas/ucb/.../policy/icml')` resolves:
+  - `weak` and `sim` → `.../model_131072.pth`
+  - `strong` → `.../icml2_heist_exp0_50p/NOT_FOUND` (expected; strong not yet trained).
+  Warning fires that 131072 ≠ EXPECTED_TIMESTEPS (200015872) — expected for a smoke run.
+- Wandb is not enabled by default in `train_policies.sh` (no `--use_wandb`); skipped.
+
+**Failures along the way (resolved):**
+- Job 1134953 (first attempt): FAILED in 1s with `conda: not found`. The
+  `sbatch --wrap` script runs under `/bin/sh` which doesn't load
+  `~/.bashrc`. When sbatch is invoked from a non-interactive ssh, conda
+  isn't on PATH. Fixed in commit `ca05959` by sourcing
+  `${CONDA_BASE}/etc/profile.d/conda.sh` in the wrap.
+- Job 1134986 (second attempt): FAILED in 1s with `source: not found`.
+  `/bin/sh` (Dash) doesn't have the bash-only `source` builtin. Fixed in
+  commit `8d32279` by switching to POSIX `.` (dot).
+- Both failures are now self-contained and won't recur regardless of how
+  `train_policies.sh` is invoked.
 
 ### Step 4 — Full 200M training (weak + strong)
 - [ ] Submit weak:
   ```bash
-  ssh rnn "cd /home/pavel/code/goal-misgen/heist-yrc-bench-fork && scripts/train_policies.sh -e heist -x 0 --random-percent 0"
+  ssh rnn "cd /home/czempin/code/goal-misgen/heist-yrc-bench-fork && scripts/train_policies.sh -e heist -x 0 --random-percent 0"
   ```
   SLURM job ID: _____
 - [ ] Submit strong:
   ```bash
-  ssh rnn "cd /home/pavel/code/goal-misgen/heist-yrc-bench-fork && scripts/train_policies.sh -e heist -x 0 --random-percent 50"
+  ssh rnn "cd /home/czempin/code/goal-misgen/heist-yrc-bench-fork && scripts/train_policies.sh -e heist -x 0 --random-percent 50"
   ```
   SLURM job ID: _____
 
