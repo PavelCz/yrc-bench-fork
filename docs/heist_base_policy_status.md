@@ -97,16 +97,28 @@ status as needed if the plan file isn't accessible from a fresh machine).
   `train_policies.sh` is invoked.
 
 ### Step 4 — Full 200M training (weak + strong)
-- [ ] Submit weak:
-  ```bash
-  ssh rnn "cd /home/czempin/code/goal-misgen/heist-yrc-bench-fork && scripts/train_policies.sh -e heist -x 0 --random-percent 0"
-  ```
-  SLURM job ID: _____
-- [ ] Submit strong:
-  ```bash
-  ssh rnn "cd /home/czempin/code/goal-misgen/heist-yrc-bench-fork && scripts/train_policies.sh -e heist -x 0 --random-percent 50"
-  ```
-  SLURM job ID: _____
+- [x] **Weak** submitted: SLURM job `1134988`,
+  `scripts/train_policies.sh -e heist -x 0 --random-percent 0`
+  (200M timesteps, 3-day wall). Log:
+  `/nas/ucb/czempin/data/goal-misgen/logs/train_policies/icml2_heist_exp0_0p_1134988.out`.
+  Expected output dir:
+  `/nas/ucb/czempin/data/goal-misgen/policy/icml/heist_afh/icml2_heist_exp0_0p/<timestamp>__seed_1111/model_200015872.pth`.
+- [x] **Strong** submitted: SLURM job `1134989`,
+  `scripts/train_policies.sh -e heist -x 0 --random-percent 50`
+  (same params). Log:
+  `/nas/ucb/czempin/data/goal-misgen/logs/train_policies/icml2_heist_exp0_50p_1134989.out`.
+  Expected output dir:
+  `/nas/ucb/czempin/data/goal-misgen/policy/icml/heist_afh/icml2_heist_exp0_50p/<timestamp>__seed_1111/model_200015872.pth`.
+
+Estimated wall time per job: ~27h pure training (2038 steps/s measured
+in the smoke run × 200M steps), plus ~5–10s setup. Watcher disabled per
+user preference; resume Step 5 when both jobs leave the queue.
+
+To check progress at any time:
+```bash
+ssh rnn "squeue -u czempin -j 1134988,1134989 -o '%i %T %M %R'"
+ssh rnn "sacct -j 1134988,1134989 --format=JobID,State,ExitCode,Elapsed -P | head -10"
+```
 
 ### Step 5 — Post-training verification
 - [ ] `get_checkpoints("heist", 0, "/nas/ucb/czempin/data/goal-misgen/policy/icml")`
