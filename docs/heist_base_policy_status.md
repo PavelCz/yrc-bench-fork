@@ -121,13 +121,31 @@ ssh rnn "sacct -j 1134988,1134989 --format=JobID,State,ExitCode,Elapsed -P | hea
 ```
 
 ### Step 5 — Post-training verification
-- [ ] `get_checkpoints("heist", 0, "/nas/ucb/czempin/data/goal-misgen/policy/icml")`
-      returns valid `weak` and `strong` paths (no `NOT_FOUND` markers).
-- [ ] `find_best_model_checkpoint` finds `model_200015872.pth` in each
-      (matches `EXPECTED_TIMESTEPS` in `scripts/common.py:6`).
-- [ ] Rollout sanity check: weak agent gets high return on
-      `heist_aisc_many_chests` and degraded return on `heist_aisc_many_keys`;
-      strong agent gets reasonable return on both.
+- [x] **Both jobs COMPLETED.** Weak (1134988): exit 0:0, 20h 55m, throughput
+  2656 steps/s, final val_mean_reward 3.20. Strong (1134989): exit 0:0,
+  20h 51m, throughput 2664 steps/s, final val_mean_reward 3.35.
+- [x] `get_checkpoints('heist', 0, '/nas/ucb/.../policy/icml')` returns:
+  ```
+  sim/weak: .../icml2_heist_exp0_0p/2026-05-14__01-40-04__seed_1111/model_200015872.pth
+  strong:   .../icml2_heist_exp0_50p/2026-05-13__18-52-39__seed_1111/model_200015872.pth
+  ```
+  No `NOT_FOUND` markers.
+- [x] `find_best_model_checkpoint` resolved `model_200015872.pth` for both;
+  matches `EXPECTED_TIMESTEPS` exactly (no mismatch warning). Each run
+  produced 10 intermediate checkpoints (model_20054016.pth through
+  model_180027392.pth) plus the final.
+- [ ] **Behavioral rollout sanity check (deferred)**: weak should display
+  goal misgen on `heist_aisc_many_keys`; strong should generalize. This
+  crosses into the eval-side plan and uses `eval_policy.py` /
+  `configs/procgen_threshold.yaml`. Recommended before committing to
+  multi-seed scale-out.
+
+**Housekeeping note:** the smoke-run dir
+`.../icml2_heist_exp0_0p/2026-05-14__01-36-03__seed_1111/` (containing
+only `model_65536.pth` + `model_131072.pth`) coexists with the full run
+under the same `icml2_heist_exp0_0p` parent. `find_newest_timestamp_dir`
+correctly picks the newer full-run dir but emits a "Multiple timestamp
+dirs" warning. Safe to delete the smoke dir whenever convenient.
 
 ## Code changes already landed on this branch
 
