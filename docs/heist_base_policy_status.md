@@ -134,11 +134,37 @@ ssh rnn "sacct -j 1134988,1134989 --format=JobID,State,ExitCode,Elapsed -P | hea
   matches `EXPECTED_TIMESTEPS` exactly (no mismatch warning). Each run
   produced 10 intermediate checkpoints (model_20054016.pth through
   model_180027392.pth) plus the final.
-- [ ] **Behavioral rollout sanity check (deferred)**: weak should display
-  goal misgen on `heist_aisc_many_keys`; strong should generalize. This
-  crosses into the eval-side plan and uses `eval_policy.py` /
-  `configs/procgen_threshold.yaml`. Recommended before committing to
-  multi-seed scale-out.
+- [x] **Behavioral rollout sanity check** (sbatch job 1137495, ~7 min wall):
+  100-episode test rollouts of each agent on `heist_afh` configured for
+  ID (random_percent=0, many_chests behavior) vs OOD (random_percent=100,
+  many_keys behavior), via `eval_policy.py` against the existing
+  `configs/eval/heist/timestep_random_many_{chests,keys}.yaml` configs.
+
+  | Agent | many_chests (ID) | many_keys (OOD) | Δ |
+  |---|---|---|---|
+  | weak (rp=0)   | 3.51 ± 1.51 | 2.96 ± 1.34 | −16% |
+  | strong (rp=50)| 3.38 ± 1.50 | 3.40 ± 1.46 | ~0% |
+
+  Strong agent generalizes (parity across both distributions). Weak
+  degrades on OOD vs ID and underperforms strong on OOD — the
+  qualitative split that downstream coordination eval depends on. The
+  ~16% weak degradation is modest rather than catastrophic, consistent
+  with heist's OOD variant still rewarding the same key-grab + chest-open
+  loop just with an extra unused key.
+
+  Two pre-existing issues found and worked around (not fixed):
+  - The heist eval YAMLs (`configs/eval/heist/*.yaml`) lack a top-level
+    `name:` field that other configs (e.g. `procgen_threshold.yaml`) carry.
+    Workaround: pass `-n <name>` on the CLI. Worth adding `name:` to the
+    YAML files when the eval-side plan touches them.
+  - Compute nodes mount `/nas/ucb/czempin/...` but not `/home/czempin/...`.
+    Helper scripts that run inside an sbatch job must reference the NAS
+    path. `train_policies.sh` is fine because it uses `realpath` to
+    resolve the symlink before baking into the wrap.
+
+  Sanity-eval helper script: `/tmp/heist_sanity_eval.sh` on rnn (one-off,
+  not committed). Per-eval JSON results saved under
+  `experiments/evals/sanity_*/`.
 
 **Housekeeping note:** the smoke-run dir
 `.../icml2_heist_exp0_0p/2026-05-14__01-36-03__seed_1111/` (containing
