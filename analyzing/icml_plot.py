@@ -185,7 +185,9 @@ def _build_legend_entries(ax):
     Novice/Expert/Random reference block, with a thin gray rule above it.
 
     Returns:
-        (handles, labels) ready to pass to `plt.legend(...)`.
+        (handles, labels, separator_indices) — the third element lists the row
+        positions in `handles` where the marker-column placeholder should be
+        expanded into a full-legend-width horizontal rule.
     """
     raw_handles, raw_labels = ax.get_legend_handles_labels()
 
@@ -206,10 +208,12 @@ def _build_legend_entries(ax):
             method_entries.append((handle, label))
 
     ordered: List[Tuple[object, str]] = list(method_entries)
+    separator_indices: List[int] = []
 
     if partial_oracle_entries:
         separator = Line2D([], [], color="gray", linewidth=0.7)
         ordered.append((separator, ""))
+        separator_indices.append(len(ordered) - 1)
         ordered.extend(partial_oracle_entries)
 
     # Reference lines always come last in this fixed order.
@@ -219,7 +223,60 @@ def _build_legend_entries(ax):
 
     handles = [h for h, _ in ordered]
     labels = [l for _, l in ordered]
-    return handles, labels
+    return handles, labels, separator_indices
+
+
+def _draw_legend_separator(legend, indices):
+    """Replace the marker-column placeholders at `indices` in `legend` with
+    thin horizontal rules that span the full legend width.
+
+    Computed in figure-fraction coordinates from the legend's bbox after a
+    forced draw. Suitable for batch save workflows; the rules do not update
+    if the figure is later resized interactively.
+    """
+    if not indices:
+        return
+
+    fig = legend.figure
+    if fig is None:
+        return
+
+    fig.canvas.draw()  # populate legend / row bboxes
+
+    handles_attr = getattr(legend, "legend_handles", None)
+    if handles_attr is None:
+        handles_attr = getattr(legend, "legendHandles", None)
+    if not handles_attr:
+        return
+
+    legend_bbox = legend.get_window_extent()
+    if legend_bbox.width <= 0 or legend_bbox.height <= 0:
+        return
+    inv = fig.transFigure.inverted()
+    pad_disp = 4  # display-coord inset from each legend frame edge
+
+    for idx in indices:
+        if idx >= len(handles_attr):
+            continue
+        placeholder = handles_attr[idx]
+        placeholder_bbox = placeholder.get_window_extent()
+        y_mid_disp = (placeholder_bbox.y0 + placeholder_bbox.y1) / 2
+        x0_disp = legend_bbox.x0 + pad_disp
+        x1_disp = legend_bbox.x1 - pad_disp
+        p0 = inv.transform((x0_disp, y_mid_disp))
+        p1 = inv.transform((x1_disp, y_mid_disp))
+        rule = Line2D(
+            [p0[0], p1[0]],
+            [p0[1], p1[1]],
+            color="gray",
+            linewidth=0.7,
+            transform=fig.transFigure,
+            zorder=legend.get_zorder() + 1,
+        )
+        fig.add_artist(rule)
+        # Hide the marker-column placeholder so we don't render two lines on
+        # the same row.
+        placeholder.set_visible(False)
 
 
 def filter_results_by_robust(
@@ -1111,7 +1168,9 @@ def plot_icml_results(
 
     # Build the legend explicitly so that PartialOracle entries sit just before
     # the Novice reference line, preceded by a thin visual separator.
-    legend_handles, legend_labels = _build_legend_entries(plt.gca())
+    legend_handles, legend_labels, separator_indices = _build_legend_entries(
+        plt.gca()
+    )
 
     # Apply publication styling
     style_plot_for_publication(
@@ -1123,6 +1182,12 @@ def plot_icml_results(
     )
 
     plt.tight_layout()
+
+    # After layout settles, expand any separator rows into full-legend-width
+    # horizontal rules.
+    legend_obj = plt.gca().get_legend()
+    if legend_obj is not None and separator_indices:
+        _draw_legend_separator(legend_obj, separator_indices)
 
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
