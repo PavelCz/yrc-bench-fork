@@ -154,6 +154,31 @@ def canonicalize_method(method: str) -> str:
     return add_robust_suffix(base, robust_variant)
 
 
+def method_has_robust_variant(method: str) -> bool:
+    """True if the method name carries one of the known robust suffixes."""
+    _, robust_variant = split_robust_method(method)
+    return robust_variant is not None
+
+
+def filter_results_by_robust(
+    results: Dict[str, Dict[int, Path]], robust_filter: str
+) -> Dict[str, Dict[int, Path]]:
+    """Filter the results dict by robust-variant membership.
+
+    robust_filter:
+        "all" -> identity
+        "robust" -> keep only methods with a robust suffix
+        "non-robust" -> keep only methods without a robust suffix
+    """
+    if robust_filter == "all":
+        return results
+    if robust_filter == "robust":
+        return {m: d for m, d in results.items() if method_has_robust_variant(m)}
+    if robust_filter == "non-robust":
+        return {m: d for m, d in results.items() if not method_has_robust_variant(m)}
+    raise ValueError(f"Unknown robust_filter: {robust_filter!r}")
+
+
 def add_robust_suffix(method: str, robust_variant: Optional[str]) -> str:
     """Attach robust variant to method name unless it is already present."""
     if robust_variant is None:
@@ -170,13 +195,21 @@ def method_display_name(method: str) -> str:
 
 
 def format_plot_label(
-    method: str, paper_mode: bool, n_experiments: Optional[int] = None
+    method: str,
+    paper_mode: bool,
+    n_experiments: Optional[int] = None,
+    hide_robust_suffix: bool = False,
 ) -> str:
-    """Format method labels, including robust strong-policy variants."""
+    """Format method labels, including robust strong-policy variants.
+
+    If `hide_robust_suffix` is True the `(Robust ...)` qualifier is omitted —
+    intended for plots where the robust variant is communicated via the title
+    instead of per-method labels.
+    """
     base_method, robust_variant = split_robust_method(method)
     label = method_display_name(base_method)
 
-    if robust_variant is not None:
+    if robust_variant is not None and not hide_robust_suffix:
         label = f"{label} ({ROBUST_LABELS[robust_variant]})"
 
     if not paper_mode and n_experiments is not None:
@@ -484,12 +517,13 @@ def calculate_auc_with_bands(
     return auc_median, auc_lower, auc_upper
 
 
-def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]], 
+def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]],
                          x_label: str, y_label: str,
                          normalize_by_range: bool = True,
                          x_range: Optional[Tuple[float, float]] = None,
                          weak_performance: Optional[float] = None,
-                         strong_performance: Optional[float] = None):
+                         strong_performance: Optional[float] = None,
+                         hide_robust_suffix: bool = False):
     """
     Print AUC results as a LaTeX-compatible table.
     
@@ -521,8 +555,10 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
     print("\\midrule")
     
     for method, (auc_median, auc_lower, auc_upper) in sorted_methods:
-        display_name = format_plot_label(method, paper_mode=True)
-        
+        display_name = format_plot_label(
+            method, paper_mode=True, hide_robust_suffix=hide_robust_suffix
+        )
+
         if np.isnan(auc_median):
             print(f"{display_name} & -- \\\\")
         else:
@@ -568,7 +604,9 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
     
     for method, (auc_median, auc_lower, auc_upper) in sorted_methods:
         display_name = (
-            format_plot_label(method, paper_mode=True)
+            format_plot_label(
+                method, paper_mode=True, hide_robust_suffix=hide_robust_suffix
+            )
             .replace(r"\textsc{", "")
             .replace("}", "")
         )
@@ -617,6 +655,7 @@ def plot_icml_results(
     no_aggregate: bool = False,
     paper_mode: bool = False,
     calculate_auc: bool = False,
+    robust_filter: str = "all",
 ):
     """
     Plot ICML results with aggregation across experiments.
@@ -643,6 +682,11 @@ def plot_icml_results(
 
     if not results:
         print("No results found matching the filters.")
+        return
+
+    results = filter_results_by_robust(results, robust_filter)
+    if not results:
+        print(f"No results left after robust_filter={robust_filter!r}.")
         return
 
     # Canonicalize user-supplied method filters so kebab and snake CLI inputs
@@ -678,6 +722,16 @@ def plot_icml_results(
     if not valid_methods:
         print("No valid methods found to plot.")
         return
+
+    # If filtering to robust-only and a single robust variant survives, move
+    # the "(Robust ...)" qualifier from per-method labels into the title.
+    robust_variants_in_plot = {
+        split_robust_method(m)[1] for m in valid_methods
+    }
+    robust_variants_in_plot.discard(None)
+    hide_robust_label = (
+        robust_filter == "robust" and len(robust_variants_in_plot) == 1
+    )
 
     # Set up plot style
     setup_plot_style(paper_mode=paper_mode, use_latex=True)
@@ -774,7 +828,10 @@ def plot_icml_results(
                     # Vary alpha or lightness for different experiments
                     alpha = 0.7 + (i / len(x_arrays)) * 0.3
                     base_label = format_plot_label(
-                        method, paper_mode, n_experiments=None
+                        method,
+                        paper_mode,
+                        n_experiments=None,
+                        hide_robust_suffix=hide_robust_label,
                     )
                     exp_label = f"{base_label} exp{exp_id}"
                     
@@ -813,6 +870,7 @@ def plot_icml_results(
                     method,
                     paper_mode,
                     n_experiments=1 if not paper_mode else None,
+                    hide_robust_suffix=hide_robust_label,
                 )
                 plt.plot(
                     x_sorted,
@@ -852,7 +910,10 @@ def plot_icml_results(
             
             # Format label using shared function
             plot_label = format_plot_label(
-                method, paper_mode, n_experiments=n_exps
+                method,
+                paper_mode,
+                n_experiments=n_exps,
+                hide_robust_suffix=hide_robust_label,
             )
             
             # Plot median line
@@ -954,6 +1015,18 @@ def plot_icml_results(
     x_label = DATA_KEY_NAMES.get(x_data_key, x_data_key)
     y_label = DATA_KEY_NAMES.get(y_data_key, y_data_key)
 
+    # When the robust qualifier has been moved out of per-method labels (or the
+    # user explicitly filtered to a robust set), surface it as a title prefix.
+    if robust_filter == "robust" and robust_variants_in_plot:
+        if len(robust_variants_in_plot) == 1:
+            robust_title_prefix = ROBUST_LABELS[next(iter(robust_variants_in_plot))]
+        else:
+            robust_title_prefix = "Robust"
+    elif robust_filter == "non-robust":
+        robust_title_prefix = "Non-Robust"
+    else:
+        robust_title_prefix = None
+
     plt.xlabel(x_label)
     plt.ylabel(y_label)
 
@@ -962,9 +1035,13 @@ def plot_icml_results(
         if title:
             plt.title(title)
         else:
-            plt.title(
-                f"{y_label} vs {x_label} ({env_str}, prefix={prefix_str}, shaded={error_type})"
+            base_title = (
+                f"{y_label} vs {x_label} "
+                f"({env_str}, prefix={prefix_str}, shaded={error_type})"
             )
+            if robust_title_prefix is not None:
+                base_title = f"[{robust_title_prefix}] {base_title}"
+            plt.title(base_title)
     # Apply publication styling
     style_plot_for_publication(
         legend_outside=True,
@@ -998,20 +1075,29 @@ def plot_icml_results(
         if all_last_performances:
             strong_perf = np.mean(all_last_performances)
         
-        print_auc_latex_table(method_auc_data, x_label, y_label, 
+        print_auc_latex_table(method_auc_data, x_label, y_label,
                             normalize_by_range=True, x_range=x_range,
                             weak_performance=weak_perf,
-                            strong_performance=strong_perf)
+                            strong_performance=strong_perf,
+                            hide_robust_suffix=hide_robust_label)
 
 
 def list_available_methods(
-    eval_dir: Path, prefix_filter: Optional[List[str]], env_filter: Optional[str]
+    eval_dir: Path,
+    prefix_filter: Optional[List[str]],
+    env_filter: Optional[str],
+    robust_filter: str = "all",
 ):
     """List available methods and their experiment coverage."""
     results = extract_icml_results(eval_dir, prefix_filter, env_filter)
 
     if not results:
         print("No results found matching the filters.")
+        return
+
+    results = filter_results_by_robust(results, robust_filter)
+    if not results:
+        print(f"No results left after robust_filter={robust_filter!r}.")
         return
 
     print("\nAvailable methods:")
@@ -1127,13 +1213,29 @@ def main():
         action="store_true",
         help="Calculate and display area under the curve (AUC) for each method with IQR bands",
     )
+    parser.add_argument(
+        "--robust-filter",
+        choices=["all", "robust", "non-robust"],
+        default="all",
+        help=(
+            "Filter runs by robust-strong-policy variant. "
+            "'all' (default) keeps everything; "
+            "'robust' keeps only runs whose method name carries a robust suffix; "
+            "'non-robust' drops all such runs. "
+            "When the resulting set contains a single robust variant, the "
+            "'(Robust ...)' qualifier is stripped from per-method labels and "
+            "moved into the plot title."
+        ),
+    )
 
     args = parser.parse_args()
 
     eval_dir = Path(args.eval_dir)
 
     if args.list:
-        list_available_methods(eval_dir, args.prefix, args.env)
+        list_available_methods(
+            eval_dir, args.prefix, args.env, robust_filter=args.robust_filter
+        )
         return
 
     # Parse method order
@@ -1158,6 +1260,7 @@ def main():
         no_aggregate=args.no_aggregate,
         paper_mode=args.paper,
         calculate_auc=args.auc,
+        robust_filter=args.robust_filter,
     )
 
 
