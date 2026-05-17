@@ -18,9 +18,14 @@ from __future__ import annotations
 
 import argparse
 import re
+import textwrap
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+# Width at which titles get wrapped onto multiple lines. ~80 characters fits
+# the default 8" figure width at the default title font size.
+TITLE_WRAP_WIDTH = 80
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -1033,15 +1038,15 @@ def plot_icml_results(
     # Use custom title if provided, otherwise generate one (skip if paper_mode)
     if not paper_mode:
         if title:
-            plt.title(title)
+            final_title = title
         else:
-            base_title = (
+            final_title = (
                 f"{y_label} vs {x_label} "
                 f"({env_str}, prefix={prefix_str}, shaded={error_type})"
             )
             if robust_title_prefix is not None:
-                base_title = f"[{robust_title_prefix}] {base_title}"
-            plt.title(base_title)
+                final_title = f"[{robust_title_prefix}] {final_title}"
+        plt.title(textwrap.fill(final_title, width=TITLE_WRAP_WIDTH))
     # Apply publication styling
     style_plot_for_publication(
         legend_outside=True,
