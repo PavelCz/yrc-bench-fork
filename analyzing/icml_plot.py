@@ -788,6 +788,7 @@ def plot_icml_results(
     paper_mode: bool = False,
     calculate_auc: bool = False,
     robust_filter: str = "all",
+    normalize_y: bool = False,
 ):
     """
     Plot ICML results with aggregation across experiments.
@@ -870,6 +871,53 @@ def plot_icml_results(
         robust_filter == "robust" and len(robust_variants_in_plot) == 1
     )
 
+    # Optional y-axis normalization: rescale every curve so that the mean
+    # weak-agent return (curve y[0] across all method × exp) maps to 0 and the
+    # mean expert return (curve y[-1] across all method × exp) maps to 1. We
+    # need these constants before the plotting loop, so do a one-time
+    # endpoint pre-scan over the .npz files.
+    do_normalize_y = False
+    weak_for_norm: Optional[float] = None
+    perf_range_for_norm: Optional[float] = None
+    if normalize_y:
+        _first_y: List[float] = []
+        _last_y: List[float] = []
+        _weak_y: List[float] = []  # only populated for FILTERED_PERFORMANCE_KEYS
+        for _m in valid_methods:
+            for _exp_id in sorted(results[_m].keys()):
+                try:
+                    _ed = np.load(results[_m][_exp_id], allow_pickle=True)
+                    _, _y_arr = extract_x_and_y_values(_ed, x_data_key, y_data_key)
+                except Exception:
+                    continue
+                if len(_y_arr) == 0:
+                    continue
+                _first_y.append(float(_y_arr[0]))
+                _last_y.append(float(_y_arr[-1]))
+                if y_data_key in FILTERED_PERFORMANCE_KEYS:
+                    try:
+                        _, _y_unf = extract_x_and_y_values(
+                            _ed, x_data_key, "performance"
+                        )
+                    except Exception:
+                        _y_unf = []
+                    if len(_y_unf) > 0:
+                        _weak_y.append(float(_y_unf[0]))
+        if _first_y and _last_y:
+            if y_data_key in FILTERED_PERFORMANCE_KEYS and _weak_y:
+                weak_for_norm = float(np.mean(_weak_y))
+            else:
+                weak_for_norm = float(np.mean(_first_y))
+            _strong_for_norm = float(np.mean(_last_y))
+            perf_range_for_norm = _strong_for_norm - weak_for_norm
+            if abs(perf_range_for_norm) > 1e-6:
+                do_normalize_y = True
+            else:
+                print(
+                    "Warning: --normalize_y requested but mean weak ~= mean "
+                    "expert; skipping y normalization."
+                )
+
     # Set up plot style
     setup_plot_style(paper_mode=paper_mode, use_latex=True)
     
@@ -917,16 +965,23 @@ def plot_icml_results(
                 x, y = extract_x_and_y_values(eval_data, x_data_key, y_data_key)
 
                 if len(x) > 0:
+                    # Apply optional y normalization in-place; downstream
+                    # collectors and plot/AUC code then operate uniformly in
+                    # the chosen y-space.
+                    if do_normalize_y:
+                        y = (y - weak_for_norm) / perf_range_for_norm
+
                     x_arrays.append(x)
                     y_arrays.append(y)
-                    
+
                     # Store meta data if available
                     if 'meta' in eval_data:
                         meta_arrays.append(eval_data['meta'])
                     else:
                         meta_arrays.append([])
 
-                    # Track first/last for reference lines
+                    # Track first/last for reference lines (same y-space as
+                    # the plotted curves)
                     all_first_performances.append(y[0])
                     all_last_performances.append(y[-1])
                     # Track x range
@@ -939,7 +994,12 @@ def plot_icml_results(
                             eval_data, x_data_key, "performance"
                         )
                         if len(y_unfiltered) > 0:
-                            all_weak_performances.append(y_unfiltered[0])
+                            weak_first = float(y_unfiltered[0])
+                            if do_normalize_y:
+                                weak_first = (
+                                    weak_first - weak_for_norm
+                                ) / perf_range_for_norm
+                            all_weak_performances.append(weak_first)
             except Exception as e:
                 print(f"Warning: Failed to load {data_path}: {e}")
                 continue
@@ -1155,6 +1215,8 @@ def plot_icml_results(
     # Get display names for axis labels
     x_label = DATA_KEY_NAMES.get(x_data_key, x_data_key)
     y_label = DATA_KEY_NAMES.get(y_data_key, y_data_key)
+    if do_normalize_y:
+        y_label = f"{y_label} (normalized)"
 
     # When the robust qualifier has been moved out of per-method labels (or the
     # user explicitly filtered to a robust set), surface it as a title prefix.
@@ -1216,21 +1278,25 @@ def plot_icml_results(
     # Print AUC table if requested
     if calculate_auc and method_auc_data:
         x_range = (overall_x_min, overall_x_max) if overall_x_min != float('inf') else None
-        
-        # Calculate weak and strong performance for normalization
-        weak_perf = None
-        strong_perf = None
-        
-        if all_first_performances:
-            # For filtered performance keys, use unfiltered weak performance
-            if y_data_key in FILTERED_PERFORMANCE_KEYS and all_weak_performances:
-                weak_perf = np.mean(all_weak_performances)
-            else:
-                weak_perf = np.mean(all_first_performances)
-        
-        if all_last_performances:
-            strong_perf = np.mean(all_last_performances)
-        
+
+        # When the curves were normalized at plot time, AUC is already in
+        # the (novice=0, expert=1) frame; skip the table's redundant
+        # rescaling by passing None for weak/strong.
+        if do_normalize_y:
+            weak_perf = None
+            strong_perf = None
+        else:
+            weak_perf = None
+            strong_perf = None
+            if all_first_performances:
+                # For filtered performance keys, use unfiltered weak performance
+                if y_data_key in FILTERED_PERFORMANCE_KEYS and all_weak_performances:
+                    weak_perf = np.mean(all_weak_performances)
+                else:
+                    weak_perf = np.mean(all_first_performances)
+            if all_last_performances:
+                strong_perf = np.mean(all_last_performances)
+
         print_auc_latex_table(method_auc_data, x_label, y_label,
                             normalize_by_range=True, x_range=x_range,
                             weak_performance=weak_perf,
@@ -1370,6 +1436,18 @@ def main():
         help="Calculate and display area under the curve (AUC) for each method with IQR bands",
     )
     parser.add_argument(
+        "--normalize_y",
+        "--normalize-y",
+        action="store_true",
+        help=(
+            "Rescale plotted curves so that mean novice (curve y[0] across "
+            "all method × exp) maps to 0 and mean expert (curve y[-1]) maps "
+            "to 1. The y-axis label is suffixed with '(normalized)'. When "
+            "combined with --auc, the AUC table reports values already in "
+            "this normalized frame."
+        ),
+    )
+    parser.add_argument(
         "--robust-filter",
         choices=["all", "robust", "non-robust"],
         default="all",
@@ -1417,6 +1495,7 @@ def main():
         paper_mode=args.paper,
         calculate_auc=args.auc,
         robust_filter=args.robust_filter,
+        normalize_y=args.normalize_y,
     )
 
 
