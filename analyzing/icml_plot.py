@@ -179,6 +179,19 @@ _NOVICE_LABEL = r"\textsc{Novice}"
 _EXPERT_LABEL = r"\textsc{Expert}"
 _RANDOM_LABEL = r"\textsc{Random}"
 
+# Canonical (kebab-case) base method names, in the order they should appear
+# above the PartialOracle divider when the user does not pass `--method_order`.
+# Any methods present in `results` that aren't listed here are appended at the
+# end in alphabetical order. Robust variants follow their base method.
+DEFAULT_METHOD_ORDER = [
+    "ts-random",       # Heuristic
+    "ensemble-single",  # Ensemble (single weak)
+    "max-prob",
+    "max-logit",
+    "svdd-image",
+    "svdd-latent",
+]
+
 
 def _build_legend_entries(ax):
     """Reorder the auto-discovered legend so PartialOracle sits just above the
@@ -819,7 +832,11 @@ def plot_icml_results(
 
     # Determine method order
     if method_order is None:
-        method_order = sorted(results.keys())
+        method_order = expand_method_order_for_robust_variants(
+            DEFAULT_METHOD_ORDER, results
+        )
+        leftover = sorted(m for m in results if m not in method_order)
+        method_order.extend(leftover)
     else:
         method_order = expand_method_order_for_robust_variants(method_order, results)
 
@@ -844,10 +861,11 @@ def plot_icml_results(
 
     # If filtering to robust-only and a single robust variant survives, move
     # the "(Robust ...)" qualifier from per-method labels into the title.
-    robust_variants_in_plot = {
-        split_robust_method(m)[1] for m in valid_methods
+    robust_variants_in_plot: set[str] = {
+        v
+        for v in (split_robust_method(m)[1] for m in valid_methods)
+        if v is not None
     }
-    robust_variants_in_plot.discard(None)
     hide_robust_label = (
         robust_filter == "robust" and len(robust_variants_in_plot) == 1
     )
