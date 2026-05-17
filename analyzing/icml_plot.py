@@ -31,7 +31,16 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns  # type: ignore
+from matplotlib.lines import Line2D
 from scipy import interpolate, integrate
+
+# Methods whose curves should be rendered in the same blue used for the
+# Expert reference line. Keyed by canonical base method (no robust suffix).
+SPECIAL_METHOD_COLORS = {
+    "oracle-lb-random": "blue",
+}
+EXPERT_REFERENCE_COLOR = "blue"
+NOVICE_REFERENCE_COLOR = "red"
 
 from analyzing.utils import extract_x_and_y_values
 from analyzing.plotting_common import (
@@ -163,6 +172,54 @@ def method_has_robust_variant(method: str) -> bool:
     """True if the method name carries one of the known robust suffixes."""
     _, robust_variant = split_robust_method(method)
     return robust_variant is not None
+
+
+_PARTIAL_ORACLE_LABEL_MARKER = "PartialOracle"
+_NOVICE_LABEL = r"\textsc{Novice}"
+_EXPERT_LABEL = r"\textsc{Expert}"
+_RANDOM_LABEL = r"\textsc{Random}"
+
+
+def _build_legend_entries(ax):
+    """Reorder the auto-discovered legend so PartialOracle sits just above the
+    Novice/Expert/Random reference block, with a thin gray rule above it.
+
+    Returns:
+        (handles, labels) ready to pass to `plt.legend(...)`.
+    """
+    raw_handles, raw_labels = ax.get_legend_handles_labels()
+
+    method_entries = []
+    partial_oracle_entries = []
+    reference_entries: Dict[str, Tuple[object, str]] = {}
+
+    for handle, label in zip(raw_handles, raw_labels):
+        if _PARTIAL_ORACLE_LABEL_MARKER in label:
+            partial_oracle_entries.append((handle, label))
+        elif label == _NOVICE_LABEL:
+            reference_entries["novice"] = (handle, label)
+        elif label == _EXPERT_LABEL:
+            reference_entries["expert"] = (handle, label)
+        elif label == _RANDOM_LABEL:
+            reference_entries["random"] = (handle, label)
+        else:
+            method_entries.append((handle, label))
+
+    ordered: List[Tuple[object, str]] = list(method_entries)
+
+    if partial_oracle_entries:
+        separator = Line2D([], [], color="gray", linewidth=0.7)
+        ordered.append((separator, ""))
+        ordered.extend(partial_oracle_entries)
+
+    # Reference lines always come last in this fixed order.
+    for key in ("novice", "expert", "random"):
+        if key in reference_entries:
+            ordered.append(reference_entries[key])
+
+    handles = [h for h, _ in ordered]
+    labels = [l for _, l in ordered]
+    return handles, labels
 
 
 def filter_results_by_robust(
@@ -769,6 +826,10 @@ def plot_icml_results(
             print(f"Warning: No experiments found for {method}, skipping...")
             continue
 
+        # Override the auto palette color for special methods (e.g. PartialOracle).
+        base_method_key, _ = split_robust_method(method)
+        method_color = SPECIAL_METHOD_COLORS.get(base_method_key, colors[method_idx])
+
         # Load all experiment data
         x_arrays = []
         y_arrays = []
@@ -827,7 +888,7 @@ def plot_icml_results(
             # Single experiment or no aggregation mode
             if no_aggregate and len(x_arrays) > 1:
                 # Plot each experiment separately with slightly different shades
-                base_color = colors[method_idx]
+                base_color = method_color
                 for i, (x, y, exp_id) in enumerate(zip(x_arrays, y_arrays, exp_ids)):
                     sort_idx = np.argsort(x)
                     # Vary alpha or lightness for different experiments
@@ -881,7 +942,7 @@ def plot_icml_results(
                     x_sorted,
                     y_sorted,
                     label=plot_label,
-                    color=colors[method_idx],
+                    color=method_color,
                     marker="o" if method == "wait" else None,
                     markersize=4,
                     linestyle=line_styles[method_idx],
@@ -926,17 +987,17 @@ def plot_icml_results(
                 common_x,
                 y_median,
                 label=plot_label,
-                color=colors[method_idx],
+                color=method_color,
                 linewidth=2,
                 linestyle=line_styles[method_idx],
             )
-            
+
             # Plot quantile band (25th-75th percentile)
             plt.fill_between(
                 common_x,
                 y_lower_q,
                 y_upper_q,
-                color=colors[method_idx],
+                color=method_color,
                 alpha=0.2,
             )
             
@@ -1047,11 +1108,18 @@ def plot_icml_results(
             if robust_title_prefix is not None:
                 final_title = f"[{robust_title_prefix}] {final_title}"
         plt.title(textwrap.fill(final_title, width=TITLE_WRAP_WIDTH))
+
+    # Build the legend explicitly so that PartialOracle entries sit just before
+    # the Novice reference line, preceded by a thin visual separator.
+    legend_handles, legend_labels = _build_legend_entries(plt.gca())
+
     # Apply publication styling
     style_plot_for_publication(
         legend_outside=True,
         legend_location='center left',
-        legend_bbox_to_anchor=(1.05, 0.5)
+        legend_bbox_to_anchor=(1.05, 0.5),
+        handles=legend_handles,
+        labels=legend_labels,
     )
 
     plt.tight_layout()

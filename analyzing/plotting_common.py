@@ -99,43 +99,46 @@ def style_plot_for_publication(
     legend_outside: bool = True,
     legend_location: str = 'center left',
     legend_bbox_to_anchor: tuple = (1.05, 0.5),
+    handles=None,
+    labels=None,
 ) -> None:
     """
     Apply publication-ready styling to current plot.
-    
+
     Args:
         ax: Matplotlib axes object (uses current axes if None)
         legend_outside: If True, place legend outside plot area
         legend_location: Legend location string
         legend_bbox_to_anchor: Anchor point for legend when outside
+        handles: Optional explicit legend handles. When provided alongside
+            `labels`, the legend uses them instead of auto-discovering from
+            the current axes.
+        labels: Optional explicit legend labels; must accompany `handles`.
     """
     if ax is None:
         ax = plt.gca()
-    
+
     # Remove top and right spines
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
-    
-    # Configure legend
+
+    legend_kwargs = {"frameon": True, "fancybox": False}
     if legend_outside:
-        legend = plt.legend(
-            bbox_to_anchor=legend_bbox_to_anchor,
-            loc=legend_location,
-            frameon=True,
-            fancybox=False
-        )
+        legend_kwargs["bbox_to_anchor"] = legend_bbox_to_anchor
+        legend_kwargs["loc"] = legend_location
     else:
-        legend = plt.legend(
-            loc='best',
-            frameon=True,
-            fancybox=False
-        )
-    
+        legend_kwargs["loc"] = "best"
+
+    if handles is not None and labels is not None:
+        legend = plt.legend(handles, labels, **legend_kwargs)
+    else:
+        legend = plt.legend(**legend_kwargs)
+
     # White background, no border
     legend.get_frame().set_facecolor('white')
     legend.get_frame().set_alpha(1.0)
     legend.get_frame().set_edgecolor('none')
-    
+
     # Add grid
     plt.grid(True, alpha=0.3)
 
