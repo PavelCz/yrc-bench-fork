@@ -299,22 +299,21 @@ def extract_icml_results(
                     continue  # Skip mismatched experiment IDs
             method_name = add_robust_suffix(method_name, robust_variant)
 
-            # Find the most recent run (by timestamp)
+            # Find the most recent run by directory-name timestamp
+            # (YYYYMMDD_HHMMSS sorts lexicographically).
             latest_run = None
-            latest_time = None
+            latest_name = None
 
-            for run_dir in method_dir.iterdir():
+            for run_dir in sorted(method_dir.iterdir(), key=lambda p: p.name):
                 if not run_dir.is_dir():
                     continue
 
-                # Find .npz file in run directory
                 for run_file in run_dir.iterdir():
                     if run_file.is_file() and run_file.suffix == ".npz":
-                        # Use directory modification time as proxy for recency
-                        mtime = run_dir.stat().st_mtime
-                        if latest_time is None or mtime > latest_time:
-                            latest_time = mtime
+                        if latest_name is None or run_dir.name > latest_name:
+                            latest_name = run_dir.name
                             latest_run = run_file
+                        break
 
             if latest_run is not None:
                 results[method_name][exp_id] = latest_run
