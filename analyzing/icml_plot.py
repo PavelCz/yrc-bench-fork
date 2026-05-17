@@ -143,6 +143,17 @@ def split_robust_method(method: str) -> Tuple[str, Optional[str]]:
     return method, None
 
 
+def canonicalize_method(method: str) -> str:
+    """Normalize method names to kebab-case (matching run_eval.py).
+
+    Robust suffixes like `_robust400` are preserved verbatim; only the
+    base-method portion is hyphenated.
+    """
+    base, robust_variant = split_robust_method(method)
+    base = base.replace("_", "-")
+    return add_robust_suffix(base, robust_variant)
+
+
 def add_robust_suffix(method: str, robust_variant: Optional[str]) -> str:
     """Attach robust variant to method name unless it is already present."""
     if robust_variant is None:
@@ -260,6 +271,9 @@ def extract_icml_results(
         Dictionary mapping method names to dict of {exp_id: result_file_path}
     """
     results: Dict[str, Dict[int, Path]] = defaultdict(dict)
+    # Track the run-dir name we picked per (canonical_method, exp_id) so that
+    # kebab/snake siblings collapse onto the most recent run.
+    latest_run_dir_name: Dict[Tuple[str, int], str] = {}
 
     for child in eval_dir.iterdir():
         if not child.is_dir():
@@ -298,6 +312,7 @@ def extract_icml_results(
                 if method_exp_id != exp_id:
                     continue  # Skip mismatched experiment IDs
             method_name = add_robust_suffix(method_name, robust_variant)
+            method_name = canonicalize_method(method_name)
 
             # Find the most recent run by directory-name timestamp
             # (YYYYMMDD_HHMMSS sorts lexicographically).
@@ -316,7 +331,11 @@ def extract_icml_results(
                         break
 
             if latest_run is not None:
-                results[method_name][exp_id] = latest_run
+                key = (method_name, exp_id)
+                prev_name = latest_run_dir_name.get(key)
+                if prev_name is None or latest_name > prev_name:
+                    latest_run_dir_name[key] = latest_name
+                    results[method_name][exp_id] = latest_run
 
     return dict(results)
 
@@ -625,6 +644,15 @@ def plot_icml_results(
     if not results:
         print("No results found matching the filters.")
         return
+
+    # Canonicalize user-supplied method filters so kebab and snake CLI inputs
+    # both match the kebab-canonical keys stored in `results`.
+    if method_order is not None:
+        method_order = [canonicalize_method(m) for m in method_order]
+    if method_include_filter is not None:
+        method_include_filter = [canonicalize_method(m) for m in method_include_filter]
+    if method_filter is not None:
+        method_filter = [canonicalize_method(m) for m in method_filter]
 
     # Determine method order
     if method_order is None:
