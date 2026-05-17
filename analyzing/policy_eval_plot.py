@@ -497,7 +497,7 @@ def plot_summary(
 
     ax.set_xticks(x)
     ax.set_xticklabels([METRIC_LABELS[metric] for metric in METRIC_ORDER])
-    ax.set_ylabel("Average Return")
+    ax.set_ylabel("Mean Return")
 
     if title is not None:
         ax.set_title(title)

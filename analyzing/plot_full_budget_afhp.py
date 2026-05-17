@@ -543,9 +543,9 @@ def plot_overlay_mode(
 
         ax.set_xlabel("AFHP (%)")
         if help_only:
-            ax.set_ylabel("Average Return on Help-Requested Episodes")
+            ax.set_ylabel("Mean Return on Help-Requested Episodes")
         else:
-            ax.set_ylabel("Average Return")
+            ax.set_ylabel("Mean Return")
         ax.grid(True, alpha=0.3)
         ax.legend(loc="best", fontsize=8)
 

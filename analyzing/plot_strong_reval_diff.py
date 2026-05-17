@@ -690,10 +690,10 @@ def plot_strong_reval_diff(
     plt.xlabel("Ask-For-Help Percentage (AFHP)")
 
     if plot_strong_only:
-        plt.ylabel("Average Return (Strong Agent from Start)")
+        plt.ylabel("Mean Return (Strong Agent from Start)")
         default_title = f"Strong Agent Performance on Help-Requested Episodes ({env_str}, prefix={prefix_str})"
     elif plot_absolute:
-        plt.ylabel("Average Return (Coordination Policy)")
+        plt.ylabel("Mean Return (Coordination Policy)")
         default_title = (
             f"Coordination Policy Performance ({env_str}, prefix={prefix_str})"
         )
