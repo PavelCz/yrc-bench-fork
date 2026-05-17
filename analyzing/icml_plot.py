@@ -1208,8 +1208,8 @@ def main():
     parser.add_argument(
         "--x_data_key",
         type=str,
-        default="step_afhp",
-        help="Key for the x data (default: step_afhp)",
+        default="level_afhp",
+        help="Key for the x data (default: level_afhp)",
     )
     parser.add_argument(
         "--y_data_key",
