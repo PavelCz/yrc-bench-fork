@@ -706,13 +706,16 @@ def _print_endpoint_baselines(
                 return False
             return True
         if role == "expert":
+            # `first_ood_timestep` is 1-indexed (see evaluator: episode_length
+            # is incremented to 1 on the first action before being recorded),
+            # so "asked on the first timestep" means the stored value is 1.
             first_ood = s.get("first_ood_timestep", None)
             if first_ood is None:
                 return True  # nothing to check against; accept
             first_ood = list(first_ood)
             if not first_ood:
                 return True
-            bad = [t for t in first_ood if t != 0]
+            bad = [t for t in first_ood if t != 1]
             if bad:
                 print(
                     f"Warning: expert baseline at {file_label} had "
