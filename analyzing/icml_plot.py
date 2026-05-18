@@ -924,7 +924,7 @@ def plot_icml_results(
     
     # `--paper-app` swaps to a taller-than-default aspect ratio so the plot
     # sits well as an appendix figure alongside its (longer) legend.
-    figsize = (6, 6) if paper_app else (8, 4.5)
+    figsize = (8, 6) if paper_app else (8, 4.5)
     plt.figure(figsize=figsize)
     colors = sns.color_palette("husl", len(valid_methods))
     
@@ -1475,7 +1475,7 @@ def main():
         action="store_true",
         help=(
             "Appendix-figure preset: implies --paper, zooms the y-axis to "
-            "[6, 10] (Procgen reward range), and uses a taller (6x6) "
+            "[6, 10] (Procgen reward range), and uses a taller (8x6) "
             "figure. The y-axis zoom is skipped when --normalize_y is set."
         ),
     )
