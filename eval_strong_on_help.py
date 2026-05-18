@@ -666,14 +666,6 @@ def main():
                 "avg_full_budget_performance": avg_full_budget_perf,
             }
         )
-        artifact = wandb.Artifact(
-            f"strong_reval_results_{job_name}",
-            type="evaluation_results",
-            description=f"Strong reval and full-budget evaluation results for {job_name}",
-        )
-        artifact.add_file(str(strong_output))
-        artifact.add_file(str(full_budget_output))
-        wandb.log_artifact(artifact)
         wandb.finish()
 
 
