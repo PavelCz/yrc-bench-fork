@@ -658,26 +658,86 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
                          hide_robust_suffix: bool = False):
     """
     Print AUC results as a LaTeX-compatible table.
-    
-    Args:
-        method_auc_data: Dictionary mapping method names to (auc_median, auc_lower, auc_upper)
-        x_label: Label for x-axis (for table caption)
-        y_label: Label for y-axis (for table caption)
-        normalize_by_range: If True, normalize AUC by x-axis range
-        x_range: Optional x-axis range for normalization
-        weak_performance: Weak (novice) agent performance for y-axis normalization
-        strong_performance: Strong (expert) agent performance for y-axis normalization
+
+    Method ordering: PartialOracle row(s) first, then a separator, then the
+    figure's default ordering (`DEFAULT_METHOD_ORDER` + alphabetical leftover).
+    Bolding: PartialOracle is always bold; additionally the method with the
+    highest AUC and the method with the highest AUC among non-PartialOracle
+    methods are bolded.
     """
     print("\n" + "="*80)
     print("AREA UNDER THE CURVE (AUC) RESULTS")
     print("="*80)
-    
-    # Sort methods by median AUC (descending)
-    sorted_methods = sorted(method_auc_data.items(), 
-                          key=lambda x: x[1][0] if not np.isnan(x[1][0]) else -np.inf, 
-                          reverse=True)
-    
-    # Print LaTeX table
+
+    # ---- Per-row normalization (applied once, used by both tables) -----------
+    def _normalize_triplet(
+        triplet: Tuple[float, float, float],
+    ) -> Optional[Tuple[float, float, float]]:
+        auc_median, auc_lower, auc_upper = triplet
+        if np.isnan(auc_median):
+            return None
+        if weak_performance is not None and strong_performance is not None:
+            perf_range = strong_performance - weak_performance
+            if abs(perf_range) > 1e-6 and x_range is not None:
+                baseline_area = weak_performance * (x_range[1] - x_range[0])
+                auc_median = (auc_median - baseline_area) / perf_range
+                auc_lower = (auc_lower - baseline_area) / perf_range
+                auc_upper = (auc_upper - baseline_area) / perf_range
+        if normalize_by_range and x_range is not None:
+            range_width = x_range[1] - x_range[0]
+            if range_width > 0:
+                auc_median /= range_width
+                auc_lower /= range_width
+                auc_upper /= range_width
+        return auc_median, auc_lower, auc_upper
+
+    normalized: Dict[str, Optional[Tuple[float, float, float]]] = {
+        m: _normalize_triplet(v) for m, v in method_auc_data.items()
+    }
+
+    # ---- Row ordering --------------------------------------------------------
+    all_keys = list(method_auc_data.keys())
+    po_keys = [
+        m for m in all_keys
+        if split_robust_method(m)[0] == "oracle-lb-random"
+    ]
+    non_po_keys_set = [m for m in all_keys if m not in po_keys]
+
+    # Apply DEFAULT_METHOD_ORDER (with robust expansion) + alphabetical leftover.
+    # expand_method_order_for_robust_variants only does `in` membership checks,
+    # so an empty value-dict is sufficient as a presence map.
+    non_po_lookup = {m: {} for m in non_po_keys_set}
+    ordered_non_po = expand_method_order_for_robust_variants(
+        DEFAULT_METHOD_ORDER, non_po_lookup  # type: ignore[arg-type]
+    )
+    leftover = sorted(m for m in non_po_keys_set if m not in ordered_non_po)
+    ordered_non_po.extend(leftover)
+
+    final_order: List[str] = list(po_keys) + ordered_non_po
+    separator_after_idx = len(po_keys) - 1 if po_keys else -1
+
+    # ---- Bold set ------------------------------------------------------------
+    def _best_key(candidates: List[str]) -> Optional[str]:
+        best_k = None
+        best_v = -float("inf")
+        for k in candidates:
+            triplet = normalized.get(k)
+            if triplet is None:
+                continue
+            if triplet[0] > best_v:
+                best_v = triplet[0]
+                best_k = k
+        return best_k
+
+    bold_keys: set[str] = set(po_keys)
+    best_overall = _best_key(all_keys)
+    best_non_po = _best_key(non_po_keys_set)
+    if best_overall is not None:
+        bold_keys.add(best_overall)
+    if best_non_po is not None:
+        bold_keys.add(best_non_po)
+
+    # ---- LaTeX output --------------------------------------------------------
     print("\n% LaTeX Table")
     print("\\begin{table}[h]")
     print("\\centering")
@@ -685,37 +745,25 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
     print("\\toprule")
     print("Method & AUC (Median [IQR]) \\\\")
     print("\\midrule")
-    
-    for method, (auc_median, auc_lower, auc_upper) in sorted_methods:
+
+    for i, method in enumerate(final_order):
         display_name = format_plot_label(
             method, paper_mode=True, hide_robust_suffix=hide_robust_suffix
         )
-
-        if np.isnan(auc_median):
-            print(f"{display_name} & -- \\\\")
+        n = normalized[method]
+        if n is None:
+            value_str = "--"
         else:
-            # First normalize by performance range (weak to strong)
-            if weak_performance is not None and strong_performance is not None:
-                perf_range = strong_performance - weak_performance
-                if abs(perf_range) > 1e-6:  # Avoid division by zero
-                    # Subtract baseline (weak * x_range) and normalize
-                    if x_range is not None:
-                        baseline_area = weak_performance * (x_range[1] - x_range[0])
-                        auc_median = (auc_median - baseline_area) / perf_range
-                        auc_lower = (auc_lower - baseline_area) / perf_range
-                        auc_upper = (auc_upper - baseline_area) / perf_range
-            
-            # Then normalize by x-axis range if requested
-            if normalize_by_range and x_range is not None:
-                range_width = x_range[1] - x_range[0]
-                if range_width > 0:
-                    auc_median /= range_width
-                    auc_lower /= range_width
-                    auc_upper /= range_width
-            
-            # Format as median [lower, upper]
-            print(f"{display_name} & {auc_median:.3f} [{auc_lower:.3f}, {auc_upper:.3f}] \\\\")
-    
+            ma, lo, hi = n
+            value_str = f"{ma:.3f} [{lo:.3f}, {hi:.3f}]"
+        if method in bold_keys:
+            display_name = f"\\textbf{{{display_name}}}"
+            if value_str != "--":
+                value_str = f"\\textbf{{{value_str}}}"
+        print(f"{display_name} & {value_str} \\\\")
+        if i == separator_after_idx and i < len(final_order) - 1:
+            print("\\midrule")
+
     print("\\bottomrule")
     print("\\end{tabular}")
     print(f"\\caption{{Area Under the Curve (AUC) for {y_label} vs {x_label}.")
@@ -726,15 +774,18 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
     print(" IQR shows 25th-75th percentile range.}")
     print("\\label{tab:auc_results}")
     print("\\end{table}")
-    
-    # Also print human-readable version
+
+    # ---- Human-readable output ----------------------------------------------
+    ANSI_BOLD = "\033[1m"
+    ANSI_RESET = "\033[0m"
+
     print("\n" + "-"*60)
     print("Human-readable version:")
     print("-"*60)
     print(f"{'Method':<30} {'AUC Median':<15} {'AUC IQR':<25}")
     print("-"*60)
-    
-    for method, (auc_median, auc_lower, auc_upper) in sorted_methods:
+
+    for i, method in enumerate(final_order):
         display_name = (
             format_plot_label(
                 method, paper_mode=True, hide_robust_suffix=hide_robust_suffix
@@ -742,31 +793,18 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
             .replace(r"\textsc{", "")
             .replace("}", "")
         )
-        
-        if np.isnan(auc_median):
-            print(f"{display_name:<30} {'N/A':<15}")
+        n = normalized[method]
+        if n is None:
+            row = f"{display_name:<30} {'N/A':<15}"
         else:
-            # First normalize by performance range (weak to strong)
-            if weak_performance is not None and strong_performance is not None:
-                perf_range = strong_performance - weak_performance
-                if abs(perf_range) > 1e-6:  # Avoid division by zero
-                    # Subtract baseline (weak * x_range) and normalize
-                    if x_range is not None:
-                        baseline_area = weak_performance * (x_range[1] - x_range[0])
-                        auc_median = (auc_median - baseline_area) / perf_range
-                        auc_lower = (auc_lower - baseline_area) / perf_range
-                        auc_upper = (auc_upper - baseline_area) / perf_range
-            
-            # Then normalize by x-axis range if requested
-            if normalize_by_range and x_range is not None:
-                range_width = x_range[1] - x_range[0]
-                if range_width > 0:
-                    auc_median /= range_width
-                    auc_lower /= range_width
-                    auc_upper /= range_width
-                    
-            print(f"{display_name:<30} {auc_median:<15.3f} [{auc_lower:.3f}, {auc_upper:.3f}]")
-    
+            ma, lo, hi = n
+            row = f"{display_name:<30} {ma:<15.3f} [{lo:.3f}, {hi:.3f}]"
+        if method in bold_keys:
+            row = f"{ANSI_BOLD}{row}{ANSI_RESET}"
+        print(row)
+        if i == separator_after_idx and i < len(final_order) - 1:
+            print("-"*60)
+
     print("-"*60)
 
 
