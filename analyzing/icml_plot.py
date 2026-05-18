@@ -741,7 +741,7 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
     print("\n% LaTeX Table")
     print("\\begin{table}[h]")
     print("\\centering")
-    print("\\begin{tabular}{lc}")
+    print("\\begin{tabular}{ll}")
     print("\\toprule")
     print("Method & AUC (Median [IQR]) \\\\")
     print("\\midrule")
