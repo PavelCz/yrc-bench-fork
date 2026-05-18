@@ -789,7 +789,7 @@ def plot_icml_results(
     calculate_auc: bool = False,
     robust_filter: str = "all",
     normalize_y: bool = False,
-    ylim_5_10: bool = False,
+    ylim_6_10: bool = False,
 ):
     """
     Plot ICML results with aggregation across experiments.
@@ -1213,14 +1213,14 @@ def plot_icml_results(
 
     # Optional preset y-axis zoom for raw Procgen returns. Applied only when
     # the curves are in raw units; with --normalize_y the plot is already in
-    # a [0, 1]-ish frame and a 5-10 window would be empty.
-    if ylim_5_10:
+    # a [0, 1]-ish frame and a 6-10 window would be empty.
+    if ylim_6_10:
         if do_normalize_y:
             print(
-                "Warning: --ylim-5-10 ignored because --normalize_y is set."
+                "Warning: --ylim-6-10 ignored because --normalize_y is set."
             )
         else:
-            plt.ylim(5, 10)
+            plt.ylim(6, 10)
 
     # Labels and title
     env_str = env_filter if env_filter else "all"
@@ -1464,12 +1464,12 @@ def main():
         ),
     )
     parser.add_argument(
-        "--ylim-5-10",
-        "--ylim_5_10",
-        dest="ylim_5_10",
+        "--ylim-6-10",
+        "--ylim_6_10",
+        dest="ylim_6_10",
         action="store_true",
         help=(
-            "Zoom the y-axis to [5, 10] (Procgen reward range, focused on "
+            "Zoom the y-axis to [6, 10] (Procgen reward range, focused on "
             "the policy-comparison region). Ignored when --normalize_y is "
             "also set."
         ),
@@ -1523,7 +1523,7 @@ def main():
         calculate_auc=args.auc,
         robust_filter=args.robust_filter,
         normalize_y=args.normalize_y,
-        ylim_5_10=args.ylim_5_10,
+        ylim_6_10=args.ylim_6_10,
     )
 
 
