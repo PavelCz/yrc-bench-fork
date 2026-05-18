@@ -652,16 +652,13 @@ def calculate_auc_with_bands(
 def _print_endpoint_baselines(
     results: Dict[str, Dict[int, Path]],
     valid_methods: List[str],
-    do_normalize_y: bool,
-    weak_for_norm: Optional[float],
-    perf_range_for_norm: Optional[float],
 ) -> None:
     """Print mean novice and expert return broken out by ID / OOD / Average.
 
     Aggregates across the `(method, exp_id)` pairs that survived the user's
     method/robust/include/exclude filters (i.e. the same set the plot uses).
-    Values are presented in the plot's y-frame: raw return units by default,
-    or the normalized (novice=0, expert=1) frame when `--normalize_y` is set.
+    Values are always in raw return units — they are not affected by
+    `--normalize_y`, which only rescales the plot's y-axis.
     """
     split_name = "test"  # AFHP curve is evaluated on the test split
 
@@ -772,32 +769,17 @@ def _print_endpoint_baselines(
             _bucket(int(np.argmin(afhps)), meta, "novice", novice, file_label)
             _bucket(int(np.argmax(afhps)), meta, "expert", expert, file_label)
 
-    can_normalize = (
-        do_normalize_y
-        and weak_for_norm is not None
-        and perf_range_for_norm is not None
-        and abs(perf_range_for_norm) > 1e-6
-    )
-
     def _mean(values: List[float]) -> float:
         if not values:
             return float("nan")
-        m = float(np.mean(values))
-        if can_normalize:
-            assert weak_for_norm is not None
-            assert perf_range_for_norm is not None
-            m = (m - weak_for_norm) / perf_range_for_norm
-        return m
+        return float(np.mean(values))
 
     if not novice["all"] and not expert["all"]:
         # Nothing to print (e.g. .npz files lacked the expected meta keys).
         return
 
     print("\n" + "=" * 60)
-    title = "ENDPOINT BASELINES (mean over filtered method x exp)"
-    if can_normalize:
-        title += " - normalized"
-    print(title)
+    print("ENDPOINT BASELINES (raw mean return, filtered method x exp)")
     print("=" * 60)
     print(f"{'':<10}  {'ID':>10}  {'OOD':>10}  {'Average':>10}")
     print("-" * 60)
@@ -1503,13 +1485,11 @@ def plot_icml_results(
 
     # Print novice / expert baseline returns broken out by ID vs OOD using
     # the per-episode meta saved in the boundary points of each filtered
-    # .npz. Values respect the same y-frame as the plot (raw or normalized).
+    # .npz. These are always raw mean returns — unaffected by
+    # `--normalize_y`, which only rescales the plot's y-axis.
     _print_endpoint_baselines(
         results=results,
         valid_methods=valid_methods,
-        do_normalize_y=do_normalize_y,
-        weak_for_norm=weak_for_norm,
-        perf_range_for_norm=perf_range_for_norm,
     )
 
     # Print AUC table if requested
