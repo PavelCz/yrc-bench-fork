@@ -649,6 +649,156 @@ def calculate_auc_with_bands(
     return auc_median, auc_lower, auc_upper
 
 
+def _print_endpoint_baselines(
+    results: Dict[str, Dict[int, Path]],
+    valid_methods: List[str],
+    do_normalize_y: bool,
+    weak_for_norm: Optional[float],
+    perf_range_for_norm: Optional[float],
+) -> None:
+    """Print mean novice and expert return broken out by ID / OOD / Average.
+
+    Aggregates across the `(method, exp_id)` pairs that survived the user's
+    method/robust/include/exclude filters (i.e. the same set the plot uses).
+    Values are presented in the plot's y-frame: raw return units by default,
+    or the normalized (novice=0, expert=1) frame when `--normalize_y` is set.
+    """
+    split_name = "test"  # AFHP curve is evaluated on the test split
+
+    novice = {"id": [], "ood": [], "all": []}
+    expert = {"id": [], "ood": [], "all": []}
+
+    def _resolve_summary(idx: int, meta_arr) -> Optional[Dict]:
+        try:
+            entry = meta_arr[idx]
+        except (IndexError, TypeError):
+            return None
+        if hasattr(entry, "item"):
+            entry = entry.item()
+        if not isinstance(entry, dict):
+            return None
+        summary = entry.get("summary", {})
+        if not isinstance(summary, dict):
+            return None
+        if split_name in summary:
+            s = summary[split_name]
+        else:
+            s = next(iter(summary.values()), None)
+        if not isinstance(s, dict):
+            return None
+        return s
+
+    def _validate_role(s: Dict, role: str, file_label: str) -> bool:
+        """Behavioral check: novice asked for help on no timestep; expert
+        asked for help on the very first timestep of every episode."""
+        if role == "novice":
+            level_pred = s.get("level_ood_pred", None)
+            if level_pred is None:
+                return True  # nothing to check against; accept
+            level_pred = list(level_pred)
+            if any(bool(v) for v in level_pred):
+                helped = int(sum(1 for v in level_pred if v))
+                print(
+                    f"Warning: novice baseline at {file_label} had help "
+                    f"asked on {helped}/{len(level_pred)} episodes; "
+                    "skipping for endpoint baseline aggregation."
+                )
+                return False
+            return True
+        if role == "expert":
+            first_ood = s.get("first_ood_timestep", None)
+            if first_ood is None:
+                return True  # nothing to check against; accept
+            first_ood = list(first_ood)
+            if not first_ood:
+                return True
+            bad = [t for t in first_ood if t != 0]
+            if bad:
+                print(
+                    f"Warning: expert baseline at {file_label} had "
+                    f"{len(bad)}/{len(first_ood)} episodes where help was "
+                    "not requested on the first timestep; skipping for "
+                    "endpoint baseline aggregation."
+                )
+                return False
+            return True
+        return True
+
+    def _bucket(idx: int, meta_arr, role: str, bucket, file_label: str):
+        s = _resolve_summary(idx, meta_arr)
+        if s is None:
+            return
+        if not _validate_role(s, role, file_label):
+            return
+        raw = np.asarray(s.get("raw_returns", []), dtype=float)
+        ood = np.asarray(s.get("level_ood_gt", []), dtype=bool)
+        if raw.size == 0 or raw.size != ood.size:
+            return
+        bucket["id"].extend(raw[~ood].tolist())
+        bucket["ood"].extend(raw[ood].tolist())
+        bucket["all"].extend(raw.tolist())
+
+    for method in valid_methods:
+        exp_dict = results.get(method, {})
+        for exp_id, npz_path in exp_dict.items():
+            try:
+                data = np.load(npz_path, allow_pickle=True)
+            except Exception:
+                continue
+            if "afhps" not in data.files or "meta" not in data.files:
+                continue
+            afhps = np.asarray(data["afhps"], dtype=float)
+            meta = data["meta"]
+            if afhps.size == 0:
+                continue
+            file_label = f"{method}/exp{exp_id}"
+            _bucket(int(np.argmin(afhps)), meta, "novice", novice, file_label)
+            _bucket(int(np.argmax(afhps)), meta, "expert", expert, file_label)
+
+    can_normalize = (
+        do_normalize_y
+        and weak_for_norm is not None
+        and perf_range_for_norm is not None
+        and abs(perf_range_for_norm) > 1e-6
+    )
+
+    def _mean(values: List[float]) -> float:
+        if not values:
+            return float("nan")
+        m = float(np.mean(values))
+        if can_normalize:
+            assert weak_for_norm is not None
+            assert perf_range_for_norm is not None
+            m = (m - weak_for_norm) / perf_range_for_norm
+        return m
+
+    if not novice["all"] and not expert["all"]:
+        # Nothing to print (e.g. .npz files lacked the expected meta keys).
+        return
+
+    print("\n" + "=" * 60)
+    title = "ENDPOINT BASELINES (mean over filtered method x exp)"
+    if can_normalize:
+        title += " - normalized"
+    print(title)
+    print("=" * 60)
+    print(f"{'':<10}  {'ID':>10}  {'OOD':>10}  {'Average':>10}")
+    print("-" * 60)
+    print(
+        f"{'Novice':<10}  "
+        f"{_mean(novice['id']):>10.4f}  "
+        f"{_mean(novice['ood']):>10.4f}  "
+        f"{_mean(novice['all']):>10.4f}"
+    )
+    print(
+        f"{'Expert':<10}  "
+        f"{_mean(expert['id']):>10.4f}  "
+        f"{_mean(expert['ood']):>10.4f}  "
+        f"{_mean(expert['all']):>10.4f}"
+    )
+    print("=" * 60)
+
+
 def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]],
                          x_label: str, y_label: str,
                          normalize_by_range: bool = True,
@@ -1333,7 +1483,18 @@ def plot_icml_results(
         print(f"Saved figure to {save_path}")
     else:
         plt.show()
-    
+
+    # Print novice / expert baseline returns broken out by ID vs OOD using
+    # the per-episode meta saved in the boundary points of each filtered
+    # .npz. Values respect the same y-frame as the plot (raw or normalized).
+    _print_endpoint_baselines(
+        results=results,
+        valid_methods=valid_methods,
+        do_normalize_y=do_normalize_y,
+        weak_for_norm=weak_for_norm,
+        perf_range_for_norm=perf_range_for_norm,
+    )
+
     # Print AUC table if requested
     if calculate_auc and method_auc_data:
         x_range = (overall_x_min, overall_x_max) if overall_x_min != float('inf') else None
