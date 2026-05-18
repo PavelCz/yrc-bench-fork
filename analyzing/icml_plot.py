@@ -789,6 +789,7 @@ def plot_icml_results(
     calculate_auc: bool = False,
     robust_filter: str = "all",
     normalize_y: bool = False,
+    ylim_5_10: bool = False,
 ):
     """
     Plot ICML results with aggregation across experiments.
@@ -969,6 +970,8 @@ def plot_icml_results(
                     # collectors and plot/AUC code then operate uniformly in
                     # the chosen y-space.
                     if do_normalize_y:
+                        assert weak_for_norm is not None
+                        assert perf_range_for_norm is not None
                         y = (y - weak_for_norm) / perf_range_for_norm
 
                     x_arrays.append(x)
@@ -996,6 +999,8 @@ def plot_icml_results(
                         if len(y_unfiltered) > 0:
                             weak_first = float(y_unfiltered[0])
                             if do_normalize_y:
+                                assert weak_for_norm is not None
+                                assert perf_range_for_norm is not None
                                 weak_first = (
                                     weak_first - weak_for_norm
                                 ) / perf_range_for_norm
@@ -1205,6 +1210,17 @@ def plot_icml_results(
             label=r"\textsc{Random}",
             zorder=10,  # Draw on top
         )
+
+    # Optional preset y-axis zoom for raw Procgen returns. Applied only when
+    # the curves are in raw units; with --normalize_y the plot is already in
+    # a [0, 1]-ish frame and a 5-10 window would be empty.
+    if ylim_5_10:
+        if do_normalize_y:
+            print(
+                "Warning: --ylim-5-10 ignored because --normalize_y is set."
+            )
+        else:
+            plt.ylim(5, 10)
 
     # Labels and title
     env_str = env_filter if env_filter else "all"
@@ -1448,6 +1464,17 @@ def main():
         ),
     )
     parser.add_argument(
+        "--ylim-5-10",
+        "--ylim_5_10",
+        dest="ylim_5_10",
+        action="store_true",
+        help=(
+            "Zoom the y-axis to [5, 10] (Procgen reward range, focused on "
+            "the policy-comparison region). Ignored when --normalize_y is "
+            "also set."
+        ),
+    )
+    parser.add_argument(
         "--robust-filter",
         choices=["all", "robust", "non-robust"],
         default="all",
@@ -1496,6 +1523,7 @@ def main():
         calculate_auc=args.auc,
         robust_filter=args.robust_filter,
         normalize_y=args.normalize_y,
+        ylim_5_10=args.ylim_5_10,
     )
 
 
