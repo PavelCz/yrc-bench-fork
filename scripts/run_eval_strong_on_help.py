@@ -17,11 +17,16 @@ from typing import List, Optional, Tuple
 from common import (
     ENVS,
     METHOD_CONFIGS,
+    ROBUST_MAZE_CHECKPOINT_STEPS,
     SERVER_PATHS,
     find_newest_timestamp_dir,
+    get_robust_maze_strong_checkpoint,
     get_strong_checkpoint,
     normalize_method_name,
 )
+
+
+ROBUST_SUFFIX_RE = re.compile(r"_(robust\d+)$")
 
 
 # ==============================================================================
@@ -297,11 +302,12 @@ def find_eval_npz_files(
     env: str,
     exp_ids: List[int],
     method_filter: Optional[str] = None,
-) -> List[Tuple[Path, str, int]]:
+) -> List[Tuple[Path, str, int, Optional[str]]]:
     """Find NPZ files from existing evaluations.
 
     Returns:
-        List of tuples: (npz_path, method_name, exp_id)
+        List of tuples: (npz_path, method_name, exp_id, robust_key)
+        where robust_key is e.g. "robust400" for robust runs, else None.
     """
     evals_path = Path(evals_base)
     results = []
@@ -325,7 +331,15 @@ def find_eval_npz_files(
             if not match:
                 continue
 
-            method_name = normalize_method_name(match.group(1))
+            raw_method = match.group(1)
+            robust_match = ROBUST_SUFFIX_RE.search(raw_method)
+            if robust_match:
+                robust_key = robust_match.group(1)
+                raw_method = raw_method[: robust_match.start()]
+            else:
+                robust_key = None
+
+            method_name = normalize_method_name(raw_method)
 
             # Apply method filter if specified
             if method_filter and method_name != method_filter:
@@ -344,7 +358,7 @@ def find_eval_npz_files(
                 continue
 
             for npz_file in npz_files:
-                results.append((npz_file, method_name, exp_id))
+                results.append((npz_file, method_name, exp_id, robust_key))
 
     return results
 
@@ -366,8 +380,11 @@ def process_npz_files(args, npz_files, checkpoint_base_path, log_dir, wandb_run)
     print("\nProcessing NPZ files...")
     start_processing = time.time()
 
-    for idx, (npz_path, method_name, exp_id) in enumerate(npz_files, 1):
-        print(f"\n[{idx}/{len(npz_files)}] Processing {method_name} exp{exp_id}...")
+    for idx, (npz_path, method_name, exp_id, robust_key) in enumerate(npz_files, 1):
+        label = f"{method_name} exp{exp_id}"
+        if robust_key:
+            label += f" ({robust_key})"
+        print(f"\n[{idx}/{len(npz_files)}] Processing {label}...")
 
         if wandb_run:
             log_to_wandb(
@@ -376,6 +393,7 @@ def process_npz_files(args, npz_files, checkpoint_base_path, log_dir, wandb_run)
                     "total_files": len(npz_files),
                     "current_method": method_name,
                     "current_exp_id": exp_id,
+                    "current_robust_key": robust_key,
                 }
             )
 
@@ -384,6 +402,7 @@ def process_npz_files(args, npz_files, checkpoint_base_path, log_dir, wandb_run)
             npz_path,
             method_name,
             exp_id,
+            robust_key,
             checkpoint_base_path,
             log_dir,
             stats,
@@ -399,6 +418,7 @@ def process_single_npz(
     npz_path,
     method_name,
     exp_id,
+    robust_key,
     checkpoint_base_path,
     log_dir,
     stats,
@@ -406,7 +426,9 @@ def process_single_npz(
 ):
     """Process a single NPZ file."""
     # Get strong checkpoint
-    strong_path = get_strong_checkpoint_path(args, exp_id, checkpoint_base_path)
+    strong_path = get_strong_checkpoint_path(
+        args, exp_id, robust_key, checkpoint_base_path
+    )
     if not validate_strong_checkpoint(strong_path, exp_id, stats, wandb_run):
         return
 
@@ -428,7 +450,8 @@ def process_single_npz(
         return
 
     # Build job name and submit
-    job_name = f"strong_reval_{args.env}_{method_name}_exp{exp_id}"
+    job_method_label = f"{method_name}_{robust_key}" if robust_key else method_name
+    job_name = f"strong_reval_{args.env}_{job_method_label}_exp{exp_id}"
 
     if args.dry_run:
         display_job_info(
@@ -454,17 +477,28 @@ def process_single_npz(
         )
 
 
-def get_strong_checkpoint_path(args, exp_id, checkpoint_base_path):
+def get_strong_checkpoint_path(args, exp_id, robust_key, checkpoint_base_path):
     """Get the strong checkpoint path."""
     if args.strong:
         return args.strong
-    else:
-        return get_strong_checkpoint(
-            args.env,
-            exp_id,
-            checkpoint_base_path,
-            allow_compact_timestamp=True,
-        )
+    if robust_key is not None:
+        if args.env != "maze":
+            print(
+                f"  ⚠️  Warning: robust suffix '{robust_key}' on a {args.env!r} run is unexpected "
+                f"(robust checkpoints are maze-only); falling back to non-robust strong."
+            )
+        else:
+            return get_robust_maze_strong_checkpoint(
+                exp_id,
+                checkpoint_base_path,
+                ROBUST_MAZE_CHECKPOINT_STEPS[robust_key],
+            )
+    return get_strong_checkpoint(
+        args.env,
+        exp_id,
+        checkpoint_base_path,
+        allow_compact_timestamp=True,
+    )
 
 
 def validate_strong_checkpoint(strong_path, exp_id, stats, wandb_run):
