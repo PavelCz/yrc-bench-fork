@@ -75,6 +75,25 @@ DEFAULT_CONTAINER_BINDS = {
     "snoopy": ["/scr/pavel:/scr/pavel"],
 }
 
+# Redirect wandb staging + artifact cache off the (often-full) root volume.
+WANDB_DATA_DIR_PATH = "/nas/ttl=60d/czempin/wandb-data"
+WANDB_CACHE_DIR_PATH = "/nas/ttl=60d/czempin/wandb-cache"
+
+
+def build_wandb_env_block(server: str) -> str:
+    """Shell lines that point wandb staging/cache at the NAS volume.
+
+    Only emitted on chai, where the root volume is contended and the NAS path
+    above is available. Other servers have their own dedicated scratch.
+    """
+    if server != "chai":
+        return ""
+    return (
+        f"export WANDB_DATA_DIR='{WANDB_DATA_DIR_PATH}'\n"
+        f"export WANDB_CACHE_DIR='{WANDB_CACHE_DIR_PATH}'\n"
+        'mkdir -p "$WANDB_DATA_DIR" "$WANDB_CACHE_DIR"'
+    )
+
 
 def get_svdd_feature_type(method: str) -> str:
     """Get the SVDD feature type from method name."""
@@ -361,6 +380,7 @@ def build_sbatch_command(
     log_dir: Path,
     qos: str = "default",
     *,
+    server: str = "chai",
     execution: str = "conda",
     container_image: Optional[Path] = None,
     repo_dir: Path = REPO_ROOT,
@@ -392,6 +412,8 @@ def build_sbatch_command(
 #SBATCH --error={log_dir}/%x_%j.err
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
 
+{build_wandb_env_block(server)}
+
 {runtime_setup}
 srun {slurm_args} {runtime_cmd}
 """
@@ -405,6 +427,7 @@ def build_packed_sbatch_command(
     log_dir: Path,
     qos: str = "default",
     *,
+    server: str = "chai",
     execution: str = "conda",
     container_image: Optional[Path] = None,
     repo_dir: Path = REPO_ROOT,
@@ -456,6 +479,8 @@ def build_packed_sbatch_command(
 #SBATCH --error={log_dir}/%x_%j.err
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
 
+{build_wandb_env_block(server)}
+
 {runtime_setup}
 
 pids=()
@@ -503,6 +528,7 @@ def submit_job(
     qos: str = "default",
     dry_run: bool = False,
     *,
+    server: str = "chai",
     execution: str = "conda",
     container_image: Optional[Path] = None,
     repo_dir: Path = REPO_ROOT,
@@ -515,6 +541,7 @@ def submit_job(
         conda_env,
         log_dir,
         qos,
+        server=server,
         execution=execution,
         container_image=container_image,
         repo_dir=repo_dir,
@@ -552,6 +579,7 @@ def submit_packed_job(
     qos: str = "default",
     dry_run: bool = False,
     *,
+    server: str = "chai",
     execution: str = "conda",
     container_image: Optional[Path] = None,
     repo_dir: Path = REPO_ROOT,
@@ -564,6 +592,7 @@ def submit_packed_job(
         conda_env,
         log_dir,
         qos,
+        server=server,
         execution=execution,
         container_image=container_image,
         repo_dir=repo_dir,
@@ -1084,6 +1113,7 @@ def main():
                 log_dir,
                 args.qos,
                 dry_run=args.dry_run,
+                server=args.server,
                 execution=args.execution,
                 container_image=container_image,
                 repo_dir=repo_dir,
@@ -1099,6 +1129,7 @@ def main():
                 log_dir,
                 args.qos,
                 dry_run=args.dry_run,
+                server=args.server,
                 execution=args.execution,
                 container_image=container_image,
                 repo_dir=repo_dir,
