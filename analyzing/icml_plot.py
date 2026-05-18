@@ -789,7 +789,7 @@ def plot_icml_results(
     calculate_auc: bool = False,
     robust_filter: str = "all",
     normalize_y: bool = False,
-    ylim_6_10: bool = False,
+    paper_app: bool = False,
 ):
     """
     Plot ICML results with aggregation across experiments.
@@ -922,7 +922,10 @@ def plot_icml_results(
     # Set up plot style
     setup_plot_style(paper_mode=paper_mode, use_latex=True)
     
-    plt.figure(figsize=(8, 4.5))
+    # `--paper-app` swaps to a taller-than-default aspect ratio so the plot
+    # sits well as an appendix figure alongside its (longer) legend.
+    figsize = (6, 6) if paper_app else (8, 4.5)
+    plt.figure(figsize=figsize)
     colors = sns.color_palette("husl", len(valid_methods))
     
     # Get line styles for paper mode
@@ -1211,13 +1214,15 @@ def plot_icml_results(
             zorder=10,  # Draw on top
         )
 
-    # Optional preset y-axis zoom for raw Procgen returns. Applied only when
-    # the curves are in raw units; with --normalize_y the plot is already in
-    # a [0, 1]-ish frame and a 6-10 window would be empty.
-    if ylim_6_10:
+    # `--paper-app`: zoom y-axis to the [6, 10] Procgen reward region
+    # (paired with the taller aspect ratio set earlier). Applied only when
+    # the curves are in raw units; with --normalize_y the plot is already
+    # in a [0, 1]-ish frame and a 6-10 window would be empty.
+    if paper_app:
         if do_normalize_y:
             print(
-                "Warning: --ylim-6-10 ignored because --normalize_y is set."
+                "Warning: --paper-app y-axis zoom ignored because "
+                "--normalize_y is set."
             )
         else:
             plt.ylim(6, 10)
@@ -1464,14 +1469,14 @@ def main():
         ),
     )
     parser.add_argument(
-        "--ylim-6-10",
-        "--ylim_6_10",
-        dest="ylim_6_10",
+        "--paper-app",
+        "--paper_app",
+        dest="paper_app",
         action="store_true",
         help=(
-            "Zoom the y-axis to [6, 10] (Procgen reward range, focused on "
-            "the policy-comparison region). Ignored when --normalize_y is "
-            "also set."
+            "Appendix-figure preset: implies --paper, zooms the y-axis to "
+            "[6, 10] (Procgen reward range), and uses a taller (6x6) "
+            "figure. The y-axis zoom is skipped when --normalize_y is set."
         ),
     )
     parser.add_argument(
@@ -1490,6 +1495,11 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # `--paper-app` is cumulative with `--paper`: opting into the appendix
+    # preset always also implies paper mode.
+    if args.paper_app:
+        args.paper = True
 
     eval_dir = Path(args.eval_dir)
 
@@ -1523,7 +1533,7 @@ def main():
         calculate_auc=args.auc,
         robust_filter=args.robust_filter,
         normalize_y=args.normalize_y,
-        ylim_6_10=args.ylim_6_10,
+        paper_app=args.paper_app,
     )
 
 
