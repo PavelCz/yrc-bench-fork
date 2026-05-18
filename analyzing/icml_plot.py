@@ -706,25 +706,39 @@ def _print_endpoint_baselines(
                 return False
             return True
         if role == "expert":
-            # `first_ood_timestep` is 1-indexed (see evaluator: episode_length
-            # is incremented to 1 on the first action before being recorded),
-            # so "asked on the first timestep" means the stored value is 1.
+            # In always-ask mode the policy must ask at its earliest feasible
+            # timestep on every episode. The exact value of that earliest
+            # timestep is policy-dependent: standard threshold policies record
+            # 1 (1-indexed first action), while OracleLevelBasedRandomPolicy
+            # structurally records 2 because it can't ask before the env's
+            # first info dict surfaces the OOD label.
+            #
+            # We therefore check that `first_ood_timestep` is (a) non-None on
+            # every episode and (b) identical across episodes — i.e. asks are
+            # deterministic and as early as the policy can fire them.
             first_ood = s.get("first_ood_timestep", None)
             if first_ood is None:
                 return True  # nothing to check against; accept
             first_ood = list(first_ood)
             if not first_ood:
                 return True
-            bad = [t for t in first_ood if t != 1]
-            if bad:
-                print(
-                    f"Warning: expert baseline at {file_label} had "
-                    f"{len(bad)}/{len(first_ood)} episodes where help was "
-                    "not requested on the first timestep; skipping for "
-                    "endpoint baseline aggregation."
+            none_count = sum(1 for t in first_ood if t is None)
+            unique = {t for t in first_ood if t is not None}
+            if none_count == 0 and len(unique) == 1:
+                return True
+            bits = []
+            if none_count > 0:
+                bits.append(f"{none_count}/{len(first_ood)} episodes never asked")
+            if len(unique) > 1:
+                sample = sorted(unique)[:5]
+                bits.append(
+                    f"first_ood_timestep varied across episodes (e.g. {sample})"
                 )
-                return False
-            return True
+            print(
+                f"Warning: expert baseline at {file_label}: {'; '.join(bits)}; "
+                "skipping for endpoint baseline aggregation."
+            )
+            return False
         return True
 
     def _bucket(idx: int, meta_arr, role: str, bucket, file_label: str):
