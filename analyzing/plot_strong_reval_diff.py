@@ -470,6 +470,31 @@ def calculate_minmax_bands(
     )
 
 
+def interpolate_curves_at_x(
+    x_arrays: List[np.ndarray],
+    y_arrays: List[np.ndarray],
+    x_target: float,
+) -> List[float]:
+    """Interpolate each per-experiment curve at x_target, dropping NaNs/out-of-range."""
+    values: List[float] = []
+    for x, y in zip(x_arrays, y_arrays):
+        valid_mask = ~np.isnan(y)
+        if np.sum(valid_mask) < 2:
+            continue
+        x_valid = x[valid_mask]
+        y_valid = y[valid_mask]
+        sort_idx = np.argsort(x_valid)
+        x_sorted = x_valid[sort_idx]
+        y_sorted = y_valid[sort_idx]
+        f = interpolate.interp1d(
+            x_sorted, y_sorted, kind="linear", bounds_error=False, fill_value=np.nan
+        )
+        v = float(f(x_target))
+        if not np.isnan(v):
+            values.append(v)
+    return values
+
+
 def plot_strong_reval_diff(
     eval_dir: Path,
     prefix_filter: Optional[List[str]],
@@ -482,6 +507,7 @@ def plot_strong_reval_diff(
     no_aggregate: bool = False,
     plot_absolute: bool = False,
     plot_strong_only: bool = False,
+    afhp_mark: Optional[float] = None,
 ):
     """
     Plot the performance difference between coordination policy and strong-from-start.
@@ -535,6 +561,7 @@ def plot_strong_reval_diff(
     plt.figure(figsize=(10, 8))
     colors = sns.color_palette("husl", len(valid_methods))
     plotted_any = False
+    mark_values_per_method: Dict[str, List[float]] = {}
 
     for method_idx, method in enumerate(valid_methods):
         exp_data = results[method]
@@ -589,6 +616,11 @@ def plot_strong_reval_diff(
         if len(x_arrays) == 0:
             print(f"Warning: No valid data for {method}, skipping...")
             continue
+
+        if afhp_mark is not None:
+            mark_values_per_method[method] = interpolate_curves_at_x(
+                x_arrays, y_arrays, afhp_mark
+            )
 
         # Get display name
         label = METHOD_NAMES.get(method, method)
@@ -683,6 +715,41 @@ def plot_strong_reval_diff(
             y=0, color="black", linestyle="--", alpha=0.5, label="No difference"
         )
 
+    # Mark a specific AFHP value, if requested.
+    if afhp_mark is not None:
+        plt.axvline(
+            x=afhp_mark,
+            color="gray",
+            linestyle=":",
+            alpha=0.7,
+            label=f"AFHP={afhp_mark:g}%",
+        )
+        for method_idx, method in enumerate(valid_methods):
+            vals = mark_values_per_method.get(method, [])
+            if not vals:
+                continue
+            y_mark = float(np.median(vals))
+            plt.plot(
+                [afhp_mark],
+                [y_mark],
+                marker="o",
+                color=colors[method_idx],
+                markersize=7,
+                markeredgecolor="black",
+                markeredgewidth=0.8,
+                linestyle="None",
+            )
+            plt.annotate(
+                f"{y_mark:.2f}",
+                xy=(afhp_mark, y_mark),
+                xytext=(6, 0),
+                textcoords="offset points",
+                color=colors[method_idx],
+                fontsize=9,
+                va="center",
+                ha="left",
+            )
+
     # Labels and title
     env_str = env_filter if env_filter else "all"
     prefix_str = ",".join(prefix_filter) if prefix_filter else "all"
@@ -709,6 +776,27 @@ def plot_strong_reval_diff(
     plt.legend(loc="best")
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
+
+    if afhp_mark is not None:
+        if plot_strong_only:
+            metric_name = "Strong return"
+        elif plot_absolute:
+            metric_name = "Coordination return"
+        else:
+            metric_name = "Performance diff (Coordination - Strong)"
+        print(f"\n=== {metric_name} at AFHP={afhp_mark:g}% ===")
+        for method in valid_methods:
+            vals = mark_values_per_method.get(method, [])
+            label = METHOD_NAMES.get(method, method)
+            if not vals:
+                print(f"  {label}: no curve covers AFHP={afhp_mark:g}%")
+                continue
+            arr = np.array(vals)
+            print(
+                f"  {label}: median={np.median(arr):.3f}, "
+                f"mean={arr.mean():.3f}, n={len(arr)}, "
+                f"values={[round(v, 3) for v in vals]}"
+            )
 
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
@@ -796,6 +884,12 @@ def main():
         action="store_true",
         help="Plot only strong agent performance (from start) vs AFHP",
     )
+    parser.add_argument(
+        "--afhp-mark",
+        type=float,
+        default=None,
+        help="Mark and print the interpolated value at this AFHP (e.g. --afhp-mark 50)",
+    )
 
     args = parser.parse_args()
 
@@ -827,6 +921,7 @@ def main():
         no_aggregate=args.no_aggregate,
         plot_absolute=args.absolute,
         plot_strong_only=args.strong_only,
+        afhp_mark=args.afhp_mark,
     )
 
 
