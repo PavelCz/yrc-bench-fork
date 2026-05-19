@@ -803,13 +803,68 @@ def _print_endpoint_baselines(
     print("=" * 60)
 
 
+def _compute_accuracy_at_afhp(
+    results: Dict[str, Dict[int, Path]],
+    valid_methods: List[str],
+    x_data_key: str,
+    target_afhp: float = 0.5,
+) -> Dict[str, Optional[Tuple[float, float, float]]]:
+    """For each method, linearly interpolate `ood_accuracy` at `target_afhp`
+    on every experiment's curve, then aggregate across experiments as
+    (median, Q1, Q3).
+
+    Returns:
+        Mapping `method -> (median, q1, q3)`, or `method -> None` when no
+        experiment had a curve that bracketed `target_afhp`.
+    """
+    out: Dict[str, Optional[Tuple[float, float, float]]] = {}
+    for method in valid_methods:
+        per_exp: List[float] = []
+        for exp_id in sorted(results.get(method, {}).keys()):
+            npz = results[method][exp_id]
+            try:
+                ed = np.load(npz, allow_pickle=True)
+                xs, accs = extract_x_and_y_values(ed, x_data_key, "ood_accuracy")
+            except Exception:
+                continue
+            xs = np.asarray(xs, dtype=float)
+            accs = np.asarray(accs, dtype=float)
+            if xs.size < 2 or accs.size < 2 or xs.size != accs.size:
+                continue
+            sort_idx = np.argsort(xs)
+            xs = xs[sort_idx]
+            accs = accs[sort_idx]
+            if target_afhp < xs[0] or target_afhp > xs[-1]:
+                continue
+            f = interpolate.interp1d(
+                xs, accs, kind="linear", bounds_error=False, fill_value=np.nan
+            )
+            val = float(f(target_afhp))
+            if not np.isnan(val):
+                per_exp.append(val)
+        if per_exp:
+            arr = np.asarray(per_exp)
+            out[method] = (
+                float(np.median(arr)),
+                float(np.quantile(arr, 0.25)),
+                float(np.quantile(arr, 0.75)),
+            )
+        else:
+            out[method] = None
+    return out
+
+
 def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]],
                          x_label: str, y_label: str,
                          normalize_by_range: bool = True,
                          x_range: Optional[Tuple[float, float]] = None,
                          weak_performance: Optional[float] = None,
                          strong_performance: Optional[float] = None,
-                         hide_robust_suffix: bool = False):
+                         hide_robust_suffix: bool = False,
+                         accuracy_data: Optional[
+                             Dict[str, Optional[Tuple[float, float, float]]]
+                         ] = None,
+                         accuracy_at_afhp: Optional[float] = None):
     """
     Print AUC results as a LaTeX-compatible table.
 
@@ -900,13 +955,33 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
         bold_keys.add(best_overall)
 
     # ---- LaTeX output --------------------------------------------------------
+    has_accuracy = accuracy_data is not None
+    afhp_label = (
+        f"AFHP={int(round(accuracy_at_afhp * 100))}\\%"
+        if has_accuracy and accuracy_at_afhp is not None
+        else "AFHP"
+    )
     print("\n% LaTeX Table")
     print("\\begin{table}[h]")
     print("\\centering")
-    print("\\begin{tabular}{ll}")
+    tab_spec = "lll" if has_accuracy else "ll"
+    print(f"\\begin{{tabular}}{{{tab_spec}}}")
     print("\\toprule")
-    print("Method & AUC (Median [IQR]) \\\\")
+    if has_accuracy:
+        print(
+            f"Method & AUC (Median [IQR]) & Accuracy at {afhp_label} (Median [IQR]) \\\\"
+        )
+    else:
+        print("Method & AUC (Median [IQR]) \\\\")
     print("\\midrule")
+
+    def _fmt_triplet(triplet: Optional[Tuple[float, float, float]]) -> str:
+        if triplet is None:
+            return "--"
+        a, b, c = triplet
+        if np.isnan(a):
+            return "--"
+        return f"{a:.3f} [{b:.3f}, {c:.3f}]"
 
     for i, method in enumerate(final_order):
         display_name = format_plot_label(
@@ -922,7 +997,13 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
             display_name = f"\\textbf{{{display_name}}}"
             if value_str != "--":
                 value_str = f"\\textbf{{{value_str}}}"
-        print(f"{display_name} & {value_str} \\\\")
+        if has_accuracy:
+            acc_str = _fmt_triplet(accuracy_data.get(method))
+            if method in bold_keys and acc_str != "--":
+                acc_str = f"\\textbf{{{acc_str}}}"
+            print(f"{display_name} & {value_str} & {acc_str} \\\\")
+        else:
+            print(f"{display_name} & {value_str} \\\\")
         if i == separator_after_idx and i < len(final_order) - 1:
             print("\\midrule")
 
@@ -941,11 +1022,23 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
     ANSI_BOLD = "\033[1m"
     ANSI_RESET = "\033[0m"
 
-    print("\n" + "-"*60)
+    sep_width = 90 if has_accuracy else 60
+    print("\n" + "-" * sep_width)
     print("Human-readable version:")
-    print("-"*60)
-    print(f"{'Method':<30} {'AUC Median':<15} {'AUC IQR':<25}")
-    print("-"*60)
+    print("-" * sep_width)
+    if has_accuracy:
+        afhp_pct_label = (
+            f"@AFHP={int(round(accuracy_at_afhp * 100))}%"
+            if accuracy_at_afhp is not None
+            else "@AFHP"
+        )
+        print(
+            f"{'Method':<30} {'AUC Median':<12} {'AUC IQR':<22} "
+            f"{'Acc ' + afhp_pct_label + ' Median':<22} {'Acc IQR':<22}"
+        )
+    else:
+        print(f"{'Method':<30} {'AUC Median':<15} {'AUC IQR':<25}")
+    print("-" * sep_width)
 
     for i, method in enumerate(final_order):
         display_name = (
@@ -961,13 +1054,21 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
         else:
             ma, lo, hi = n
             row = f"{display_name:<30} {ma:<15.3f} [{lo:.3f}, {hi:.3f}]"
+        if has_accuracy:
+            acc = (accuracy_data or {}).get(method)
+            if acc is None or np.isnan(acc[0]):
+                acc_section = f"  {'N/A':<22}"
+            else:
+                am, al, au = acc
+                acc_section = f"  {am:<22.3f} [{al:.3f}, {au:.3f}]"
+            row = row + acc_section
         if method in bold_keys:
             row = f"{ANSI_BOLD}{row}{ANSI_RESET}"
         print(row)
         if i == separator_after_idx and i < len(final_order) - 1:
-            print("-"*60)
+            print("-" * sep_width)
 
-    print("-"*60)
+    print("-" * sep_width)
 
 
 def plot_icml_results(
@@ -1527,11 +1628,21 @@ def plot_icml_results(
             if all_last_performances:
                 strong_perf = np.mean(all_last_performances)
 
+        # OOD accuracy at AFHP=50% per method (median + IQR across exps).
+        accuracy_data = _compute_accuracy_at_afhp(
+            results=results,
+            valid_methods=valid_methods,
+            x_data_key=x_data_key,
+            target_afhp=0.5,
+        )
+
         print_auc_latex_table(method_auc_data, x_label, y_label,
                             normalize_by_range=True, x_range=x_range,
                             weak_performance=weak_perf,
                             strong_performance=strong_perf,
-                            hide_robust_suffix=hide_robust_label)
+                            hide_robust_suffix=hide_robust_label,
+                            accuracy_data=accuracy_data,
+                            accuracy_at_afhp=0.5)
 
 
 def list_available_methods(
