@@ -926,33 +926,46 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
     final_order: List[str] = list(po_keys) + ordered_non_po
     separator_after_idx = len(po_keys) - 1 if po_keys else -1
 
-    # ---- Bold set ------------------------------------------------------------
-    def _best_key(candidates: List[str]) -> Optional[str]:
+    # ---- Bold sets -----------------------------------------------------------
+    def _best_key(
+        candidates: List[str],
+        data: Dict[str, Optional[Tuple[float, float, float]]],
+    ) -> Optional[str]:
         best_k = None
         best_v = -float("inf")
         for k in candidates:
-            triplet = normalized.get(k)
+            triplet = data.get(k)
             if triplet is None:
                 continue
-            if triplet[0] > best_v:
-                best_v = triplet[0]
+            m = triplet[0]
+            if isinstance(m, float) and np.isnan(m):
+                continue
+            if m > best_v:
+                best_v = m
                 best_k = k
         return best_k
 
-    bold_keys: set[str] = set()
-    best_overall = _best_key(all_keys)
-    best_non_po = _best_key(non_po_keys_set)
-    # Always bold the best non-oracle method.
-    if best_non_po is not None:
-        bold_keys.add(best_non_po)
-    # Bold PartialOracle only when it is the best of *all* methods (which is
-    # the only case where best_overall is a PartialOracle row, since
-    # otherwise best_overall coincides with best_non_po).
-    if (
-        best_overall is not None
-        and split_robust_method(best_overall)[0] == "oracle-lb-random"
-    ):
-        bold_keys.add(best_overall)
+    def _bold_winners(
+        data: Dict[str, Optional[Tuple[float, float, float]]],
+    ) -> "set[str]":
+        """Best non-oracle row is always bolded. PartialOracle is bolded only
+        when it tops every non-oracle row on the same metric."""
+        winners: set[str] = set()
+        best_non_po_k = _best_key(non_po_keys_set, data)
+        best_overall_k = _best_key(all_keys, data)
+        if best_non_po_k is not None:
+            winners.add(best_non_po_k)
+        if (
+            best_overall_k is not None
+            and split_robust_method(best_overall_k)[0] == "oracle-lb-random"
+        ):
+            winners.add(best_overall_k)
+        return winners
+
+    auc_bold_keys = _bold_winners(normalized)
+    acc_bold_keys: "set[str]" = (
+        _bold_winners(accuracy_data) if accuracy_data is not None else set()
+    )
 
     # ---- LaTeX output --------------------------------------------------------
     has_accuracy = accuracy_data is not None
@@ -985,13 +998,18 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
             method, paper_mode=True, hide_robust_suffix=hide_robust_suffix
         )
         value_str = _fmt_triplet(normalized[method])
-        if method in bold_keys:
+        auc_is_bold = method in auc_bold_keys
+        acc_is_bold = method in acc_bold_keys
+        # Method-name bolding follows the AUC-column bolding, so the column
+        # headers ("AUC" / "Accuracy") both highlight winners in their own
+        # column without the method name flipping between rows.
+        if auc_is_bold:
             display_name = f"\\textbf{{{display_name}}}"
             if value_str != "--":
                 value_str = f"\\textbf{{{value_str}}}"
         if has_accuracy:
             acc_str = _fmt_triplet(accuracy_data.get(method))
-            if method in bold_keys and acc_str != "--":
+            if acc_is_bold and acc_str != "--":
                 acc_str = f"\\textbf{{{acc_str}}}"
             print(f"{display_name} & {value_str} & {acc_str} \\\\")
         else:
@@ -1044,6 +1062,9 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
             return f"{a:<{median_width}.3f} [{b:.3f}, {c:.3f}]"
         return f"{a:<{median_width}.3f}"
 
+    def _ansi(text: str, bold: bool) -> str:
+        return f"{ANSI_BOLD}{text}{ANSI_RESET}" if bold else text
+
     for i, method in enumerate(final_order):
         display_name = (
             format_plot_label(
@@ -1052,13 +1073,23 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
             .replace(r"\textsc{", "")
             .replace("}", "")
         )
+        auc_is_bold = method in auc_bold_keys
+        acc_is_bold = method in acc_bold_keys
+
         auc_width = 12 if (has_accuracy and show_iqr) else 15
-        row = f"{display_name:<30} {_fmt_human_triplet(normalized[method], auc_width)}"
+        # Pad to width *before* ANSI-wrapping so the escape codes don't
+        # consume column space.
+        name_padded = f"{display_name:<30}"
+        auc_padded = _fmt_human_triplet(normalized[method], auc_width)
+        row = f"{_ansi(name_padded, auc_is_bold)} {_ansi(auc_padded, auc_is_bold)}"
+
         if has_accuracy:
             acc_width = 12 if show_iqr else 18
-            row = f"{row}  {_fmt_human_triplet((accuracy_data or {}).get(method), acc_width)}"
-        if method in bold_keys:
-            row = f"{ANSI_BOLD}{row}{ANSI_RESET}"
+            acc_padded = _fmt_human_triplet(
+                (accuracy_data or {}).get(method), acc_width
+            )
+            row = f"{row}  {_ansi(acc_padded, acc_is_bold)}"
+
         print(row)
         if i == separator_after_idx and i < len(final_order) - 1:
             print("-" * sep_width)
