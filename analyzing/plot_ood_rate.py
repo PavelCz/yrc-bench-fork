@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-import re
 from collections import defaultdict
 from typing import Union, Dict, List, Optional, Tuple
 import numpy as np
@@ -26,54 +25,23 @@ from analyzing.plotting_common import (
     setup_plot_style,
     get_line_styles,
     style_plot_for_publication,
-    format_label,
 )
-# Reuse the canonical kebab-case normalization from icml_plot so kebab and
-# snake siblings collapse onto the same method key here too.
-from analyzing.icml_plot import canonicalize_method
-
-
-def parse_experiment_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
-    """
-    Parse experiment directory name to extract prefix, env, and experiment ID.
-
-    Expected format: {prefix}_{env}_exp{id}
-    Examples: imcl04_coinrun_exp0, imcl04_maze_exp1
-
-    Returns:
-        Tuple of (prefix, env, exp_id) or None if pattern doesn't match
-    """
-    # Pattern: prefix_env_expN where env can contain underscores (like maze_afh)
-    pattern = r"^(.+)_(coinrun|maze|maze_afh|heist)_exp(\d+)$"
-    match = re.match(pattern, dir_name)
-    if match:
-        prefix = match.group(1)
-        env = match.group(2)
-        exp_id = int(match.group(3))
-        return prefix, env, exp_id
-    return None
-
-
-def parse_method_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
-    """
-    Parse method directory name to extract env, method, and experiment ID.
-
-    Expected format: {env}_{method}_exp{id}
-    Examples: coinrun_max_prob_exp0, maze_ensemble_exp1, maze_ensemble_single_exp1
-
-    Returns:
-        Tuple of (env, method, exp_id) or None if pattern doesn't match
-    """
-    # Pattern: env_method_expN
-    # Note: method can contain underscores (e.g., ensemble_single)
-    pattern = r"^(coinrun|maze|maze_afh|heist)_(.+)_exp(\d+)$"
-    match = re.match(pattern, dir_name)
-    if match:
-        env = match.group(1)
-        method = match.group(2)  # This captures everything between env_ and _expN
-        exp_id = int(match.group(3))
-        return env, method, exp_id
-    return None
+# Reuse robust-variant parsing, canonicalization, and label/legend helpers
+# from icml_plot so this script behaves the same way around robust strong
+# policies and kebab/snake method aliases.
+from analyzing.icml_plot import (
+    ROBUST_LABELS,
+    add_robust_suffix,
+    canonicalize_method,
+    format_plot_label,
+    method_is_filtered,
+    method_is_included,
+    parse_experiment_dir,
+    parse_method_dir,
+    parse_robust_experiment_dir,
+    prefix_matches_filter,
+    split_robust_method,
+)
 
 
 def extract_icml_results(
@@ -93,59 +61,66 @@ def extract_icml_results(
         Dictionary mapping method names to dict of {exp_id: result_file_path}
     """
     results: Dict[str, Dict[int, Path]] = defaultdict(dict)
-    # Track the run-dir name we picked per (canonical_method, exp_id) so that
-    # kebab/snake siblings collapse onto the most recent run.
-    latest_run_dir_name: Dict[Tuple[str, int], str] = {}
+    # Dedup kebab/snake siblings within the *same* (prefix, method, exp_id)
+    # bucket by tracking the most recent run-dir name we've placed there.
+    latest_run_dir_name: Dict[Tuple[str, str, int], str] = {}
+    # Assign a fresh, contiguous global exp_id per method, mapping each
+    # (prefix, canonical_method, original_exp_id) triple to its own slot.
+    # This is what keeps `--prefix A B` from collapsing A's exp0 onto B's
+    # exp0 when both run the same method.
+    exp_id_map: Dict[Tuple[str, str, int], int] = {}
+    method_exp_counter: Dict[str, int] = defaultdict(int)
 
-    for child in eval_dir.iterdir():
+    for child in sorted(eval_dir.iterdir(), key=lambda p: p.name):
         if not child.is_dir():
             continue
 
-        parsed = parse_experiment_dir(child.name)
-        if parsed is None:
-            continue
+        # Try the robust-variant pattern ({prefix}_robust{200,400}_{env}_exp{id})
+        # first so the variant gets pulled out cleanly; fall back to the plain
+        # {prefix}_{env}_exp{id} pattern otherwise.
+        robust_parsed = parse_robust_experiment_dir(child.name)
+        robust_variant: Optional[str] = None
+        if robust_parsed is not None:
+            prefix, robust_variant, env, exp_id = robust_parsed
+        else:
+            parsed = parse_experiment_dir(child.name)
+            if parsed is None:
+                continue
+            prefix, env, exp_id = parsed
 
-        prefix, env, exp_id = parsed
-
-        # Apply filters
-        if prefix_filter is not None and prefix not in prefix_filter:
+        # `prefix_matches_filter` accepts both base prefixes and full
+        # `{prefix}_{robust_variant}` prefixes so the user can pass either.
+        if not prefix_matches_filter(prefix, robust_variant, prefix_filter):
             continue
         if env_filter is not None and env != env_filter:
             continue
 
-        # Find method directories within this experiment
-        for method_dir in child.iterdir():
+        for method_dir in sorted(child.iterdir(), key=lambda p: p.name):
             if not method_dir.is_dir():
                 continue
 
-            # Parse method directory name (format: {env}_{method}_exp{id})
             parsed_method = parse_method_dir(method_dir.name)
             if parsed_method is None:
-                # Fallback to using the directory name as-is
                 method_name = method_dir.name
             else:
                 method_env, method_name, method_exp_id = parsed_method
-                # Verify consistency with parent directory
                 if method_exp_id != exp_id:
-                    continue  # Skip mismatched experiment IDs
+                    continue
 
-            # Canonicalize to kebab-case (matches run_eval.py and icml_plot.py)
-            # so e.g. `svdd_image` and `svdd-image` both land on `svdd-image`.
+            # Tag with robust variant so robust vs non-robust runs at the same
+            # method don't collide on the same method key, then canonicalize.
+            method_name = add_robust_suffix(method_name, robust_variant)
             method_name = canonicalize_method(method_name)
 
-            # Debug: print full directory name for ensemble methods
             if "ensemble" in method_name.lower():
                 print(f"DEBUG: Found ensemble variant - full dir name: '{method_dir.name}', extracted method: '{method_name}'")
 
-            # Find the most recent run by directory-name timestamp
-            # (YYYYMMDD_HHMMSS sorts lexicographically).
+            # Pick the run-dir with the largest timestamp name.
             latest_run = None
             latest_name = None
-
             for run_dir in sorted(method_dir.iterdir(), key=lambda p: p.name):
                 if not run_dir.is_dir():
                     continue
-
                 for run_file in run_dir.iterdir():
                     if run_file.is_file() and run_file.suffix == ".npz":
                         if latest_name is None or run_dir.name > latest_name:
@@ -153,12 +128,18 @@ def extract_icml_results(
                             latest_run = run_file
                         break
 
-            if latest_run is not None:
-                key = (method_name, exp_id)
-                prev_name = latest_run_dir_name.get(key)
-                if prev_name is None or latest_name > prev_name:
-                    latest_run_dir_name[key] = latest_name
-                    results[method_name][exp_id] = latest_run
+            if latest_run is None:
+                continue
+
+            triple = (prefix, method_name, exp_id)
+            prev_name = latest_run_dir_name.get(triple)
+            if prev_name is not None and latest_name <= prev_name:
+                continue
+            latest_run_dir_name[triple] = latest_name
+            if triple not in exp_id_map:
+                exp_id_map[triple] = method_exp_counter[method_name]
+                method_exp_counter[method_name] += 1
+            results[method_name][exp_id_map[triple]] = latest_run
 
     return dict(results)
 
@@ -766,10 +747,14 @@ def plot_compare_runs(
     # Apply method filter and exclusions
     methods_to_plot = sorted(results.keys())
     if method_filter:
-        methods_to_plot = [m for m in methods_to_plot if m in method_filter]
+        methods_to_plot = [
+            m for m in methods_to_plot if method_is_included(m, method_filter)
+        ]
         print(f"Filtering to methods: {', '.join(methods_to_plot)}")
     if method_exclude:
-        methods_to_plot = [m for m in methods_to_plot if m not in method_exclude]
+        methods_to_plot = [
+            m for m in methods_to_plot if not method_is_filtered(m, method_exclude)
+        ]
         print(f"Excluding methods: {', '.join(method_exclude)}")
 
     # Handle experiment selection
@@ -856,8 +841,11 @@ def plot_compare_runs(
             if len(method_ood_rates_by_exp) > 0:
                 # Store all experiment data for this method
                 all_ood_rates.append(method_ood_rates_by_exp)
-                # Use shared format_label function
-                label = format_label(method, paper_mode, len(method_ood_rates_by_exp))
+                # Use the shared label formatter (handles `_robust{200,400}`
+                # suffixes and the kebab→snake METHOD_NAMES fallback).
+                label = format_plot_label(
+                    method, paper_mode, n_experiments=len(method_ood_rates_by_exp)
+                )
                 all_labels.append(label)
                 print(f"  Collected data from {len(method_ood_rates_by_exp)} experiments")
             else:
@@ -891,8 +879,9 @@ def plot_compare_runs(
 
             # Store data and label
             all_ood_rates.append(ood_rates)
-            # Use shared format_label function
-            base_label = format_label(method, paper_mode, n_experiments=None)
+            # Use the shared label formatter (handles `_robust{200,400}`
+            # suffixes and the kebab→snake METHOD_NAMES fallback).
+            base_label = format_plot_label(method, paper_mode, n_experiments=None)
             if not paper_mode:
                 label = f"{base_label} (Level AFHP: {level_afhp:.1f}%)"
             else:
@@ -997,7 +986,7 @@ def plot_single_run(
     all_ood_rates = [ood_rates]
     # Format label based on paper mode
     if paper_mode:
-        label = format_label(selected_method, paper_mode, n_experiments=None)
+        label = format_plot_label(selected_method, paper_mode, n_experiments=None)
     else:
         label = f"{selected_method}_exp{selected_exp} (Level AFHP: {level_afhp:.1f}%)"
     all_labels = [label]
