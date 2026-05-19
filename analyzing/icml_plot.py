@@ -864,7 +864,7 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
                          accuracy_data: Optional[
                              Dict[str, Optional[Tuple[float, float, float]]]
                          ] = None,
-                         accuracy_at_afhp: Optional[float] = None):
+                         show_iqr: bool = True):
     """
     Print AUC results as a LaTeX-compatible table.
 
@@ -956,11 +956,8 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
 
     # ---- LaTeX output --------------------------------------------------------
     has_accuracy = accuracy_data is not None
-    afhp_label = (
-        f"AFHP={int(round(accuracy_at_afhp * 100))}\\%"
-        if has_accuracy and accuracy_at_afhp is not None
-        else "AFHP"
-    )
+    auc_header = "AUC (Median [IQR])" if show_iqr else "Median AUC"
+    acc_header = "Accuracy (Median [IQR])" if show_iqr else "Median Accuracy"
     print("\n% LaTeX Table")
     print("\\begin{table}[h]")
     print("\\centering")
@@ -968,11 +965,9 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
     print(f"\\begin{{tabular}}{{{tab_spec}}}")
     print("\\toprule")
     if has_accuracy:
-        print(
-            f"Method & AUC (Median [IQR]) & Accuracy at {afhp_label} (Median [IQR]) \\\\"
-        )
+        print(f"Method & {auc_header} & {acc_header} \\\\")
     else:
-        print("Method & AUC (Median [IQR]) \\\\")
+        print(f"Method & {auc_header} \\\\")
     print("\\midrule")
 
     def _fmt_triplet(triplet: Optional[Tuple[float, float, float]]) -> str:
@@ -981,18 +976,15 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
         a, b, c = triplet
         if np.isnan(a):
             return "--"
-        return f"{a:.3f} [{b:.3f}, {c:.3f}]"
+        if show_iqr:
+            return f"{a:.3f} [{b:.3f}, {c:.3f}]"
+        return f"{a:.3f}"
 
     for i, method in enumerate(final_order):
         display_name = format_plot_label(
             method, paper_mode=True, hide_robust_suffix=hide_robust_suffix
         )
-        n = normalized[method]
-        if n is None:
-            value_str = "--"
-        else:
-            ma, lo, hi = n
-            value_str = f"{ma:.3f} [{lo:.3f}, {hi:.3f}]"
+        value_str = _fmt_triplet(normalized[method])
         if method in bold_keys:
             display_name = f"\\textbf{{{display_name}}}"
             if value_str != "--":
@@ -1022,23 +1014,35 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
     ANSI_BOLD = "\033[1m"
     ANSI_RESET = "\033[0m"
 
-    sep_width = 90 if has_accuracy else 60
+    if show_iqr:
+        sep_width = 90 if has_accuracy else 60
+    else:
+        sep_width = 55 if has_accuracy else 45
     print("\n" + "-" * sep_width)
     print("Human-readable version:")
     print("-" * sep_width)
-    if has_accuracy:
-        afhp_pct_label = (
-            f"@AFHP={int(round(accuracy_at_afhp * 100))}%"
-            if accuracy_at_afhp is not None
-            else "@AFHP"
-        )
+    if has_accuracy and show_iqr:
         print(
             f"{'Method':<30} {'AUC Median':<12} {'AUC IQR':<22} "
-            f"{'Acc ' + afhp_pct_label + ' Median':<22} {'Acc IQR':<22}"
+            f"{'Acc Median':<12} {'Acc IQR':<22}"
         )
-    else:
+    elif has_accuracy and not show_iqr:
+        print(f"{'Method':<30} {'Median AUC':<12} {'Median Accuracy':<18}")
+    elif not has_accuracy and show_iqr:
         print(f"{'Method':<30} {'AUC Median':<15} {'AUC IQR':<25}")
+    else:
+        print(f"{'Method':<30} {'Median AUC':<15}")
     print("-" * sep_width)
+
+    def _fmt_human_triplet(
+        triplet: Optional[Tuple[float, float, float]], median_width: int
+    ) -> str:
+        if triplet is None or np.isnan(triplet[0]):
+            return f"{'N/A':<{median_width}}"
+        a, b, c = triplet
+        if show_iqr:
+            return f"{a:<{median_width}.3f} [{b:.3f}, {c:.3f}]"
+        return f"{a:<{median_width}.3f}"
 
     for i, method in enumerate(final_order):
         display_name = (
@@ -1048,20 +1052,11 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
             .replace(r"\textsc{", "")
             .replace("}", "")
         )
-        n = normalized[method]
-        if n is None:
-            row = f"{display_name:<30} {'N/A':<15}"
-        else:
-            ma, lo, hi = n
-            row = f"{display_name:<30} {ma:<15.3f} [{lo:.3f}, {hi:.3f}]"
+        auc_width = 12 if (has_accuracy and show_iqr) else 15
+        row = f"{display_name:<30} {_fmt_human_triplet(normalized[method], auc_width)}"
         if has_accuracy:
-            acc = (accuracy_data or {}).get(method)
-            if acc is None or np.isnan(acc[0]):
-                acc_section = f"  {'N/A':<22}"
-            else:
-                am, al, au = acc
-                acc_section = f"  {am:<22.3f} [{al:.3f}, {au:.3f}]"
-            row = row + acc_section
+            acc_width = 12 if show_iqr else 18
+            row = f"{row}  {_fmt_human_triplet((accuracy_data or {}).get(method), acc_width)}"
         if method in bold_keys:
             row = f"{ANSI_BOLD}{row}{ANSI_RESET}"
         print(row)
@@ -1091,6 +1086,7 @@ def plot_icml_results(
     robust_filter: str = "all",
     normalize_y: bool = False,
     paper_app: bool = False,
+    show_iqr: bool = True,
 ):
     """
     Plot ICML results with aggregation across experiments.
@@ -1642,7 +1638,7 @@ def plot_icml_results(
                             strong_performance=strong_perf,
                             hide_robust_suffix=hide_robust_label,
                             accuracy_data=accuracy_data,
-                            accuracy_at_afhp=0.5)
+                            show_iqr=show_iqr)
 
 
 def list_available_methods(
@@ -1800,6 +1796,17 @@ def main():
         ),
     )
     parser.add_argument(
+        "--hide-iqr",
+        "--hide_iqr",
+        dest="hide_iqr",
+        action="store_true",
+        help=(
+            "In the --auc table, omit the [IQR] brackets and the IQR sub-columns. "
+            "Headers collapse to 'Median AUC' / 'Median Accuracy' and only the "
+            "median value is printed per cell."
+        ),
+    )
+    parser.add_argument(
         "--robust-filter",
         choices=["all", "robust", "non-robust"],
         default="all",
@@ -1854,6 +1861,7 @@ def main():
         robust_filter=args.robust_filter,
         normalize_y=args.normalize_y,
         paper_app=args.paper_app,
+        show_iqr=not args.hide_iqr,
     )
 
 
