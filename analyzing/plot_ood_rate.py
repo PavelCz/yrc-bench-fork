@@ -28,6 +28,9 @@ from analyzing.plotting_common import (
     style_plot_for_publication,
     format_label,
 )
+# Reuse the canonical kebab-case normalization from icml_plot so kebab and
+# snake siblings collapse onto the same method key here too.
+from analyzing.icml_plot import canonicalize_method
 
 
 def parse_experiment_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
@@ -90,6 +93,9 @@ def extract_icml_results(
         Dictionary mapping method names to dict of {exp_id: result_file_path}
     """
     results: Dict[str, Dict[int, Path]] = defaultdict(dict)
+    # Track the run-dir name we picked per (canonical_method, exp_id) so that
+    # kebab/snake siblings collapse onto the most recent run.
+    latest_run_dir_name: Dict[Tuple[str, int], str] = {}
 
     for child in eval_dir.iterdir():
         if not child.is_dir():
@@ -122,30 +128,37 @@ def extract_icml_results(
                 # Verify consistency with parent directory
                 if method_exp_id != exp_id:
                     continue  # Skip mismatched experiment IDs
-            
+
+            # Canonicalize to kebab-case (matches run_eval.py and icml_plot.py)
+            # so e.g. `svdd_image` and `svdd-image` both land on `svdd-image`.
+            method_name = canonicalize_method(method_name)
+
             # Debug: print full directory name for ensemble methods
             if "ensemble" in method_name.lower():
                 print(f"DEBUG: Found ensemble variant - full dir name: '{method_dir.name}', extracted method: '{method_name}'")
 
-            # Find the most recent run (by timestamp)
+            # Find the most recent run by directory-name timestamp
+            # (YYYYMMDD_HHMMSS sorts lexicographically).
             latest_run = None
-            latest_time = None
+            latest_name = None
 
-            for run_dir in method_dir.iterdir():
+            for run_dir in sorted(method_dir.iterdir(), key=lambda p: p.name):
                 if not run_dir.is_dir():
                     continue
 
-                # Find .npz file in run directory
                 for run_file in run_dir.iterdir():
                     if run_file.is_file() and run_file.suffix == ".npz":
-                        # Use directory modification time as proxy for recency
-                        mtime = run_dir.stat().st_mtime
-                        if latest_time is None or mtime > latest_time:
-                            latest_time = mtime
+                        if latest_name is None or run_dir.name > latest_name:
+                            latest_name = run_dir.name
                             latest_run = run_file
+                        break
 
             if latest_run is not None:
-                results[method_name][exp_id] = latest_run
+                key = (method_name, exp_id)
+                prev_name = latest_run_dir_name.get(key)
+                if prev_name is None or latest_name > prev_name:
+                    latest_run_dir_name[key] = latest_name
+                    results[method_name][exp_id] = latest_run
 
     return dict(results)
 
@@ -1093,6 +1106,13 @@ def plot_ood_rate_main():
     )
 
     args = parser.parse_args()
+
+    # Canonicalize user-supplied method filters so kebab/snake CLI inputs both
+    # match the kebab-canonical keys stored in `results`.
+    if args.method_filter is not None:
+        args.method_filter = [canonicalize_method(m) for m in args.method_filter]
+    if args.method_exclude is not None:
+        args.method_exclude = [canonicalize_method(m) for m in args.method_exclude]
 
     eval_dir = Path(args.eval_dir)
 
