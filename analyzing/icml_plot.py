@@ -810,9 +810,10 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
 
     Method ordering: PartialOracle row(s) first, then a separator, then the
     figure's default ordering (`DEFAULT_METHOD_ORDER` + alphabetical leftover).
-    Bolding: PartialOracle is always bold; additionally the method with the
-    highest AUC and the method with the highest AUC among non-PartialOracle
-    methods are bolded.
+    Bolding: always bolds the method with the highest AUC among non-oracle
+    methods. PartialOracle is bolded only when it is the best of *all*
+    methods (i.e. beats every non-oracle method on AUC); otherwise it is
+    rendered in normal weight.
     """
     print("\n" + "="*80)
     print("AREA UNDER THE CURVE (AUC) RESULTS")
@@ -878,13 +879,20 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
                 best_k = k
         return best_k
 
-    bold_keys: set[str] = set(po_keys)
+    bold_keys: set[str] = set()
     best_overall = _best_key(all_keys)
     best_non_po = _best_key(non_po_keys_set)
-    if best_overall is not None:
-        bold_keys.add(best_overall)
+    # Always bold the best non-oracle method.
     if best_non_po is not None:
         bold_keys.add(best_non_po)
+    # Bold PartialOracle only when it is the best of *all* methods (which is
+    # the only case where best_overall is a PartialOracle row, since
+    # otherwise best_overall coincides with best_non_po).
+    if (
+        best_overall is not None
+        and split_robust_method(best_overall)[0] == "oracle-lb-random"
+    ):
+        bold_keys.add(best_overall)
 
     # ---- LaTeX output --------------------------------------------------------
     print("\n% LaTeX Table")
