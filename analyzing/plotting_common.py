@@ -146,20 +146,25 @@ def style_plot_for_publication(
 def format_label(method: str, paper_mode: bool, n_experiments: Optional[int] = None) -> str:
     """
     Format method label for legend.
-    
+
     Args:
         method: Method name
         paper_mode: If True, exclude n= information
         n_experiments: Number of experiments (if aggregating)
-        
+
     Returns:
         Formatted label string
     """
-    # Get display name
-    label = METHOD_NAMES.get(method, method)
-    
+    # Get display name. METHOD_NAMES is keyed in a mix of snake and kebab
+    # case; callers (e.g. plot_ood_rate.py, icml_plot.py) canonicalize their
+    # method names to kebab-case, so we also try the snake-cased equivalent
+    # to keep the `\textsc{...}` pretty-name lookup working in both cases.
+    label = METHOD_NAMES.get(
+        method, METHOD_NAMES.get(method.replace("-", "_"), method)
+    )
+
     # Add experiment count if not in paper mode
     if not paper_mode and n_experiments is not None:
         label = f"{label} (n={n_experiments})"
-    
+
     return label
