@@ -334,14 +334,19 @@ def format_plot_label(
 ) -> str:
     """Format method labels, including robust strong-policy variants.
 
-    If `hide_robust_suffix` is True the `(Robust ...)` qualifier is omitted —
-    intended for plots where the robust variant is communicated via the title
-    instead of per-method labels.
+    The `(Robust ...)` qualifier is omitted when either `hide_robust_suffix`
+    is True or `paper_mode` is True. In paper figures we expect the robust
+    variant to be communicated via the caption, so leaving it in the per-
+    method legend just clutters the label.
     """
     base_method, robust_variant = split_robust_method(method)
     label = method_display_name(base_method)
 
-    if robust_variant is not None and not hide_robust_suffix:
+    if (
+        robust_variant is not None
+        and not hide_robust_suffix
+        and not paper_mode
+    ):
         label = f"{label} ({ROBUST_LABELS[robust_variant]})"
 
     if not paper_mode and n_experiments is not None:
