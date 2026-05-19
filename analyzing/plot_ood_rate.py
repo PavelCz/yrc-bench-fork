@@ -31,6 +31,7 @@ from analyzing.plotting_common import (
 # policies and kebab/snake method aliases.
 from analyzing.icml_plot import (
     ROBUST_LABELS,
+    SUPPORTED_ENVS,
     add_robust_suffix,
     canonicalize_method,
     format_plot_label,
@@ -1016,7 +1017,7 @@ def plot_ood_rate_main():
         "--env",
         type=str,
         default=None,
-        choices=["coinrun", "maze", "maze_afh", "heist"],
+        choices=SUPPORTED_ENVS,
         help="Environment filter",
     )
     parser.add_argument(
