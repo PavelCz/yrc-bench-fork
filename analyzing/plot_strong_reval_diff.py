@@ -185,12 +185,20 @@ def extract_strong_reval_results(
 
 def load_performance_data(
     original_npz: Path, strong_reval_npz: Path
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Load performance data from NPZ files.
 
     Returns:
-        Tuple of (afhps, original_performances, performance_asked, strong_performances)
+        Tuple of (afhps, original_performances, performance_asked,
+                  strong_performances, weak_on_help_performances).
+
+        `weak_on_help_performances[i]` is the mean weak-agent return on the
+        episodes where CurvePoint `i` asked for help. The weak per-episode
+        returns come from the AFHP=0 (no-help) CurvePoint inside
+        `original_npz`; the mask is `meta[i].summary.test.level_ood_pred`.
+        Entries are NaN when no AFHP=0 baseline is recoverable, when the
+        per-CurvePoint help mask is empty, or when array shapes disagree.
     """
     orig_data = np.load(original_npz, allow_pickle=True)
 
@@ -327,6 +335,44 @@ def load_performance_data(
 
     print(f"  AFHP range (calculated): {afhps.min():.2f}% - {afhps.max():.2f}%")
 
+    # --- Weak baseline on the help-asked subset per CurvePoint ---------------
+    # The AFHP=0 CurvePoint is, by construction, the weak agent running the
+    # whole episode. Its per-episode raw_returns let us slice the weak
+    # performance by any other CurvePoint's help-asked mask.
+    weak_returns_full = None
+    if len(calculated_afhps) > 0:
+        novice_idx = int(np.argmin(calculated_afhps))
+        # Treat <1% as effectively "no help" for the baseline; reject the
+        # boundary if it doesn't pass the all-False level_ood_pred check.
+        if calculated_afhps[novice_idx] < 1.0:
+            nov_summary = meta[novice_idx]["summary"]["test"]
+            nov_returns = nov_summary.get("raw_returns", None)
+            nov_pred = nov_summary.get("level_ood_pred", None)
+            if (
+                nov_returns is not None
+                and nov_pred is not None
+                and not any(bool(v) for v in nov_pred)
+            ):
+                weak_returns_full = np.asarray(nov_returns, dtype=float)
+
+    weak_on_help_performances = []
+    for pt_meta in meta:
+        summary = pt_meta["summary"]["test"]
+        level_ood_pred = summary.get("level_ood_pred", [])
+        if (
+            weak_returns_full is None
+            or len(level_ood_pred) == 0
+            or len(level_ood_pred) != len(weak_returns_full)
+        ):
+            weak_on_help_performances.append(np.nan)
+            continue
+        mask = np.asarray(level_ood_pred, dtype=bool)
+        if not mask.any():
+            weak_on_help_performances.append(np.nan)
+            continue
+        weak_on_help_performances.append(float(weak_returns_full[mask].mean()))
+    weak_on_help_performances = np.asarray(weak_on_help_performances, dtype=float)
+
     # Additional validation: Check if performance values are reasonable
     print("\n  === Performance Value Validation ===")
     print(
@@ -387,7 +433,13 @@ def load_performance_data(
                 f"  Checkpoint {i}: AFHP={orig_afhp:.2f}%, Perf(asked)={perf_asked:.2f}, Strong={strong_perf:.2f}"
             )
 
-    return afhps, performances, np.array(performance_asked), strong_performances
+    return (
+        afhps,
+        performances,
+        np.array(performance_asked),
+        strong_performances,
+        weak_on_help_performances,
+    )
 
 
 def calculate_minmax_bands(
@@ -508,6 +560,7 @@ def plot_strong_reval_diff(
     plot_absolute: bool = False,
     plot_strong_only: bool = False,
     afhp_mark: Optional[float] = None,
+    normalize_by_subset: bool = False,
 ):
     """
     Plot the performance difference between coordination policy and strong-from-start.
@@ -574,14 +627,24 @@ def plot_strong_reval_diff(
         # Load all experiment data
         x_arrays = []
         y_arrays = []
+        # Used only by the normalize_by_subset path so the denominator can
+        # be averaged across this method's experiments per CurvePoint.
+        norm_afhps_per_exp: List[np.ndarray] = []
+        norm_diff_per_exp: List[np.ndarray] = []
+        norm_weak_per_exp: List[np.ndarray] = []
+        norm_strong_per_exp: List[np.ndarray] = []
 
         for exp_id in exp_ids:
             original_npz, strong_reval_npz = exp_data[exp_id]
 
             try:
-                afhps, performances, performance_asked, strong_performances = (
-                    load_performance_data(original_npz, strong_reval_npz)
-                )
+                (
+                    afhps,
+                    performances,
+                    performance_asked,
+                    strong_performances,
+                    weak_on_help_performances,
+                ) = load_performance_data(original_npz, strong_reval_npz)
 
                 # Calculate what to plot based on options
                 if plot_strong_only:
@@ -597,11 +660,27 @@ def plot_strong_reval_diff(
                     if np.sum(valid_mask) > 0:
                         x_arrays.append(afhps[valid_mask])
                         y_arrays.append(performance_asked[valid_mask])
-                else:
-                    # Plot difference: performance_asked - strong_performances
+                elif normalize_by_subset:
+                    # Defer normalization — we need the per-CurvePoint averages
+                    # of weak/strong across this method's experiments first, so
+                    # every experiment's diff is divided by the SAME shared
+                    # denominator at each AFHP.
                     diff = performance_asked - strong_performances
-
-                    # Only keep valid (non-NaN) points
+                    valid_mask = ~(
+                        np.isnan(performance_asked)
+                        | np.isnan(strong_performances)
+                        | np.isnan(weak_on_help_performances)
+                    )
+                    if np.sum(valid_mask) > 0:
+                        norm_afhps_per_exp.append(afhps[valid_mask])
+                        norm_diff_per_exp.append(diff[valid_mask])
+                        norm_weak_per_exp.append(
+                            weak_on_help_performances[valid_mask]
+                        )
+                        norm_strong_per_exp.append(strong_performances[valid_mask])
+                else:
+                    # Plot raw difference: performance_asked - strong_performances.
+                    diff = performance_asked - strong_performances
                     valid_mask = ~(
                         np.isnan(performance_asked) | np.isnan(strong_performances)
                     )
@@ -612,6 +691,57 @@ def plot_strong_reval_diff(
             except Exception as e:
                 print(f"Warning: Failed to load data for {method} exp{exp_id}: {e}")
                 continue
+
+        # If normalize_by_subset was requested, build the shared per-CurvePoint
+        # denominator from this method's experiments before populating
+        # x_arrays / y_arrays.
+        if normalize_by_subset and norm_afhps_per_exp:
+            # Common AFHP grid = union of every experiment's AFHP values.
+            all_xs: set = set()
+            for x in norm_afhps_per_exp:
+                all_xs.update(x.tolist())
+            common_x = np.array(sorted(all_xs))
+
+            def _interp(x: np.ndarray, y: np.ndarray) -> np.ndarray:
+                sort_idx = np.argsort(x)
+                f = interpolate.interp1d(
+                    x[sort_idx],
+                    y[sort_idx],
+                    kind="linear",
+                    bounds_error=False,
+                    fill_value=np.nan,
+                )
+                return f(common_x)
+
+            weak_grid = np.array(
+                [_interp(x, w) for x, w in zip(norm_afhps_per_exp, norm_weak_per_exp)]
+            )
+            strong_grid = np.array(
+                [
+                    _interp(x, s)
+                    for x, s in zip(norm_afhps_per_exp, norm_strong_per_exp)
+                ]
+            )
+            diff_grid = np.array(
+                [_interp(x, d) for x, d in zip(norm_afhps_per_exp, norm_diff_per_exp)]
+            )
+
+            with np.errstate(invalid="ignore"):
+                mean_weak = np.nanmean(weak_grid, axis=0)
+                mean_strong = np.nanmean(strong_grid, axis=0)
+            shared_denom = mean_strong - mean_weak
+
+            for diff_row in diff_grid:
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    norm_row = np.where(
+                        np.abs(shared_denom) > 1e-9,
+                        diff_row / shared_denom,
+                        np.nan,
+                    )
+                valid = ~np.isnan(norm_row)
+                if valid.any():
+                    x_arrays.append(common_x[valid])
+                    y_arrays.append(norm_row[valid])
 
         if len(x_arrays) == 0:
             print(f"Warning: No valid data for {method}, skipping...")
@@ -765,8 +895,22 @@ def plot_strong_reval_diff(
             f"Coordination Policy Performance ({env_str}, prefix={prefix_str})"
         )
     else:
-        plt.ylabel("Performance Difference (Coordination - Strong from Start)")
-        default_title = f"Performance Loss from Mid-Episode Switching ({env_str}, prefix={prefix_str})"
+        if normalize_by_subset:
+            plt.ylabel(
+                "Performance Difference / (Strong - Weak) on Help Subset"
+            )
+            default_title = (
+                "Performance Loss from Mid-Episode Switching, normalized by "
+                f"per-subset (Strong - Weak) ({env_str}, prefix={prefix_str})"
+            )
+        else:
+            plt.ylabel(
+                "Performance Difference (Coordination - Strong from Start)"
+            )
+            default_title = (
+                "Performance Loss from Mid-Episode Switching "
+                f"({env_str}, prefix={prefix_str})"
+            )
 
     if title:
         plt.title(title)
@@ -890,6 +1034,19 @@ def main():
         default=None,
         help="Mark and print the interpolated value at this AFHP (e.g. --afhp-mark 50)",
     )
+    parser.add_argument(
+        "--normalize-by-subset",
+        "--normalize_by_subset",
+        dest="normalize_by_subset",
+        action="store_true",
+        help=(
+            "Divide the (coord - strong-from-start) difference by the "
+            "(strong - weak) range computed *on each CurvePoint's help-asked "
+            "subset*, turning the y-axis into the fraction of the available "
+            "improvement that was lost by handing over mid-episode. Has no "
+            "effect when combined with --absolute or --strong-only."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -922,6 +1079,7 @@ def main():
         plot_absolute=args.absolute,
         plot_strong_only=args.strong_only,
         afhp_mark=args.afhp_mark,
+        normalize_by_subset=args.normalize_by_subset,
     )
 
 
