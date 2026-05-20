@@ -1118,6 +1118,7 @@ def plot_icml_results(
     normalize_y: bool = False,
     paper_app: bool = False,
     show_iqr: bool = True,
+    show_accuracy: bool = True,
 ):
     """
     Plot ICML results with aggregation across experiments.
@@ -1656,11 +1657,17 @@ def plot_icml_results(
                 strong_perf = np.mean(all_last_performances)
 
         # OOD accuracy at AFHP=50% per method (median + IQR across exps).
-        accuracy_data = _compute_accuracy_at_afhp(
-            results=results,
-            valid_methods=valid_methods,
-            x_data_key=x_data_key,
-            target_afhp=0.5,
+        # Skipped entirely when the column is disabled to avoid the extra
+        # `.npz` re-load pass.
+        accuracy_data = (
+            _compute_accuracy_at_afhp(
+                results=results,
+                valid_methods=valid_methods,
+                x_data_key=x_data_key,
+                target_afhp=0.5,
+            )
+            if show_accuracy
+            else None
         )
 
         print_auc_latex_table(method_auc_data, x_label, y_label,
@@ -1838,6 +1845,16 @@ def main():
         ),
     )
     parser.add_argument(
+        "--hide-accuracy",
+        "--hide_accuracy",
+        dest="hide_accuracy",
+        action="store_true",
+        help=(
+            "Drop the Accuracy column from the --auc table and skip the "
+            "extra per-exp interpolation pass that computes it."
+        ),
+    )
+    parser.add_argument(
         "--robust-filter",
         choices=["all", "robust", "non-robust"],
         default="all",
@@ -1893,6 +1910,7 @@ def main():
         normalize_y=args.normalize_y,
         paper_app=args.paper_app,
         show_iqr=not args.hide_iqr,
+        show_accuracy=not args.hide_accuracy,
     )
 
 
