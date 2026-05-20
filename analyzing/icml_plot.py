@@ -1118,7 +1118,7 @@ def plot_icml_results(
     normalize_y: bool = False,
     paper_app: bool = False,
     show_iqr: bool = True,
-    show_accuracy: bool = True,
+    show_accuracy: bool = False,
 ):
     """
     Plot ICML results with aggregation across experiments.
@@ -1845,13 +1845,14 @@ def main():
         ),
     )
     parser.add_argument(
-        "--hide-accuracy",
-        "--hide_accuracy",
-        dest="hide_accuracy",
+        "--show-accuracy",
+        "--show_accuracy",
+        dest="show_accuracy",
         action="store_true",
         help=(
-            "Drop the Accuracy column from the --auc table and skip the "
-            "extra per-exp interpolation pass that computes it."
+            "Add the Accuracy column to the --auc table. Off by default; "
+            "enabling it triggers an extra per-exp interpolation pass over "
+            "the .npz files to compute OOD accuracy at AFHP=50%%."
         ),
     )
     parser.add_argument(
@@ -1910,7 +1911,7 @@ def main():
         normalize_y=args.normalize_y,
         paper_app=args.paper_app,
         show_iqr=not args.hide_iqr,
-        show_accuracy=not args.hide_accuracy,
+        show_accuracy=args.show_accuracy,
     )
 
 
