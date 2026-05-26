@@ -457,9 +457,9 @@ def plot_perf_diff_mode(
     )
     if paper_mode:
         plt.xlabel(r"Ask-For-Help \% (AFHP)")
-        r_subscript = r"R_\mathrm{help}" if help_only else "R"
+        help_tag = r",\,\mathrm{help}" if help_only else ""
         plt.ylabel(
-            rf"$({r_subscript}_\mathrm{{full}} - {r_subscript}_\mathrm{{reg}})"
+            rf"$(R_{{\mathrm{{full}}{help_tag}}} - R_{{\mathrm{{reg}}{help_tag}}})"
             rf" / (R_\mathrm{{expert}} - R_\mathrm{{weak}})$"
         )
     else:
