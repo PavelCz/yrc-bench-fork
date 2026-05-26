@@ -325,6 +325,120 @@ def original_endpoint_line(x, y):
     return np.array([0.0, 100.0]), np.array([y_at_zero, y_at_hundred])
 
 
+def weak_expert_performances(afhps, performances):
+    x_sorted, y_sorted = sorted_xy(afhps, performances)
+    if len(x_sorted) < 2:
+        return None, None
+    unique_x, unique_indices = np.unique(x_sorted, return_index=True)
+    unique_y = y_sorted[unique_indices]
+    if len(unique_x) < 2:
+        return None, None
+    weak = float(np.interp(0.0, unique_x, unique_y))
+    expert = float(np.interp(100.0, unique_x, unique_y))
+    return weak, expert
+
+
+def plot_perf_diff_mode(
+    results,
+    valid_methods,
+    *,
+    no_aggregate: bool,
+    help_only: bool,
+):
+    colors = sns.color_palette("husl", len(valid_methods))
+    plotted_any = False
+
+    for method_idx, method in enumerate(valid_methods):
+        x_arrays = []
+        y_arrays = []
+        exp_ids = sorted(results[method].keys())
+
+        for exp_id in exp_ids:
+            original_npz, full_budget_npz = results[method][exp_id]
+            try:
+                data = load_full_budget_data(full_budget_npz, original_npz)
+            except Exception as exc:
+                print(f"Warning: failed to load {method} exp{exp_id}: {exc}")
+                continue
+
+            if help_only:
+                original_perf = data["original_help_performances"]
+                full_perf = data["full_budget_help_performances"]
+            else:
+                original_perf = data["original_performances"]
+                full_perf = data["full_budget_performances"]
+
+            weak, expert = weak_expert_performances(
+                data["original_afhps"], data["original_performances"]
+            )
+            if weak is None or expert is None or not np.isfinite(expert - weak) or (expert - weak) == 0:
+                print(
+                    f"Warning: cannot normalize {method} exp{exp_id} "
+                    f"(weak={weak}, expert={expert}); skipping."
+                )
+                continue
+
+            normalized_diff = (full_perf - original_perf) / (expert - weak)
+            x_arrays.append(data["original_afhps"])
+            y_arrays.append(normalized_diff)
+
+        if len(x_arrays) == 0:
+            print(f"Warning: no valid perf-diff data for {method}, skipping")
+            continue
+
+        label = METHOD_NAMES.get(method, method)
+        if len(x_arrays) == 1 or no_aggregate:
+            base_color = colors[method_idx]
+            for i, (x, y) in enumerate(zip(x_arrays, y_arrays)):
+                x_sorted, y_sorted = sorted_xy(x, y)
+                if len(x_sorted) == 0:
+                    continue
+                exp_label = label if len(x_arrays) == 1 else f"{label} exp{exp_ids[i]}"
+                plt.plot(
+                    x_sorted,
+                    y_sorted,
+                    label=exp_label,
+                    color=base_color,
+                    alpha=0.8,
+                    linewidth=1.8,
+                )
+                plotted_any = True
+        else:
+            common_x, y_median, y_lower, y_upper = calculate_quantile_bands(
+                x_arrays, y_arrays
+            )
+            valid = ~np.isnan(y_median)
+            if np.sum(valid) == 0:
+                continue
+            plt.plot(
+                common_x[valid],
+                y_median[valid],
+                label=f"{label} (n={len(x_arrays)})",
+                color=colors[method_idx],
+                linewidth=2,
+            )
+            plt.fill_between(
+                common_x[valid],
+                y_lower[valid],
+                y_upper[valid],
+                color=colors[method_idx],
+                alpha=0.2,
+            )
+            plotted_any = True
+
+    if not plotted_any:
+        print("No valid non-NaN perf-diff points were found.")
+        return False
+
+    plt.axhline(y=0, color="black", linestyle="--", alpha=0.5, label="No change")
+    plt.xlabel("Regular Eval AFHP (%)")
+    perf_scope = "Help-Only Return" if help_only else "Return"
+    plt.ylabel(
+        f"(Full-Budget {perf_scope} - Regular {perf_scope}) / (Expert - Weak)"
+    )
+    return True
+
+
 def plot_diff_mode(
     results,
     valid_methods,
@@ -567,6 +681,7 @@ def plot_full_budget_afhp(
     no_aggregate: bool = False,
     overlay: bool = False,
     help_only: bool = False,
+    perf_diff: bool = False,
 ):
     ensure_plotting_imports()
     results = extract_full_budget_results(
@@ -586,10 +701,23 @@ def plot_full_budget_afhp(
         print("No valid methods found to plot.")
         return
 
-    if help_only and not overlay:
-        print("Warning: --help-only only affects --overlay mode.")
+    if overlay and perf_diff:
+        print("Warning: --perf-diff overrides --overlay; plotting normalized difference.")
 
-    if overlay:
+    if help_only and not (overlay or perf_diff):
+        print("Warning: --help-only only affects --overlay or --perf-diff modes.")
+
+    is_subplot_mode = overlay and not perf_diff
+
+    if perf_diff:
+        plt.figure(figsize=(10, 8))
+        plotted_any = plot_perf_diff_mode(
+            results,
+            valid_methods,
+            no_aggregate=no_aggregate,
+            help_only=help_only,
+        )
+    elif overlay:
         plotted_any = plot_overlay_mode(
             results,
             valid_methods,
@@ -611,8 +739,8 @@ def plot_full_budget_afhp(
     env_str = env_filter if env_filter else "all"
     prefix_str = ",".join(prefix_filter) if prefix_filter else "all"
     if title:
-        plt.suptitle(title) if overlay else plt.title(title)
-    elif overlay:
+        plt.suptitle(title) if is_subplot_mode else plt.title(title)
+    elif is_subplot_mode:
         performance_scope = (
             "Help-Only Performance Curves" if help_only else "Performance Curves"
         )
@@ -620,12 +748,18 @@ def plot_full_budget_afhp(
             f"Regular vs Full-Budget {performance_scope} "
             f"({env_str}, prefix={prefix_str})"
         )
+    elif perf_diff:
+        perf_scope = "Help-Only Return" if help_only else "Return"
+        plt.title(
+            f"Normalized {perf_scope} Change Under Full-Budget Eval "
+            f"({env_str}, prefix={prefix_str})"
+        )
     else:
         plt.title(
             f"AFHP Change Under Full-Budget Eval ({env_str}, prefix={prefix_str})"
         )
 
-    if not overlay:
+    if not is_subplot_mode:
         plt.legend(loc="best")
         plt.grid(True, alpha=0.3)
     plt.tight_layout()
@@ -688,9 +822,19 @@ def main():
         "--help-only",
         action="store_true",
         help=(
-            "In --overlay mode, plot mean return only on episodes where that eval "
-            "asked for help. Regular and full-budget curves use their own "
-            "help-requested episode sets."
+            "In --overlay or --perf-diff mode, plot mean return only on episodes "
+            "where that eval asked for help. Regular and full-budget curves use "
+            "their own help-requested episode sets."
+        ),
+    )
+    parser.add_argument(
+        "--perf-diff",
+        action="store_true",
+        help=(
+            "Plot the normalized performance difference (full-budget - regular) / "
+            "(expert - weak) vs regular AFHP, instead of overlaying both curves. "
+            "Expert and weak performances are taken from the regular curve's "
+            "AFHP=100%% and AFHP=0%% endpoints."
         ),
     )
     args = parser.parse_args()
@@ -714,6 +858,7 @@ def main():
         no_aggregate=args.no_aggregate,
         overlay=args.overlay,
         help_only=args.help_only,
+        perf_diff=args.perf_diff,
     )
 
 
