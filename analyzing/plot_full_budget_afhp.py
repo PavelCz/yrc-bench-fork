@@ -14,6 +14,13 @@ import matplotlib
 import numpy as np
 from scipy import interpolate
 
+from analyzing.plotting_common import (
+    format_label,
+    get_line_styles,
+    setup_plot_style,
+    style_plot_for_publication,
+)
+
 plt = None
 sns = None
 
@@ -344,8 +351,10 @@ def plot_perf_diff_mode(
     *,
     no_aggregate: bool,
     help_only: bool,
+    paper_mode: bool = False,
 ):
     colors = sns.color_palette("husl", len(valid_methods))
+    line_styles = get_line_styles(len(valid_methods), paper_mode, valid_methods)
     plotted_any = False
 
     for method_idx, method in enumerate(valid_methods):
@@ -386,19 +395,26 @@ def plot_perf_diff_mode(
             print(f"Warning: no valid perf-diff data for {method}, skipping")
             continue
 
-        label = METHOD_NAMES.get(method, method)
+        base_color = colors[method_idx]
+        linestyle = line_styles[method_idx]
         if len(x_arrays) == 1 or no_aggregate:
-            base_color = colors[method_idx]
             for i, (x, y) in enumerate(zip(x_arrays, y_arrays)):
                 x_sorted, y_sorted = sorted_xy(x, y)
                 if len(x_sorted) == 0:
                     continue
-                exp_label = label if len(x_arrays) == 1 else f"{label} exp{exp_ids[i]}"
+                if len(x_arrays) == 1:
+                    exp_label = format_label(method, paper_mode, n_experiments=1)
+                elif paper_mode:
+                    exp_label = format_label(method, paper_mode)
+                else:
+                    base = format_label(method, paper_mode)
+                    exp_label = f"{base} exp{exp_ids[i]}"
                 plt.plot(
                     x_sorted,
                     y_sorted,
                     label=exp_label,
                     color=base_color,
+                    linestyle=linestyle,
                     alpha=0.8,
                     linewidth=1.8,
                 )
@@ -413,15 +429,16 @@ def plot_perf_diff_mode(
             plt.plot(
                 common_x[valid],
                 y_median[valid],
-                label=f"{label} (n={len(x_arrays)})",
-                color=colors[method_idx],
+                label=format_label(method, paper_mode, n_experiments=len(x_arrays)),
+                color=base_color,
+                linestyle=linestyle,
                 linewidth=2,
             )
             plt.fill_between(
                 common_x[valid],
                 y_lower[valid],
                 y_upper[valid],
-                color=colors[method_idx],
+                color=base_color,
                 alpha=0.2,
             )
             plotted_any = True
@@ -430,12 +447,27 @@ def plot_perf_diff_mode(
         print("No valid non-NaN perf-diff points were found.")
         return False
 
-    plt.axhline(y=0, color="black", linestyle="--", alpha=0.5, label="No change")
-    plt.xlabel("Regular Eval AFHP (%)")
-    perf_scope = "Help-Only Return" if help_only else "Return"
-    plt.ylabel(
-        f"(Full-Budget {perf_scope} - Regular {perf_scope}) / (Expert - Weak)"
+    zero_line_label = None if paper_mode else "No change"
+    plt.axhline(
+        y=0,
+        color="black",
+        linestyle="--",
+        alpha=0.5,
+        label=zero_line_label,
     )
+    if paper_mode:
+        plt.xlabel(r"Ask-For-Help \% (AFHP)")
+        r_subscript = r"R_\mathrm{help}" if help_only else "R"
+        plt.ylabel(
+            rf"$({r_subscript}_\mathrm{{full}} - {r_subscript}_\mathrm{{reg}})"
+            rf" / (R_\mathrm{{expert}} - R_\mathrm{{weak}})$"
+        )
+    else:
+        plt.xlabel("Regular Eval AFHP (%)")
+        perf_scope = "Help-Only Return" if help_only else "Return"
+        plt.ylabel(
+            f"(Full-Budget {perf_scope} - Regular {perf_scope}) / (Expert - Weak)"
+        )
     return True
 
 
@@ -682,8 +714,13 @@ def plot_full_budget_afhp(
     overlay: bool = False,
     help_only: bool = False,
     perf_diff: bool = False,
+    paper_mode: bool = False,
 ):
     ensure_plotting_imports()
+
+    if paper_mode and not perf_diff:
+        print("Warning: --paper currently only affects --perf-diff mode.")
+
     results = extract_full_budget_results(
         eval_dir, prefix_filter, env_filter, exp_id_filter
     )
@@ -710,12 +747,17 @@ def plot_full_budget_afhp(
     is_subplot_mode = overlay and not perf_diff
 
     if perf_diff:
-        plt.figure(figsize=(10, 8))
+        if paper_mode:
+            setup_plot_style(paper_mode=True, use_latex=True)
+            plt.figure(figsize=(8, 4.5))
+        else:
+            plt.figure(figsize=(10, 8))
         plotted_any = plot_perf_diff_mode(
             results,
             valid_methods,
             no_aggregate=no_aggregate,
             help_only=help_only,
+            paper_mode=paper_mode,
         )
     elif overlay:
         plotted_any = plot_overlay_mode(
@@ -738,8 +780,11 @@ def plot_full_budget_afhp(
 
     env_str = env_filter if env_filter else "all"
     prefix_str = ",".join(prefix_filter) if prefix_filter else "all"
+    skip_title = perf_diff and paper_mode and title is None
     if title:
         plt.suptitle(title) if is_subplot_mode else plt.title(title)
+    elif skip_title:
+        pass
     elif is_subplot_mode:
         performance_scope = (
             "Help-Only Performance Curves" if help_only else "Performance Curves"
@@ -759,7 +804,13 @@ def plot_full_budget_afhp(
             f"AFHP Change Under Full-Budget Eval ({env_str}, prefix={prefix_str})"
         )
 
-    if not is_subplot_mode:
+    if perf_diff and paper_mode:
+        style_plot_for_publication(
+            legend_outside=True,
+            legend_location="center left",
+            legend_bbox_to_anchor=(1.02, 0.5),
+        )
+    elif not is_subplot_mode:
         plt.legend(loc="best")
         plt.grid(True, alpha=0.3)
     plt.tight_layout()
@@ -837,6 +888,15 @@ def main():
             "AFHP=100%% and AFHP=0%% endpoints."
         ),
     )
+    parser.add_argument(
+        "--paper",
+        action="store_true",
+        help=(
+            "Paper-ready styling for --perf-diff: LaTeX fonts, per-method "
+            "linestyles, no title, legend outside the axes. Currently only "
+            "affects --perf-diff mode."
+        ),
+    )
     args = parser.parse_args()
 
     configure_matplotlib_backend(args.save)
@@ -859,6 +919,7 @@ def main():
         overlay=args.overlay,
         help_only=args.help_only,
         perf_diff=args.perf_diff,
+        paper_mode=args.paper,
     )
 
 
