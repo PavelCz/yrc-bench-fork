@@ -332,6 +332,78 @@ def original_endpoint_line(x, y):
     return np.array([0.0, 100.0]), np.array([y_at_zero, y_at_hundred])
 
 
+def find_strong_reval_npz(full_budget_npz: Path) -> Optional[Path]:
+    suffix = "_full_budget_eval.npz"
+    if not full_budget_npz.name.endswith(suffix):
+        return None
+    stem = full_budget_npz.name[: -len(suffix)]
+    candidate = full_budget_npz.with_name(f"{stem}_strong_reval.npz")
+    return candidate if candidate.exists() else None
+
+
+def compute_subset_baselines(
+    original_npz: Path,
+    strong_reval_npz: Path,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Per-threshold (weak_on_help, strong_on_help) means.
+
+    weak_on_help[i] is the AFHP=0 baseline's per-episode returns masked by
+    threshold i's help mask; strong_on_help[i] comes from the strong reval
+    artifact's `strong_performances`. NaN where unavailable.
+    """
+    orig = np.load(original_npz, allow_pickle=True)
+    meta = orig["meta"]
+
+    afhps = np.array(
+        [
+            (
+                sum(pt["summary"]["test"].get("level_ood_pred", []))
+                / len(pt["summary"]["test"]["level_ood_pred"])
+                if pt["summary"]["test"].get("level_ood_pred")
+                else 0.0
+            )
+            for pt in meta
+        ],
+        dtype=float,
+    )
+
+    weak_returns_full = None
+    if len(afhps) > 0:
+        novice_idx = int(np.argmin(afhps))
+        if afhps[novice_idx] < 0.01:
+            nov_summary = meta[novice_idx]["summary"]["test"]
+            nov_returns = nov_summary.get("raw_returns", None)
+            nov_pred = nov_summary.get("level_ood_pred", None)
+            if (
+                nov_returns is not None
+                and nov_pred is not None
+                and not any(bool(v) for v in nov_pred)
+            ):
+                weak_returns_full = np.asarray(nov_returns, dtype=float)
+
+    weak_on_help: List[float] = []
+    for pt in meta:
+        summary = pt["summary"]["test"]
+        level_ood_pred = summary.get("level_ood_pred", [])
+        if (
+            weak_returns_full is None
+            or len(level_ood_pred) == 0
+            or len(level_ood_pred) != len(weak_returns_full)
+        ):
+            weak_on_help.append(np.nan)
+            continue
+        mask = np.asarray(level_ood_pred, dtype=bool)
+        if not mask.any():
+            weak_on_help.append(np.nan)
+            continue
+        weak_on_help.append(float(weak_returns_full[mask].mean()))
+
+    strong_data = np.load(strong_reval_npz, allow_pickle=True)
+    strong_on_help = np.asarray(strong_data["strong_performances"], dtype=float)
+
+    return np.array(weak_on_help, dtype=float), strong_on_help
+
+
 def weak_expert_performances(afhps, performances):
     x_sorted, y_sorted = sorted_xy(afhps, performances)
     if len(x_sorted) < 2:
@@ -352,10 +424,15 @@ def plot_perf_diff_mode(
     no_aggregate: bool,
     help_only: bool,
     paper_mode: bool = False,
+    normalize_by_subset: bool = False,
 ):
     colors = sns.color_palette("husl", len(valid_methods))
     line_styles = get_line_styles(len(valid_methods), paper_mode, valid_methods)
     plotted_any = False
+
+    # In subset-normalized mode the numerator must live on the same per-help
+    # subset as the denominator, so we force the help-only view.
+    use_help = help_only or normalize_by_subset
 
     for method_idx, method in enumerate(valid_methods):
         x_arrays = []
@@ -370,24 +447,60 @@ def plot_perf_diff_mode(
                 print(f"Warning: failed to load {method} exp{exp_id}: {exc}")
                 continue
 
-            if help_only:
+            if use_help:
                 original_perf = data["original_help_performances"]
                 full_perf = data["full_budget_help_performances"]
             else:
                 original_perf = data["original_performances"]
                 full_perf = data["full_budget_performances"]
 
-            weak, expert = weak_expert_performances(
-                data["original_afhps"], data["original_performances"]
-            )
-            if weak is None or expert is None or not np.isfinite(expert - weak) or (expert - weak) == 0:
-                print(
-                    f"Warning: cannot normalize {method} exp{exp_id} "
-                    f"(weak={weak}, expert={expert}); skipping."
+            if normalize_by_subset:
+                strong_reval_npz = find_strong_reval_npz(full_budget_npz)
+                if strong_reval_npz is None:
+                    print(
+                        f"Warning: --normalize-by-subset needs the sibling "
+                        f"_strong_reval.npz next to {full_budget_npz}; "
+                        f"skipping {method} exp{exp_id}."
+                    )
+                    continue
+                try:
+                    weak_on_help, strong_on_help = compute_subset_baselines(
+                        original_npz, strong_reval_npz
+                    )
+                except Exception as exc:
+                    print(
+                        f"Warning: failed to compute subset baselines for "
+                        f"{method} exp{exp_id}: {exc}"
+                    )
+                    continue
+                if (
+                    len(weak_on_help) != len(strong_on_help)
+                    or len(weak_on_help) != len(original_perf)
+                ):
+                    print(
+                        f"Warning: subset baseline lengths misaligned for "
+                        f"{method} exp{exp_id}; skipping."
+                    )
+                    continue
+                denom = strong_on_help - weak_on_help
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    normalized_diff = np.where(
+                        np.abs(denom) > 1e-9,
+                        (full_perf - original_perf) / denom,
+                        np.nan,
+                    )
+            else:
+                weak, expert = weak_expert_performances(
+                    data["original_afhps"], data["original_performances"]
                 )
-                continue
+                if weak is None or expert is None or not np.isfinite(expert - weak) or (expert - weak) == 0:
+                    print(
+                        f"Warning: cannot normalize {method} exp{exp_id} "
+                        f"(weak={weak}, expert={expert}); skipping."
+                    )
+                    continue
+                normalized_diff = (full_perf - original_perf) / (expert - weak)
 
-            normalized_diff = (full_perf - original_perf) / (expert - weak)
             x_arrays.append(data["original_afhps"])
             y_arrays.append(normalized_diff)
 
@@ -460,10 +573,16 @@ def plot_perf_diff_mode(
         plt.ylabel(r"Return $\Delta$ (normalized)")
     else:
         plt.xlabel("Regular Eval AFHP (%)")
-        perf_scope = "Help-Only Return" if help_only else "Return"
-        plt.ylabel(
-            f"(Full-Budget {perf_scope} - Regular {perf_scope}) / (Expert - Weak)"
-        )
+        if normalize_by_subset:
+            plt.ylabel(
+                "(Full-Budget - Regular) Help-Only Return / "
+                "(Strong - Weak) on Help Subset"
+            )
+        else:
+            perf_scope = "Help-Only Return" if use_help else "Return"
+            plt.ylabel(
+                f"(Full-Budget {perf_scope} - Regular {perf_scope}) / (Expert - Weak)"
+            )
     return True
 
 
@@ -711,11 +830,18 @@ def plot_full_budget_afhp(
     help_only: bool = False,
     perf_diff: bool = False,
     paper_mode: bool = False,
+    normalize_by_subset: bool = False,
 ):
     ensure_plotting_imports()
 
     if paper_mode and not perf_diff:
         print("Warning: --paper currently only affects --perf-diff mode.")
+
+    if normalize_by_subset and not perf_diff:
+        print(
+            "Warning: --normalize-by-subset only affects --perf-diff mode; "
+            "ignoring."
+        )
 
     results = extract_full_budget_results(
         eval_dir, prefix_filter, env_filter, exp_id_filter
@@ -754,6 +880,7 @@ def plot_full_budget_afhp(
             no_aggregate=no_aggregate,
             help_only=help_only,
             paper_mode=paper_mode,
+            normalize_by_subset=normalize_by_subset,
         )
     elif overlay:
         plotted_any = plot_overlay_mode(
@@ -790,11 +917,17 @@ def plot_full_budget_afhp(
             f"({env_str}, prefix={prefix_str})"
         )
     elif perf_diff:
-        perf_scope = "Help-Only Return" if help_only else "Return"
-        plt.title(
-            f"Normalized {perf_scope} Change Under Full-Budget Eval "
-            f"({env_str}, prefix={prefix_str})"
-        )
+        if normalize_by_subset:
+            plt.title(
+                "Help-Subset Normalized Return Change Under Full-Budget Eval "
+                f"({env_str}, prefix={prefix_str})"
+            )
+        else:
+            perf_scope = "Help-Only Return" if help_only else "Return"
+            plt.title(
+                f"Normalized {perf_scope} Change Under Full-Budget Eval "
+                f"({env_str}, prefix={prefix_str})"
+            )
     else:
         plt.title(
             f"AFHP Change Under Full-Budget Eval ({env_str}, prefix={prefix_str})"
@@ -893,6 +1026,20 @@ def main():
             "affects --perf-diff mode."
         ),
     )
+    parser.add_argument(
+        "--normalize-by-subset",
+        "--normalize_by_subset",
+        dest="normalize_by_subset",
+        action="store_true",
+        help=(
+            "In --perf-diff mode, normalize the (full-budget - regular) "
+            "help-only return diff by the per-threshold (strong - weak) gap "
+            "computed on that threshold's help-asked subset. This pairs the "
+            "numerator and denominator on the same per-episode scale, "
+            "avoiding the AFHP dilution of the default normalization. "
+            "Requires sibling *_strong_reval.npz files."
+        ),
+    )
     args = parser.parse_args()
 
     configure_matplotlib_backend(args.save)
@@ -916,6 +1063,7 @@ def main():
         help_only=args.help_only,
         perf_diff=args.perf_diff,
         paper_mode=args.paper,
+        normalize_by_subset=args.normalize_by_subset,
     )
 
 
