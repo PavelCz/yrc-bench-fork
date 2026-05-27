@@ -196,7 +196,7 @@ def plot_episode_length_distribution(
             density=True,
             edgecolor="black",
             linewidth=0.5,
-            hatch="..",
+            hatch="",
         )
 
     # Labels and title
