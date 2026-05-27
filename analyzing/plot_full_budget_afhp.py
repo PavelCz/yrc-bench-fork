@@ -457,11 +457,7 @@ def plot_perf_diff_mode(
     )
     if paper_mode:
         plt.xlabel(r"Ask-For-Help \% (AFHP)")
-        help_tag = r",\,\mathrm{help}" if help_only else ""
-        plt.ylabel(
-            rf"$(R_{{\mathrm{{full}}{help_tag}}} - R_{{\mathrm{{reg}}{help_tag}}})"
-            rf" / (R_\mathrm{{expert}} - R_\mathrm{{weak}})$"
-        )
+        plt.ylabel(r"Return $\Delta$ (normalized)")
     else:
         plt.xlabel("Regular Eval AFHP (%)")
         perf_scope = "Help-Only Return" if help_only else "Return"
