@@ -456,7 +456,7 @@ def plot_perf_diff_mode(
         label=zero_line_label,
     )
     if paper_mode:
-        plt.xlabel(r"Ask-For-Help \% (AFHP)")
+        plt.xlabel(r"Ask-For-Help Percentage (AFHP)")
         plt.ylabel(r"Return $\Delta$ (normalized)")
     else:
         plt.xlabel("Regular Eval AFHP (%)")
