@@ -157,6 +157,7 @@ def plot_episode_length_distribution(
 
     # Create plot
     plt.rcParams["hatch.linewidth"] = 2.0
+    plt.rcParams["hatch.color"] = "black"
     plt.figure(figsize=(4, 3))
 
     # Plot histograms
