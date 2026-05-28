@@ -174,7 +174,7 @@ def plot_episode_length_distribution(
             bins=bins,
             alpha=0.8,
             label=id_label,
-            color="blue",
+            color="cornflowerblue",
             density=True,
             edgecolor="black",
             linewidth=0.5,
