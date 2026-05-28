@@ -219,7 +219,7 @@ def plot_episode_length_distribution(
     )
 
     fig.tight_layout()
-    fig.subplots_adjust(left=0.22)
+    fig.subplots_adjust(left=0.28)
 
     if save_path:
         fig.savefig(save_path, dpi=300)
