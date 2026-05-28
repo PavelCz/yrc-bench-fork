@@ -218,8 +218,7 @@ def plot_episode_length_distribution(
         legend_location="best",
     )
 
-    fig.tight_layout()
-    fig.subplots_adjust(left=0.28)
+    fig.subplots_adjust(left=0.28, right=0.95, top=0.95, bottom=0.18)
 
     if save_path:
         fig.savefig(save_path, dpi=300)
