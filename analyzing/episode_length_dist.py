@@ -156,6 +156,7 @@ def plot_episode_length_distribution(
     setup_plot_style(paper_mode=paper_mode, use_latex=False)
 
     # Create plot
+    plt.rcParams["hatch.linewidth"] = 2.0
     plt.figure(figsize=(4, 3))
 
     # Plot histograms
@@ -176,7 +177,7 @@ def plot_episode_length_distribution(
             density=True,
             edgecolor="black",
             linewidth=0.5,
-            hatch="//",
+            hatch="////",
         )
 
     if ood_lengths:
