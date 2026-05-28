@@ -158,7 +158,7 @@ def plot_episode_length_distribution(
     # Create plot
     plt.rcParams["hatch.linewidth"] = 1.5
     plt.rcParams["hatch.color"] = "black"
-    plt.figure(figsize=(4, 3))
+    fig, ax = plt.subplots(figsize=(4, 3))
 
     # Plot histograms
     if id_lengths:
@@ -169,7 +169,7 @@ def plot_episode_length_distribution(
                 f"ID Levels (n={len(id_lengths)}, mean={np.mean(id_lengths):.1f})"
             )
 
-        plt.hist(
+        ax.hist(
             id_lengths,
             bins=bins,
             alpha=0.8,
@@ -189,7 +189,7 @@ def plot_episode_length_distribution(
                 f"OOD Levels (n={len(ood_lengths)}, mean={np.mean(ood_lengths):.1f})"
             )
 
-        plt.hist(
+        ax.hist(
             ood_lengths,
             bins=bins,
             alpha=0.6,
@@ -202,15 +202,15 @@ def plot_episode_length_distribution(
         )
 
     # Labels and title
-    plt.xlabel("Episode Length")
-    plt.ylabel("Density")
+    ax.set_xlabel("Episode Length")
+    ax.set_ylabel("Density")
 
     env_str = env_filter if env_filter else "all"
 
     if title:
-        plt.title(title)
+        ax.set_title(title)
     elif not paper_mode:
-        plt.title(f"Episode Length Distribution ({env_str})")
+        ax.set_title(f"Episode Length Distribution ({env_str})")
 
     # Apply publication styling
     style_plot_for_publication(
@@ -218,10 +218,11 @@ def plot_episode_length_distribution(
         legend_location="best",
     )
 
-    plt.tight_layout()
+    fig.tight_layout()
+    fig.subplots_adjust(left=0.22)
 
     if save_path:
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        fig.savefig(save_path, dpi=300)
         print(f"Saved figure to {save_path}")
     else:
         plt.show()
