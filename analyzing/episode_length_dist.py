@@ -156,7 +156,7 @@ def plot_episode_length_distribution(
     setup_plot_style(paper_mode=paper_mode, use_latex=False)
 
     # Create plot
-    plt.rcParams["hatch.linewidth"] = 4.0
+    plt.rcParams["hatch.linewidth"] = 1.5
     plt.rcParams["hatch.color"] = "black"
     plt.figure(figsize=(4, 3))
 
@@ -172,7 +172,7 @@ def plot_episode_length_distribution(
         plt.hist(
             id_lengths,
             bins=bins,
-            alpha=0.6,
+            alpha=0.8,
             label=id_label,
             color="blue",
             density=True,
