@@ -561,6 +561,7 @@ def plot_strong_reval_diff(
     plot_strong_only: bool = False,
     afhp_mark: Optional[float] = None,
     normalize_by_subset: bool = False,
+    strong_vs_baseline: bool = False,
 ):
     """
     Plot the performance difference between coordination policy and strong-from-start.
@@ -647,7 +648,23 @@ def plot_strong_reval_diff(
                 ) = load_performance_data(original_npz, strong_reval_npz)
 
                 # Calculate what to plot based on options
-                if plot_strong_only:
+                if strong_vs_baseline:
+                    # Expert on all levels = AFHP=100% endpoint
+                    expert_idx = int(np.argmax(afhps))
+                    if afhps[expert_idx] < 90.0:
+                        print(
+                            f"  Warning: max AFHP for {method} exp{exp_id} is "
+                            f"{afhps[expert_idx]:.1f}% — no reliable all-levels "
+                            f"expert baseline; skipping."
+                        )
+                    else:
+                        expert_all = performances[expert_idx]
+                        diff = expert_all - strong_performances
+                        valid_mask = ~np.isnan(diff)
+                        if np.sum(valid_mask) > 0:
+                            x_arrays.append(afhps[valid_mask])
+                            y_arrays.append(diff[valid_mask])
+                elif plot_strong_only:
                     # Only plot strong agent performance
                     valid_mask = ~np.isnan(strong_performances)
                     if np.sum(valid_mask) > 0:
@@ -886,7 +903,15 @@ def plot_strong_reval_diff(
 
     plt.xlabel("Ask-For-Help Percentage (AFHP)")
 
-    if plot_strong_only:
+    if strong_vs_baseline:
+        plt.ylabel(
+            "Expert All Levels - Expert on Help Subset (from start)"
+        )
+        default_title = (
+            "Expert Performance Gap: All Levels vs Help-Requested Subset "
+            f"({env_str}, prefix={prefix_str})"
+        )
+    elif plot_strong_only:
         plt.ylabel("Mean Return (Strong Agent from Start)")
         default_title = f"Strong Agent Performance on Help-Requested Episodes ({env_str}, prefix={prefix_str})"
     elif plot_absolute:
@@ -922,7 +947,9 @@ def plot_strong_reval_diff(
     plt.tight_layout()
 
     if afhp_mark is not None:
-        if plot_strong_only:
+        if strong_vs_baseline:
+            metric_name = "Expert all - Expert help subset"
+        elif plot_strong_only:
             metric_name = "Strong return"
         elif plot_absolute:
             metric_name = "Coordination return"
@@ -1047,6 +1074,15 @@ def main():
             "effect when combined with --absolute or --strong-only."
         ),
     )
+    parser.add_argument(
+        "--strong-vs-baseline",
+        action="store_true",
+        help=(
+            "Plot (expert on all levels) - (expert on help-requested subset) "
+            "vs AFHP. Shows whether methods select levels where the expert "
+            "performs worse than its overall average."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -1080,6 +1116,7 @@ def main():
         plot_strong_only=args.strong_only,
         afhp_mark=args.afhp_mark,
         normalize_by_subset=args.normalize_by_subset,
+        strong_vs_baseline=args.strong_vs_baseline,
     )
 
 

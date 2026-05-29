@@ -156,7 +156,7 @@ def plot_episode_length_distribution(
     setup_plot_style(paper_mode=paper_mode, use_latex=False)
 
     # Create plot
-    plt.rcParams["hatch.linewidth"] = 1.5
+    plt.rcParams["hatch.linewidth"] = 1.
     plt.rcParams["hatch.color"] = "black"
     fig, ax = plt.subplots(figsize=(4, 3))
 
