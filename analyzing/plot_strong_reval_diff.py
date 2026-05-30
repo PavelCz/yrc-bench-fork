@@ -19,6 +19,13 @@ import matplotlib
 import numpy as np
 from scipy import interpolate
 
+from analyzing.plotting_common import (
+    format_label,
+    get_line_styles,
+    setup_plot_style,
+    style_plot_for_publication,
+)
+
 plt = None
 sns = None
 
@@ -562,6 +569,7 @@ def plot_strong_reval_diff(
     afhp_mark: Optional[float] = None,
     normalize_by_subset: bool = False,
     strong_vs_baseline: bool = False,
+    paper_mode: bool = False,
 ):
     """
     Plot the performance difference between coordination policy and strong-from-start.
@@ -612,8 +620,13 @@ def plot_strong_reval_diff(
         return
 
     # Set up plot
-    plt.figure(figsize=(10, 8))
+    if paper_mode:
+        setup_plot_style(paper_mode=True, use_latex=True)
+        plt.figure(figsize=(8, 4.5))
+    else:
+        plt.figure(figsize=(10, 8))
     colors = sns.color_palette("husl", len(valid_methods))
+    line_styles = get_line_styles(len(valid_methods), paper_mode, valid_methods)
     plotted_any = False
     mark_values_per_method: Dict[str, List[float]] = {}
 
@@ -771,6 +784,7 @@ def plot_strong_reval_diff(
 
         # Get display name
         label = METHOD_NAMES.get(method, method)
+        linestyle = line_styles[method_idx]
 
         if len(x_arrays) == 1 or no_aggregate:
             # Single experiment or no aggregation mode
@@ -780,13 +794,17 @@ def plot_strong_reval_diff(
                 for i, (x, y, exp_id) in enumerate(zip(x_arrays, y_arrays, exp_ids)):
                     sort_idx = np.argsort(x)
                     alpha = 0.7 + (i / len(x_arrays)) * 0.3
-                    exp_label = f"{label} exp{exp_id}"
+                    if paper_mode:
+                        exp_label = format_label(method, paper_mode)
+                    else:
+                        exp_label = f"{label} exp{exp_id}"
 
                     plt.plot(
                         x[sort_idx],
                         y[sort_idx],
                         label=exp_label,
                         color=base_color,
+                        linestyle=linestyle,
                         alpha=alpha,
                         marker="o" if method == "wait" else None,
                         markersize=3 if method == "wait" else None,
@@ -797,11 +815,16 @@ def plot_strong_reval_diff(
                 # Single experiment
                 x, y = x_arrays[0], y_arrays[0]
                 sort_idx = np.argsort(x)
+                if paper_mode:
+                    single_label = format_label(method, paper_mode, n_experiments=1)
+                else:
+                    single_label = f"{label} (n=1)"
                 plt.plot(
                     x[sort_idx],
                     y[sort_idx],
-                    label=f"{label} (n=1)",
+                    label=single_label,
                     color=colors[method_idx],
+                    linestyle=linestyle,
                     marker="o" if method == "wait" else None,
                     markersize=4,
                 )
@@ -825,12 +848,18 @@ def plot_strong_reval_diff(
 
             n_exps = len(x_arrays)
 
+            if paper_mode:
+                agg_label = format_label(method, paper_mode, n_experiments=n_exps)
+            else:
+                agg_label = f"{label} (n={n_exps})"
+
             # Plot median line
             plt.plot(
                 common_x,
                 y_median,
-                label=f"{label} (n={n_exps})",
+                label=agg_label,
                 color=colors[method_idx],
+                linestyle=linestyle,
                 linewidth=2,
             )
 
@@ -859,7 +888,11 @@ def plot_strong_reval_diff(
     # Add reference line at y=0 (only for difference plots)
     if not plot_strong_only and not plot_absolute:
         plt.axhline(
-            y=0, color="black", linestyle="--", alpha=0.5, label="No difference"
+            y=0,
+            color="black",
+            linestyle="--",
+            alpha=0.5,
+            label=None if paper_mode else "No difference",
         )
 
     # Mark a specific AFHP value, if requested.
@@ -939,11 +972,18 @@ def plot_strong_reval_diff(
 
     if title:
         plt.title(title)
-    else:
+    elif not paper_mode:
         plt.title(default_title)
 
-    plt.legend(loc="best")
-    plt.grid(True, alpha=0.3)
+    if paper_mode:
+        style_plot_for_publication(
+            legend_outside=True,
+            legend_location="center left",
+            legend_bbox_to_anchor=(1.02, 0.5),
+        )
+    else:
+        plt.legend(loc="best")
+        plt.grid(True, alpha=0.3)
     plt.tight_layout()
 
     if afhp_mark is not None:
@@ -1083,6 +1123,14 @@ def main():
             "performs worse than its overall average."
         ),
     )
+    parser.add_argument(
+        "--paper",
+        action="store_true",
+        help=(
+            "Paper-ready styling: LaTeX fonts, per-method linestyles, no title, "
+            "legend outside the axes. Applies to all plot modes."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -1117,6 +1165,7 @@ def main():
         afhp_mark=args.afhp_mark,
         normalize_by_subset=args.normalize_by_subset,
         strong_vs_baseline=args.strong_vs_baseline,
+        paper_mode=args.paper,
     )
 
 
