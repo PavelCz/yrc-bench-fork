@@ -885,14 +885,17 @@ def plot_strong_reval_diff(
         plt.close()
         return
 
-    # Add reference line at y=0 (only for difference plots)
+    # Add reference line at y=0 (only for difference plots). In paper mode the
+    # legend entry is normally suppressed, but --strong-vs-baseline keeps it so
+    # the "No difference" reference is explained.
     if not plot_strong_only and not plot_absolute:
+        show_zero_label = strong_vs_baseline or not paper_mode
         plt.axhline(
             y=0,
             color="black",
             linestyle="--",
             alpha=0.5,
-            label=None if paper_mode else "No difference",
+            label="No difference" if show_zero_label else None,
         )
 
     # Mark a specific AFHP value, if requested.
@@ -937,9 +940,7 @@ def plot_strong_reval_diff(
     plt.xlabel("Ask-For-Help Percentage (AFHP)")
 
     if strong_vs_baseline:
-        plt.ylabel(
-            "Expert All Levels - Expert on Help Subset (from start)"
-        )
+        plt.ylabel(r"Return $\Delta$")
         default_title = (
             "Expert Performance Gap: All Levels vs Help-Requested Subset "
             f"({env_str}, prefix={prefix_str})"
