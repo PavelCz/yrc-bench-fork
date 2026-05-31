@@ -955,17 +955,13 @@ def plot_strong_reval_diff(
         )
     else:
         if normalize_by_subset:
-            plt.ylabel(
-                "Performance Difference / (Strong - Weak) on Help Subset"
-            )
+            plt.ylabel(r"Mean Return $\Delta$ (normalized)")
             default_title = (
                 "Performance Loss from Mid-Episode Switching, normalized by "
                 f"per-subset (Strong - Weak) ({env_str}, prefix={prefix_str})"
             )
         else:
-            plt.ylabel(
-                "Performance Difference (Coordination - Strong from Start)"
-            )
+            plt.ylabel(r"Mean Return $\Delta$")
             default_title = (
                 "Performance Loss from Mid-Episode Switching "
                 f"({env_str}, prefix={prefix_str})"

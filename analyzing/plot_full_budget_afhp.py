@@ -570,7 +570,7 @@ def plot_perf_diff_mode(
     )
     if paper_mode:
         plt.xlabel(r"Ask-For-Help Percentage (AFHP)")
-        plt.ylabel(r"Return $\Delta$ (normalized)")
+        plt.ylabel(r"Mean Return $\Delta$ (normalized)")
     else:
         plt.xlabel("Regular Eval AFHP (%)")
         if normalize_by_subset:
