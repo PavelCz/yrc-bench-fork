@@ -156,7 +156,7 @@ def plot_episode_length_distribution(
     setup_plot_style(paper_mode=paper_mode, use_latex=False)
 
     # Create plot
-    plt.rcParams["hatch.linewidth"] = 1.
+    plt.rcParams["hatch.linewidth"] = 1.0
     plt.rcParams["hatch.color"] = "black"
     fig, ax = plt.subplots(figsize=(4, 3))
 
@@ -202,7 +202,7 @@ def plot_episode_length_distribution(
         )
 
     # Labels and title
-    ax.set_xlabel("Episode Length")
+    ax.set_xlabel("Episode Length", labelpad=0)
     ax.set_ylabel("Density")
 
     env_str = env_filter if env_filter else "all"

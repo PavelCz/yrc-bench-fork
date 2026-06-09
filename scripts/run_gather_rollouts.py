@@ -7,7 +7,13 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-from common import ENVS, EXP_ID_TO_SEED, SERVER_PATHS, get_checkpoints
+from common import (
+    ENVS,
+    EXP_ID_TO_SEED,
+    SERVER_PATHS,
+    get_checkpoints,
+    get_eval_env_name,
+)
 
 
 # Conda environment
@@ -61,6 +67,14 @@ def get_rollout_output_dir(rollouts_base_path: str, prefix: str, env: str) -> Pa
     return Path(rollouts_base_path) / prefix / env
 
 
+def get_gather_env_name(env: str) -> str:
+    """Map experiment env keys to the Procgen env used for rollout collection."""
+    gather_env_name = get_eval_env_name(env)
+    if gather_env_name == "maze":
+        raise ValueError("Plain Procgen env 'maze' is not valid; use 'maze_afh'.")
+    return gather_env_name
+
+
 def get_default_level_seeds_dir(seeds_base_path: str) -> Path:
     return Path(seeds_base_path).parent / GATHER_DEFAULTS["level_seeds_dir_name"]
 
@@ -75,6 +89,9 @@ def get_level_seeds_file(
 
 def build_sbatch_command(job_name: str, gather_args: dict) -> str:
     """Build the sbatch command string."""
+    if gather_args["env_name"] == "maze":
+        raise ValueError("Plain Procgen env 'maze' is not valid; use 'maze_afh'.")
+
     slurm_args = " ".join(f"--{k}={v}" for k, v in SLURM_CONFIG.items())
 
     python_args = [
@@ -250,11 +267,13 @@ def main():
     rollout_output_dir = get_rollout_output_dir(
         rollouts_base_path, args.prefix, args.env
     )
+    gather_env_name = get_gather_env_name(args.env)
 
     if args.dry_run:
         print(f"Server: {args.server}")
         print(f"Config: {args.config}")
         print(f"Environment: {args.env}")
+        print(f"Procgen env name: {gather_env_name}")
         print(f"Prefix: {args.prefix}")
         print(f"Rollout output dir: {rollout_output_dir}")
         if args.level_seeds_file is not None:
@@ -328,7 +347,7 @@ def main():
                 "config": args.config,
                 "name": run_name,
                 "experiment_group": experiment_group,
-                "env_name": args.env,
+                "env_name": gather_env_name,
                 "random_percent": args.random_percent,
                 "rollout_levels": rollout_levels,
                 "use_bg": args.use_bg,
@@ -348,6 +367,7 @@ def main():
                 print(f"  Experiment group: {experiment_group}")
                 print(f"  Output dir: {rollout_output_dir}")
                 print(f"  Expected rollout dir: {rollout_output_dir / run_name}")
+                print(f"  Procgen env name: {gather_env_name}")
                 print(f"  Weak:   {checkpoints['weak']}")
                 print(f"  Strong: {checkpoints['strong']}")
                 print(f"  Level seeds: {level_seeds_file}")

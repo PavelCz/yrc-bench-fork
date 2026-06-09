@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import torch
 from torch.utils.data import TensorDataset
 
@@ -315,6 +316,50 @@ def test_run_gather_rollouts_exports_prefixed_rollout_output_dir():
     assert output_dir == Path("/rollouts/rollouts-neurips/coinrun")
     assert 'export SM_OUTPUT_DIR="/rollouts/rollouts-neurips/coinrun"' in command
     assert "-rollout_chunk_size" not in command
+
+
+def test_run_gather_rollouts_maps_maze_to_maze_afh():
+    scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+    sys.path.insert(0, str(scripts_dir))
+    try:
+        import run_gather_rollouts
+    finally:
+        sys.path.pop(0)
+
+    assert run_gather_rollouts.get_gather_env_name("maze") == "maze_afh"
+    assert run_gather_rollouts.get_gather_env_name("coinrun") == "coinrun"
+
+
+def test_run_gather_rollouts_rejects_plain_maze_procgen_env():
+    scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+    sys.path.insert(0, str(scripts_dir))
+    try:
+        import run_gather_rollouts
+    finally:
+        sys.path.pop(0)
+
+    with pytest.raises(ValueError, match="maze_afh"):
+        run_gather_rollouts.build_sbatch_command(
+            "job",
+            {
+                "wandb_mode": "offline",
+                "config": "configs/procgen_gather.yaml",
+                "name": "gather_maze_exp0",
+                "experiment_group": "rollouts-neurips_maze_exp0",
+                "env_name": "maze",
+                "random_percent": 0,
+                "sim": "sim.pth",
+                "weak": "weak.pth",
+                "strong": "strong.pth",
+                "use_bg": True,
+                "seed": 1080,
+                "level_seeds_file": "seeds/0.json",
+                "query_cost": 0,
+                "rollout_levels": None,
+                "rollout_chunk_size": None,
+                "output_dir": "/rollouts/rollouts-neurips/maze",
+            },
+        )
 
 
 def test_run_gather_rollouts_defaults_to_neurips_extra_seed_dir():
