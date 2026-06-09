@@ -11,7 +11,13 @@ from datetime import date
 from pathlib import Path
 from typing import Optional
 
-from common import ENVS, EXP_ID_TO_SEED, SERVER_PATHS, get_checkpoints
+from common import (
+    ENVS,
+    EXP_ID_TO_SEED,
+    SERVER_PATHS,
+    get_checkpoints,
+    get_eval_env_name,
+)
 
 
 def _get_wandb_api_key() -> Optional[str]:
@@ -82,6 +88,14 @@ def get_rollout_dir(
     return str(Path(rollouts_base_path) / rollouts_prefix / env / rollout_name)
 
 
+def get_svdd_env_name(env: str) -> str:
+    """Map experiment env keys to the Procgen env used for SVDD training."""
+    svdd_env_name = get_eval_env_name(env)
+    if svdd_env_name == "maze":
+        raise ValueError("Plain Procgen env 'maze' is not valid; use 'maze_afh'.")
+    return svdd_env_name
+
+
 def get_svdd_output_dir(svdd_base_path: str, prefix: str) -> Path:
     return Path(svdd_base_path) / prefix
 
@@ -110,6 +124,9 @@ def build_sbatch_command(
     with ``<redacted>``. Use this when printing the script (e.g. ``--dry-run``)
     so the key does not end up in stdout / shell history.
     """
+    if train_args["env_name"] == "maze":
+        raise ValueError("Plain Procgen env 'maze' is not valid; use 'maze_afh'.")
+
     slurm_args = " ".join(f"--{k}={v}" for k, v in SLURM_CONFIG.items())
 
     python_args = [
@@ -374,11 +391,13 @@ def main():
         Path(paths["log_base"]) / "svdd_train" / args.prefix / date.today().isoformat()
     )
     rollouts_prefix = args.rollouts_prefix
+    svdd_env_name = get_svdd_env_name(args.env)
 
     if args.dry_run:
         print(f"Server: {args.server}")
         print(f"Config: {args.config}")
         print(f"Environment: {args.env}")
+        print(f"Procgen env name: {svdd_env_name}")
         print(f"Feature type: {args.feature_type}")
         print(f"Prefix: {args.prefix}")
         print(f"Rollouts prefix: {rollouts_prefix}")
@@ -448,6 +467,7 @@ def main():
             print(f"  Job name: {job_name}")
             print(f"  Wandb group: {wandb_group}")
             print(f"  Feature type: {args.feature_type}")
+            print(f"  Procgen env name: {svdd_env_name}")
             print(f"  Weak:   {checkpoints['weak']}")
             print(f"  Strong: {checkpoints['strong']}")
             print(f"  Rollout dir: {rollout_dir}")
@@ -466,7 +486,7 @@ def main():
             "config": args.config,
             "name": job_name,
             "wandb_group": wandb_group,
-            "env_name": args.env,
+            "env_name": svdd_env_name,
             "feature_type": args.feature_type,
             "cp_method": args.cp_method,
             "num_rollouts": args.num_rollouts,

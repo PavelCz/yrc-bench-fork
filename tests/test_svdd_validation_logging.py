@@ -227,6 +227,52 @@ def test_run_svdd_train_command_passes_seed_file_and_validation_levels():
     assert "#SBATCH --output=/logs/svdd_train/prefix/2026-04-29/%x_%j.out" in command
 
 
+def test_run_svdd_train_maps_maze_to_maze_afh():
+    scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+    sys.path.insert(0, str(scripts_dir))
+    try:
+        import run_svdd_train
+    finally:
+        sys.path.pop(0)
+
+    assert run_svdd_train.get_svdd_env_name("maze") == "maze_afh"
+    assert run_svdd_train.get_svdd_env_name("coinrun") == "coinrun"
+
+
+def test_run_svdd_train_rejects_plain_maze_procgen_env():
+    scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+    sys.path.insert(0, str(scripts_dir))
+    try:
+        import run_svdd_train
+    finally:
+        sys.path.pop(0)
+
+    with pytest.raises(ValueError, match="maze_afh"):
+        run_svdd_train.build_sbatch_command(
+            "job",
+            {
+                "wandb_group": "group",
+                "config": "configs/procgen_ood.yaml",
+                "name": "name",
+                "env_name": "maze",
+                "sim": "sim.pth",
+                "weak": "weak.pth",
+                "strong": "strong.pth",
+                "cp_method": "DeepSVDD",
+                "feature_type": "obs",
+                "rollout_dir": "rollouts",
+                "num_rollouts": 64,
+                "level_seeds_file": "seeds/0.json",
+                "svdd_val_levels": 64,
+                "query_cost": 0,
+                "seed": 1080,
+                "rollout_max_levels": 1024,
+                "output_dir": "/svdd/prefix",
+            },
+            Path("/logs/svdd_train/prefix/2026-04-29"),
+        )
+
+
 def test_run_svdd_train_presets_only_include_paper_regularized():
     scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
     sys.path.insert(0, str(scripts_dir))
