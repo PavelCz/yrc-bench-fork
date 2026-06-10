@@ -205,12 +205,14 @@ def load_rollout_dataset_from_file(
     prefer_largest: bool = False,
     streaming_rollouts: str = "auto",
     chunk_cache_size: int = 2,
+    require_memmap: bool = False,
 ):
     """Load rollout observations eagerly or as an indexed streaming dataset.
 
     Legacy ``.pt`` rollout artifacts are always loaded eagerly. Memmap rollout
     artifacts stream when available. Chunked rollout manifests stream when
-    ``streaming_rollouts`` is ``"auto"`` or ``"true"``.
+    ``streaming_rollouts`` is ``"auto"`` or ``"true"``. Set ``require_memmap``
+    for training paths that need efficient shuffled random access.
     """
     streaming_rollouts = _normalize_streaming_rollouts(streaming_rollouts)
     rollouts_config_path, rollouts_data_path = resolve_rollout_paths(
@@ -222,6 +224,8 @@ def load_rollout_dataset_from_file(
         rollouts_config_loaded = json.load(f)
 
     max_observations = _get_max_observations_for_levels(rollouts_data_path, max_levels)
+    if require_memmap:
+        _require_memmap_rollout_dataset(rollouts_data_path)
     _require_memmap_for_large_training_set(rollouts_data_path, max_levels)
     if max_levels is not None:
         print(
@@ -292,6 +296,17 @@ def _require_memmap_for_large_training_set(data_path: Path, max_levels: Optional
         f"`python scripts/convert_rollouts_to_memmap.py {data_path}`. "
         f"Memmap is required above {MEMMAP_REQUIRED_LEVEL_THRESHOLD} levels to avoid "
         "slow random access over chunked .pt files or eager in-memory loading."
+    )
+
+
+def _require_memmap_rollout_dataset(data_path: Path):
+    if is_rollout_memmap_metadata(data_path):
+        return
+    raise ValueError(
+        "SVDD rollout training requires a memmap rollout artifact for efficient "
+        f"shuffled random access, but selected {data_path}. Convert the selected "
+        "rollout manifest first, e.g. "
+        f"`python scripts/convert_rollouts_to_memmap.py {data_path}`."
     )
 
 

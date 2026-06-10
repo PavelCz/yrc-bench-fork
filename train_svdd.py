@@ -156,6 +156,7 @@ def main():
             prefer_largest=True,
             streaming_rollouts=streaming_rollouts or "auto",
             chunk_cache_size=rollout_chunk_cache_size or 2,
+            require_memmap=True,
         )
         print(f"Rollouts loaded in {time.time() - start:.2f}s")
 

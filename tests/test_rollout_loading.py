@@ -279,6 +279,58 @@ def test_streaming_loader_prefers_memmap_for_matching_level_count():
     assert [dataset[index].item() for index in range(len(dataset))] == [1, 2]
 
 
+def test_loader_require_memmap_rejects_chunked_rollout_dataset():
+    with TemporaryDirectory() as tmp_dir:
+        rollout_dir = Path(tmp_dir)
+        manifest_file = rollout_dir / "rollouts_manifest_3levels.json"
+        config_file = rollout_dir / "rollouts_config_3levels.json"
+        writer = RolloutChunkWriter(
+            manifest_file, rollout_dir / "rollouts_3levels_chunks"
+        )
+        writer.write_chunk([torch.tensor([1], dtype=torch.uint8)])
+        writer.save_manifest()
+        config_file.write_text(json.dumps({"name": "dummy"}))
+
+        try:
+            load_rollout_dataset_from_file(
+                rollout_dir,
+                prefer_largest=True,
+                streaming_rollouts="auto",
+                require_memmap=True,
+            )
+        except ValueError as exc:
+            error = str(exc)
+        else:
+            raise AssertionError("Expected require_memmap=True to reject chunked data")
+
+    assert "SVDD rollout training requires a memmap rollout artifact" in error
+    assert "convert_rollouts_to_memmap.py" in error
+
+
+def test_loader_require_memmap_accepts_memmap_rollout_dataset():
+    with TemporaryDirectory() as tmp_dir:
+        rollout_dir = Path(tmp_dir)
+        manifest_file = rollout_dir / "rollouts_manifest_3levels.json"
+        config_file = rollout_dir / "rollouts_config_3levels.json"
+        writer = RolloutChunkWriter(
+            manifest_file, rollout_dir / "rollouts_3levels_chunks"
+        )
+        writer.write_chunk([torch.tensor([1], dtype=torch.uint8)])
+        writer.save_manifest()
+        config_file.write_text(json.dumps({"name": "dummy"}))
+        convert_rollouts_to_memmap(manifest_file)
+
+        dataset = load_rollout_dataset_from_file(
+            rollout_dir,
+            prefer_largest=True,
+            streaming_rollouts="auto",
+            require_memmap=True,
+        )
+
+    assert isinstance(dataset, MemmapRolloutDataset)
+    assert dataset[0].item() == 1
+
+
 def test_memmap_dataset_limits_length_by_completed_levels():
     with TemporaryDirectory() as tmp_dir:
         rollout_dir = Path(tmp_dir)
