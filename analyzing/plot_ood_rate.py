@@ -13,24 +13,21 @@ from typing import Union, Dict, List, Optional, Tuple
 import numpy as np
 import matplotlib.pyplot as plt
 
-from analyzing.utils import extract_x_and_y_values
-
 import matplotlib
 
 matplotlib.use("TkAgg")
 
 # Import shared plotting configuration
 from analyzing.plotting_common import (
-    METHOD_NAMES,
     setup_plot_style,
     get_line_styles,
     style_plot_for_publication,
 )
+
 # Reuse robust-variant parsing, canonicalization, and label/legend helpers
 # from icml_plot so this script behaves the same way around robust strong
 # policies and kebab/snake method aliases.
 from analyzing.icml_plot import (
-    ROBUST_LABELS,
     SUPPORTED_ENVS,
     add_robust_suffix,
     canonicalize_method,
@@ -41,7 +38,6 @@ from analyzing.icml_plot import (
     parse_method_dir,
     parse_robust_experiment_dir,
     prefix_matches_filter,
-    split_robust_method,
 )
 
 
@@ -62,15 +58,9 @@ def extract_icml_results(
         Dictionary mapping method names to dict of {exp_id: result_file_path}
     """
     results: Dict[str, Dict[int, Path]] = defaultdict(dict)
-    # Dedup kebab/snake siblings within the *same* (prefix, method, exp_id)
-    # bucket by tracking the most recent run-dir name we've placed there.
-    latest_run_dir_name: Dict[Tuple[str, str, int], str] = {}
-    # Assign a fresh, contiguous global exp_id per method, mapping each
-    # (prefix, canonical_method, original_exp_id) triple to its own slot.
-    # This is what keeps `--prefix A B` from collapsing A's exp0 onto B's
-    # exp0 when both run the same method.
-    exp_id_map: Dict[Tuple[str, str, int], int] = {}
-    method_exp_counter: Dict[str, int] = defaultdict(int)
+    # Match icml_plot behavior: when multiple prefixes provide the same
+    # canonical method and experiment id, keep the newest timestamped run.
+    latest_run_dir_name: Dict[Tuple[str, int], str] = {}
 
     for child in sorted(eval_dir.iterdir(), key=lambda p: p.name):
         if not child.is_dir():
@@ -113,9 +103,6 @@ def extract_icml_results(
             method_name = add_robust_suffix(method_name, robust_variant)
             method_name = canonicalize_method(method_name)
 
-            if "ensemble" in method_name.lower():
-                print(f"DEBUG: Found ensemble variant - full dir name: '{method_dir.name}', extracted method: '{method_name}'")
-
             # Pick the run-dir with the largest timestamp name.
             latest_run = None
             latest_name = None
@@ -132,15 +119,12 @@ def extract_icml_results(
             if latest_run is None:
                 continue
 
-            triple = (prefix, method_name, exp_id)
-            prev_name = latest_run_dir_name.get(triple)
+            key = (method_name, exp_id)
+            prev_name = latest_run_dir_name.get(key)
             if prev_name is not None and latest_name <= prev_name:
                 continue
-            latest_run_dir_name[triple] = latest_name
-            if triple not in exp_id_map:
-                exp_id_map[triple] = method_exp_counter[method_name]
-                method_exp_counter[method_name] += 1
-            results[method_name][exp_id_map[triple]] = latest_run
+            latest_run_dir_name[key] = latest_name
+            results[method_name][exp_id] = latest_run
 
     return dict(results)
 
@@ -182,10 +166,12 @@ def calculate_ood_rate(
 
     if not episode_data:
         return []
-        
+
     # Debug: Count how many episodes went OOD
     num_ood = sum(1 for first_ts, _ in episode_data if first_ts != float("inf"))
-    print(f"    Episodes that went OOD: {num_ood}/{len(episode_data)} ({num_ood/len(episode_data)*100:.1f}%)")
+    print(
+        f"    Episodes that went OOD: {num_ood}/{len(episode_data)} ({num_ood / len(episode_data) * 100:.1f}%)"
+    )
 
     # Find the range of timesteps to consider (1 to max episode length)
     max_length = max(length for _, length in episode_data)
@@ -226,46 +212,46 @@ def calculate_minmax_bands_ood(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Calculate min-max quantile bands from multiple OOD rate curves.
-    
+
     Since OOD rates are calculated at standardized timesteps (0-1000 or 0-500),
     we can directly aggregate without interpolation.
-    
+
     Args:
         ood_rates_by_exp: List of OOD rate data for each experiment
         quantiles: Tuple of (lower_quantile, upper_quantile), default (0.0, 1.0) for min/max
-        
+
     Returns:
         Tuple of (common_timesteps, median_rates, lower_quantile_rates, upper_quantile_rates)
     """
     # Collect all timesteps to get the full range
     all_timesteps = set()
-    
+
     # Build a mapping from timestep to rates across experiments
     timestep_to_rates = defaultdict(list)
-    
+
     for ood_rates in ood_rates_by_exp:
         for data_point in ood_rates:
             ts = data_point["timestep"]
             rate = data_point["ood_rate"]
             timestep_to_rates[ts].append(rate)
             all_timesteps.add(ts)
-    
+
     # Sort timesteps
     common_timesteps = np.array(sorted(all_timesteps))
-    
+
     # Calculate statistics at each timestep
     medians = []
     lower_quantiles = []
     upper_quantiles = []
-    
+
     for ts in common_timesteps:
         rates_at_ts = np.array(timestep_to_rates[ts])
-        
+
         if len(rates_at_ts) > 0:
             median = np.median(rates_at_ts)
             lower_q = np.quantile(rates_at_ts, quantiles[0])
             upper_q = np.quantile(rates_at_ts, quantiles[1])
-            
+
             medians.append(median)
             lower_quantiles.append(lower_q)
             upper_quantiles.append(upper_q)
@@ -274,8 +260,13 @@ def calculate_minmax_bands_ood(
             medians.append(np.nan)
             lower_quantiles.append(np.nan)
             upper_quantiles.append(np.nan)
-    
-    return common_timesteps, np.array(medians), np.array(lower_quantiles), np.array(upper_quantiles)
+
+    return (
+        common_timesteps,
+        np.array(medians),
+        np.array(lower_quantiles),
+        np.array(upper_quantiles),
+    )
 
 
 def plot_barplot_compare_aggregated(
@@ -290,7 +281,7 @@ def plot_barplot_compare_aggregated(
     max_timesteps: Optional[int] = None,
 ):
     """Plot OOD rates with aggregation across experiments.
-    
+
     Args:
         all_method_ood_rates: For each method, list of OOD rate data from each experiment
         all_labels: Labels for each method
@@ -303,13 +294,15 @@ def plot_barplot_compare_aggregated(
         max_timesteps: If provided, only plot up to this many timesteps
     """
     filter_msg = " (success only)" if success_only else ""
-    print(f"\nPlotting {len(all_method_ood_rates)} methods with aggregation{filter_msg}...")
-    
+    print(
+        f"\nPlotting {len(all_method_ood_rates)} methods with aggregation{filter_msg}..."
+    )
+
     # Set up plot style
     setup_plot_style(paper_mode=paper_mode, use_latex=True)
-    
+
     plt.figure(figsize=(8, 4.5))
-    
+
     # Use same color scheme as other plots
     colors = []
     n_methods = len(all_method_ood_rates)
@@ -325,23 +318,25 @@ def plot_barplot_compare_aggregated(
                 colors.append(plt.cm.tab20b((i - 20) / 20))
             else:
                 colors.append(plt.cm.tab20c((i - 40) / 20))
-    
+
     # Get line styles for paper mode
     line_styles = get_line_styles(n_methods, paper_mode)
-    
-    for method_idx, (method_ood_rates_by_exp, label) in enumerate(zip(all_method_ood_rates, all_labels)):
+
+    for method_idx, (method_ood_rates_by_exp, label) in enumerate(
+        zip(all_method_ood_rates, all_labels)
+    ):
         # Calculate aggregated statistics using min/max bands
-        common_timesteps, median_rates, min_rates, max_rates = calculate_minmax_bands_ood(
-            method_ood_rates_by_exp, quantiles=(0.0, 1.0)
+        common_timesteps, median_rates, min_rates, max_rates = (
+            calculate_minmax_bands_ood(method_ood_rates_by_exp, quantiles=(0.0, 1.0))
         )
-        
+
         # Filter out NaN values
         valid_mask = ~np.isnan(median_rates)
         timesteps = common_timesteps[valid_mask]
         median_rates = median_rates[valid_mask]
         min_rates = min_rates[valid_mask]
         max_rates = max_rates[valid_mask]
-        
+
         # Apply max timesteps filter if specified
         if max_timesteps is not None and len(timesteps) > 0:
             timestep_mask = timesteps <= max_timesteps
@@ -349,20 +344,20 @@ def plot_barplot_compare_aggregated(
             median_rates = median_rates[timestep_mask]
             min_rates = min_rates[timestep_mask]
             max_rates = max_rates[timestep_mask]
-        
+
         # Apply binned smoothing if requested
         if num_bins > 0 and len(timesteps) > 0:
             # Create bins based on timestep range
             bin_edges = np.linspace(timesteps.min(), timesteps.max() + 1, num_bins + 1)
             bin_indices = np.digitize(timesteps, bin_edges) - 1
             bin_indices = np.clip(bin_indices, 0, num_bins - 1)
-            
+
             # Calculate statistics for each bin
             binned_timesteps = []
             binned_medians = []
             binned_mins = []
             binned_maxs = []
-            
+
             for bin_idx in range(num_bins):
                 mask = bin_indices == bin_idx
                 if np.any(mask):
@@ -371,26 +366,32 @@ def plot_barplot_compare_aggregated(
                     binned_medians.append(np.mean(median_rates[mask]))
                     binned_mins.append(np.mean(min_rates[mask]))
                     binned_maxs.append(np.mean(max_rates[mask]))
-            
+
             timesteps = np.array(binned_timesteps)
             median_rates = np.array(binned_medians)
             min_rates = np.array(binned_mins)
             max_rates = np.array(binned_maxs)
-        
+
         # Apply running average smoothing if requested (only if not binning)
         elif smooth_window > 1 and len(timesteps) >= smooth_window:
             # Smooth each curve separately
-            median_smooth = np.convolve(median_rates, np.ones(smooth_window) / smooth_window, mode="valid")
-            min_smooth = np.convolve(min_rates, np.ones(smooth_window) / smooth_window, mode="valid")
-            max_smooth = np.convolve(max_rates, np.ones(smooth_window) / smooth_window, mode="valid")
-            
+            median_smooth = np.convolve(
+                median_rates, np.ones(smooth_window) / smooth_window, mode="valid"
+            )
+            min_smooth = np.convolve(
+                min_rates, np.ones(smooth_window) / smooth_window, mode="valid"
+            )
+            max_smooth = np.convolve(
+                max_rates, np.ones(smooth_window) / smooth_window, mode="valid"
+            )
+
             # Adjust timesteps to match the smoothed rates
             offset = (smooth_window - 1) // 2
             timesteps = timesteps[offset : offset + len(median_smooth)]
             median_rates = median_smooth
             min_rates = min_smooth
             max_rates = max_smooth
-        
+
         # Plot the median line
         plt.plot(
             timesteps,
@@ -401,7 +402,7 @@ def plot_barplot_compare_aggregated(
             linestyle=line_styles[method_idx],
             alpha=0.8,
         )
-        
+
         # Plot shaded region for min/max
         plt.fill_between(
             timesteps,
@@ -410,33 +411,33 @@ def plot_barplot_compare_aggregated(
             color=colors[method_idx],
             alpha=0.2,
         )
-    
+
     plt.xlabel("Timestep")
     plt.ylabel("Ask For Help Probability")
-    
+
     # Set axis limits
     if max_ood_rate is not None:
         plt.ylim(bottom=0, top=max_ood_rate)
     else:
         plt.ylim(bottom=0)
-    
+
     if max_timesteps is not None:
         plt.xlim(left=0, right=max_timesteps)
-    
+
     # Title only if not in paper mode
     if not paper_mode:
         title_suffix = " (Success Only)" if success_only else ""
         plt.title(f"OOD Rate Comparison by Timestep (Aggregated){title_suffix}")
-    
+
     # Apply publication styling
     style_plot_for_publication(
         legend_outside=True,
-        legend_location='center left',
-        legend_bbox_to_anchor=(1.05, 0.5)
+        legend_location="center left",
+        legend_bbox_to_anchor=(1.05, 0.5),
     )
-    
+
     plt.tight_layout()
-    
+
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"\nSaved figure to {save_path}")
@@ -473,7 +474,7 @@ def plot_barplot_compare(
     print(
         f"\nPlotting {len(all_ood_rates)} OOD rate curves for comparison{filter_msg}..."
     )
-    
+
     # Set up plot style
     setup_plot_style(paper_mode=paper_mode, use_latex=True)
 
@@ -494,7 +495,7 @@ def plot_barplot_compare(
                 colors.append(plt.cm.tab20b((i - 20) / 20))
             else:
                 colors.append(plt.cm.tab20c((i - 40) / 20))
-    
+
     # Get line styles for paper mode
     line_styles = get_line_styles(len(all_ood_rates), paper_mode)
 
@@ -502,7 +503,7 @@ def plot_barplot_compare(
         # Apply max timesteps filter if specified
         if max_timesteps is not None:
             ood_rates = [d for d in ood_rates if d["timestep"] <= max_timesteps]
-        
+
         timesteps = [d["timestep"] for d in ood_rates]
         rates = [d["ood_rate"] for d in ood_rates]
         stds = None  # Standard error (only computed for binning or smoothing)
@@ -584,13 +585,13 @@ def plot_barplot_compare(
 
     plt.xlabel("Timestep")
     plt.ylabel("OOD Rate")
-    
+
     # Set axis limits
     if max_ood_rate is not None:
         plt.ylim(bottom=0, top=max_ood_rate)
     else:
         plt.ylim(bottom=0)
-    
+
     if max_timesteps is not None:
         plt.xlim(left=0, right=max_timesteps)
 
@@ -598,16 +599,16 @@ def plot_barplot_compare(
     if not paper_mode:
         title_suffix = " (Success Only)" if success_only else ""
         plt.title(f"OOD Rate Comparison by Timestep{title_suffix}")
-    
+
     # Apply publication styling
     style_plot_for_publication(
         legend_outside=True,
-        legend_location='center left',
-        legend_bbox_to_anchor=(1.05, 0.5)
+        legend_location="center left",
+        legend_bbox_to_anchor=(1.05, 0.5),
     )
-    
+
     plt.tight_layout()
-    
+
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         print(f"\nSaved figure to {save_path}")
@@ -670,7 +671,9 @@ def select_and_load_checkpoint_data(
             else "N/A"
         )
 
-        print(f"  Selected checkpoint {checkpoint_idx}: AFHP={actual_afhp:.2f}% (target={target_afhp:.2f}%), Performance={perf}")
+        print(
+            f"  Selected checkpoint {checkpoint_idx}: AFHP={actual_afhp:.2f}% (target={target_afhp:.2f}%), Performance={perf}"
+        )
     else:
         # Manual selection - display all checkpoints
         print("\nCheckpoints with level AFHP percentages:")
@@ -683,7 +686,9 @@ def select_and_load_checkpoint_data(
             )
 
             afhp_str = f"{afhp:.2f}" if afhp is not None else "N/A"
-            print(f"  [{idx}] Level AFHP: {level_afhp_pct:.2f}%, AFHP: {afhp_str}, Performance: {perf}")
+            print(
+                f"  [{idx}] Level AFHP: {level_afhp_pct:.2f}%, AFHP: {afhp_str}, Performance: {perf}"
+            )
 
         # Let user select a checkpoint
         while True:
@@ -744,7 +749,7 @@ def plot_compare_runs(
         max_timesteps: If provided, only plot up to this many timesteps
     """
     print("\n=== Multi-Run Comparison Mode ===")
-    
+
     # Apply method filter and exclusions
     methods_to_plot = sorted(results.keys())
     if method_filter:
@@ -767,9 +772,9 @@ def plot_compare_runs(
         all_exp_ids = set()
         for method in methods_to_plot:
             all_exp_ids.update(results[method].keys())
-        
+
         exp_ids_list = sorted(all_exp_ids)
-        
+
         if len(exp_ids_list) == 0:
             print("No experiments found!")
             return
@@ -781,26 +786,32 @@ def plot_compare_runs(
             print("Select one experiment to use for ALL methods:")
             for idx, exp_id in enumerate(exp_ids_list):
                 print(f"  [{idx}] exp{exp_id}")
-            
+
             while True:
                 try:
-                    selection = input(f"Select experiment (0-{len(exp_ids_list) - 1}): ")
+                    selection = input(
+                        f"Select experiment (0-{len(exp_ids_list) - 1}): "
+                    )
                     exp_idx = int(selection)
                     if 0 <= exp_idx < len(exp_ids_list):
                         selected_exp = exp_ids_list[exp_idx]
                         break
                     else:
-                        print(f"Please enter a number between 0 and {len(exp_ids_list) - 1}")
+                        print(
+                            f"Please enter a number between 0 and {len(exp_ids_list) - 1}"
+                        )
                 except ValueError:
                     print("Please enter a valid number")
-        
+
         print(f"\nUsing experiment {selected_exp} for all methods")
-    
+
     # Get target AFHP from user if not provided
     if target_afhp is None:
         while True:
             try:
-                afhp_input = input("\nEnter target AFHP percentage (e.g., 10.5 for 10.5%): ")
+                afhp_input = input(
+                    "\nEnter target AFHP percentage (e.g., 10.5 for 10.5%): "
+                )
                 target_afhp = float(afhp_input)
                 if 0 <= target_afhp <= 100:
                     break
@@ -808,25 +819,27 @@ def plot_compare_runs(
                     print("AFHP must be between 0 and 100")
             except ValueError:
                 print("Please enter a valid number")
-    
-    print(f"\nSelecting checkpoints closest to AFHP={target_afhp:.2f}% for each method...")
+
+    print(
+        f"\nSelecting checkpoints closest to AFHP={target_afhp:.2f}% for each method..."
+    )
 
     # Collect data for each method
     all_ood_rates = []
     all_labels = []
-    
+
     if average_experiments:
         # For averaging mode, collect data from all experiments per method
         for method in methods_to_plot:
             exp_data = results[method]
             method_ood_rates_by_exp = []  # Store OOD rates for each experiment
-            
+
             print(f"\n--- Method: {method} ---")
-            
+
             # Process all experiments for this method
             for exp_id in sorted(exp_data.keys()):
                 data_path = exp_data[exp_id]
-                
+
                 # Load data and automatically select checkpoint based on target AFHP
                 result = select_and_load_checkpoint_data(
                     run_name=f"{method}_exp{exp_id}",
@@ -834,11 +847,11 @@ def plot_compare_runs(
                     success_only=success_only,
                     target_afhp=target_afhp,
                 )
-                
+
                 if result is not None:
                     ood_rates, checkpoint_idx, level_afhp = result
                     method_ood_rates_by_exp.append(ood_rates)
-            
+
             if len(method_ood_rates_by_exp) > 0:
                 # Store all experiment data for this method
                 all_ood_rates.append(method_ood_rates_by_exp)
@@ -848,20 +861,22 @@ def plot_compare_runs(
                     method, paper_mode, n_experiments=len(method_ood_rates_by_exp)
                 )
                 all_labels.append(label)
-                print(f"  Collected data from {len(method_ood_rates_by_exp)} experiments")
+                print(
+                    f"  Collected data from {len(method_ood_rates_by_exp)} experiments"
+                )
             else:
-                print(f"  WARNING: No valid data for any experiment")
+                print("  WARNING: No valid data for any experiment")
     else:
         # Single experiment mode (original behavior)
         for method in methods_to_plot:
             exp_data = results[method]
-            
+
             # Check if this method has the selected experiment
             if selected_exp not in exp_data:
                 print(f"\n--- Method: {method} ---")
                 print(f"  WARNING: No data for experiment {selected_exp}, skipping...")
                 continue
-                
+
             print(f"\n--- Method: {method} ---")
             data_path = exp_data[selected_exp]
 
@@ -899,9 +914,29 @@ def plot_compare_runs(
 
     # Plot OOD rates
     if average_experiments:
-        plot_barplot_compare_aggregated(all_ood_rates, all_labels, success_only, smooth_window, num_bins, save_path, paper_mode, max_ood_rate, max_timesteps)
+        plot_barplot_compare_aggregated(
+            all_ood_rates,
+            all_labels,
+            success_only,
+            smooth_window,
+            num_bins,
+            save_path,
+            paper_mode,
+            max_ood_rate,
+            max_timesteps,
+        )
     else:
-        plot_barplot_compare(all_ood_rates, all_labels, success_only, smooth_window, num_bins, save_path, paper_mode, max_ood_rate, max_timesteps)
+        plot_barplot_compare(
+            all_ood_rates,
+            all_labels,
+            success_only,
+            smooth_window,
+            num_bins,
+            save_path,
+            paper_mode,
+            max_ood_rate,
+            max_timesteps,
+        )
 
 
 def plot_single_run(
@@ -934,7 +969,7 @@ def plot_single_run(
     for idx, method in enumerate(method_names):
         exp_ids = sorted(results[method].keys())
         print(f"  [{idx}] {method}: experiments {exp_ids}")
-    
+
     while True:
         try:
             selection = input(f"\nSelect a method (0-{len(method_names) - 1}): ")
@@ -946,11 +981,11 @@ def plot_single_run(
                 print(f"Please enter a number between 0 and {len(method_names) - 1}")
         except ValueError:
             print("Please enter a valid number")
-    
+
     # Select experiment for this method
     exp_data = results[selected_method]
     exp_ids = sorted(exp_data.keys())
-    
+
     if len(exp_ids) == 1:
         selected_exp = exp_ids[0]
         print(f"Using experiment {selected_exp} (only one available)")
@@ -958,7 +993,7 @@ def plot_single_run(
         print(f"\nAvailable experiments for {selected_method}:")
         for idx, exp_id in enumerate(exp_ids):
             print(f"  [{idx}] exp{exp_id}")
-        
+
         while True:
             try:
                 selection = input(f"\nSelect an experiment (0-{len(exp_ids) - 1}): ")
@@ -970,9 +1005,9 @@ def plot_single_run(
                     print(f"Please enter a number between 0 and {len(exp_ids) - 1}")
             except ValueError:
                 print("Please enter a valid number")
-    
+
     data_path = exp_data[selected_exp]
-    
+
     # Load data, select checkpoint, and extract OOD rate
     result = select_and_load_checkpoint_data(
         f"{selected_method}_exp{selected_exp}", data_path, success_only, target_afhp
@@ -991,8 +1026,18 @@ def plot_single_run(
     else:
         label = f"{selected_method}_exp{selected_exp} (Level AFHP: {level_afhp:.1f}%)"
     all_labels = [label]
-    
-    plot_barplot_compare(all_ood_rates, all_labels, success_only, smooth_window, num_bins, save_path, paper_mode, max_ood_rate, max_timesteps)
+
+    plot_barplot_compare(
+        all_ood_rates,
+        all_labels,
+        success_only,
+        smooth_window,
+        num_bins,
+        save_path,
+        paper_mode,
+        max_ood_rate,
+        max_timesteps,
+    )
 
 
 def plot_ood_rate_main():
