@@ -7,38 +7,196 @@ Interactive script to plot OOD rate (fraction of episodes going OOD at each time
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
+import re
 from collections import defaultdict
-from typing import Union, Dict, List, Optional, Tuple
-import numpy as np
-import matplotlib.pyplot as plt
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union
 
 import matplotlib
+import numpy as np
 
-matplotlib.use("TkAgg")
+plt = None
+METHOD_NAMES = {}
+setup_plot_style = None
+get_line_styles = None
+style_plot_for_publication = None
 
-# Import shared plotting configuration
-from analyzing.plotting_common import (
-    setup_plot_style,
-    get_line_styles,
-    style_plot_for_publication,
+SUPPORTED_ENVS = [
+    "coinrun",
+    "coinrun_proxy_fail",
+    "maze",
+    "maze_afh",
+    "maze_proxy_fail",
+    "heist",
+]
+ENV_PATTERN = "|".join(
+    re.escape(env) for env in sorted(SUPPORTED_ENVS, key=len, reverse=True)
 )
+ROBUST_VARIANTS = ("robust200", "robust400")
+ROBUST_LABELS = {
+    "robust200": "Robust 200M",
+    "robust400": "Robust 400M",
+}
+ROBUST_PATTERN = "|".join(re.escape(variant) for variant in ROBUST_VARIANTS)
 
-# Reuse robust-variant parsing, canonicalization, and label/legend helpers
-# from icml_plot so this script behaves the same way around robust strong
-# policies and kebab/snake method aliases.
-from analyzing.icml_plot import (
-    SUPPORTED_ENVS,
-    add_robust_suffix,
-    canonicalize_method,
-    format_plot_label,
-    method_is_filtered,
-    method_is_included,
-    parse_experiment_dir,
-    parse_method_dir,
-    parse_robust_experiment_dir,
-    prefix_matches_filter,
-)
+
+def configure_matplotlib_backend(save_path: Optional[str]) -> None:
+    """Select a backend before importing pyplot or plotting_common."""
+    if save_path:
+        matplotlib.use("Agg", force=True)
+        return
+
+    try:
+        matplotlib.use("TkAgg", force=True)
+    except ImportError as exc:
+        raise RuntimeError(
+            "Could not load Matplotlib's TkAgg backend for interactive display. "
+            "Use --save PATH, or verify that Tk works with: "
+            'python -c \'import matplotlib; matplotlib.use("TkAgg", force=True); '
+            "import matplotlib.pyplot as plt; print(matplotlib.get_backend())'"
+        ) from exc
+
+
+def initialize_plotting(save_path: Optional[str]) -> None:
+    """Initialize pyplot-dependent globals after backend selection."""
+    global METHOD_NAMES
+    global get_line_styles
+    global plt
+    global setup_plot_style
+    global style_plot_for_publication
+
+    configure_matplotlib_backend(save_path)
+
+    import matplotlib.pyplot as pyplot
+    from analyzing import plotting_common
+
+    plt = pyplot
+    METHOD_NAMES = plotting_common.METHOD_NAMES
+    setup_plot_style = plotting_common.setup_plot_style
+    get_line_styles = plotting_common.get_line_styles
+    style_plot_for_publication = plotting_common.style_plot_for_publication
+
+
+def parse_robust_experiment_dir(
+    dir_name: str,
+) -> Optional[Tuple[str, str, str, int]]:
+    """Parse {prefix}_robust{200,400}_{env}_exp{id} directory names."""
+    pattern = rf"^(.+)_({ROBUST_PATTERN})_({ENV_PATTERN})_exp(\d+)$"
+    match = re.match(pattern, dir_name)
+    if match:
+        prefix = match.group(1)
+        robust_variant = match.group(2)
+        env = match.group(3)
+        exp_id = int(match.group(4))
+        return prefix, robust_variant, env, exp_id
+    return None
+
+
+def parse_experiment_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
+    """Parse {prefix}_{env}_exp{id} directory names."""
+    robust_parsed = parse_robust_experiment_dir(dir_name)
+    if robust_parsed is not None:
+        prefix, _, env, exp_id = robust_parsed
+        return prefix, env, exp_id
+
+    pattern = rf"^(.+)_({ENV_PATTERN})_exp(\d+)$"
+    match = re.match(pattern, dir_name)
+    if match:
+        prefix = match.group(1)
+        env = match.group(2)
+        exp_id = int(match.group(3))
+        return prefix, env, exp_id
+    return None
+
+
+def split_robust_method(method: str) -> Tuple[str, Optional[str]]:
+    """Split method names like max-prob_robust400 into base method and variant."""
+    for robust_variant in ROBUST_VARIANTS:
+        suffix = f"_{robust_variant}"
+        if method.endswith(suffix):
+            return method[: -len(suffix)], robust_variant
+    return method, None
+
+
+def add_robust_suffix(method: str, robust_variant: Optional[str]) -> str:
+    """Attach robust variant to method name unless it is already present."""
+    if robust_variant is None:
+        return method
+    _, existing_variant = split_robust_method(method)
+    if existing_variant is not None:
+        return method
+    return f"{method}_{robust_variant}"
+
+
+def canonicalize_method(method: str) -> str:
+    """Normalize method names to kebab-case while preserving robust suffixes."""
+    base, robust_variant = split_robust_method(method)
+    base = base.replace("_", "-")
+    return add_robust_suffix(base, robust_variant)
+
+
+def method_display_name(method: str) -> str:
+    """Return a display name, accepting both hyphen and underscore method ids."""
+    return METHOD_NAMES.get(method, METHOD_NAMES.get(method.replace("-", "_"), method))
+
+
+def format_plot_label(
+    method: str,
+    paper_mode: bool,
+    n_experiments: Optional[int] = None,
+    hide_robust_suffix: bool = False,
+) -> str:
+    """Format method labels, including robust strong-policy variants."""
+    base_method, robust_variant = split_robust_method(method)
+    label = method_display_name(base_method)
+
+    if robust_variant is not None and not hide_robust_suffix and not paper_mode:
+        label = f"{label} ({ROBUST_LABELS[robust_variant]})"
+
+    if not paper_mode and n_experiments is not None:
+        label = f"{label} (n={n_experiments})"
+
+    return label
+
+
+def prefix_matches_filter(
+    prefix: str,
+    robust_variant: Optional[str],
+    prefix_filter: Optional[List[str]],
+) -> bool:
+    """Match both base prefixes and robust output prefixes."""
+    if prefix_filter is None:
+        return True
+
+    candidates = [prefix]
+    if robust_variant is not None:
+        candidates.append(f"{prefix}_{robust_variant}")
+
+    return any(candidate in prefix_filter for candidate in candidates)
+
+
+def method_is_filtered(method: str, method_filter: List[str]) -> bool:
+    """Filter robust method variants when either full or base method is filtered."""
+    base_method, _ = split_robust_method(method)
+    return method in method_filter or base_method in method_filter
+
+
+def method_is_included(method: str, method_include_filter: List[str]) -> bool:
+    """Include robust method variants when either full or base method is included."""
+    base_method, _ = split_robust_method(method)
+    return method in method_include_filter or base_method in method_include_filter
+
+
+def parse_method_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
+    """Parse {env}_{method}_exp{id} method directory names."""
+    pattern = rf"^({ENV_PATTERN})_(.+)_exp(\d+)$"
+    match = re.match(pattern, dir_name)
+    if match:
+        env = match.group(1)
+        method = match.group(2)
+        exp_id = int(match.group(3))
+        return env, method, exp_id
+    return None
 
 
 def extract_icml_results(
@@ -1141,6 +1299,7 @@ def plot_ood_rate_main():
     )
 
     args = parser.parse_args()
+    initialize_plotting(args.save)
 
     # Canonicalize user-supplied method filters so kebab/snake CLI inputs both
     # match the kebab-canonical keys stored in `results`.
