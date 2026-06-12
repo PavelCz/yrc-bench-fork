@@ -33,12 +33,8 @@ YRC-Bench is a research framework for learning coordination strategies between n
   Takes ~6 seconds on subsequent runs (first run may take longer). NEVER CANCEL. Uses ruff for formatting/linting and pytype for type checking.
   
   **NOTE**: This script only checks a subset of files:
-  - YRC/algorithms/lightning_ae.py
-  - YRC/policies/lightning_ae.py
-  - YRC/core/dataset.py
   - YRC/core/rollout_helper.py
   - eval_thresholds.py
-  - YRC/policies/mahalanobis_ae.py
 
 - Check entire codebase (will show many linting issues):
   ```bash

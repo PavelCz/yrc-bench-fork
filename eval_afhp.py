@@ -13,7 +13,6 @@ from YRC.core.configs.global_configs import get_global_variable
 from YRC.core.eval_script_utils import init_eval_wandb_run, save_npz_results
 from YRC.core.level_seeds import load_level_seed_splits
 
-from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
 
 from YRC.coverage.coverage_search import create_step_afhp_threshold_sampler
 from YRC.coverage.coverage_search import create_level_afhp_threshold_sampler
@@ -260,10 +259,6 @@ def main():
                 "Coordination policy model loaded in "
                 f"{time.time() - model_load_start:.2f}s"
             )
-
-        # For the Mahalanobis AE, we need some additional initialization.
-        if isinstance(policy, MahalanobisAEPolicy):
-            policy.initialize_mahalanobis_detector(config)
 
     evaluator = Evaluator(config, config.environment)
 

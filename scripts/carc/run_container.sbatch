@@ -34,7 +34,7 @@ if [[ ! -f "${SIF_PATH}" ]]; then
     exit 1
 fi
 
-for path in "YRC" "configs" "lib/pytorch_vae/models/__init__.py"; do
+for path in "YRC" "configs"; do
     if [[ ! -e "${REPO_DIR}/${path}" ]]; then
         echo "Required runtime path is missing: ${REPO_DIR}/${path}"
         echo "If this came from a submodule, run: git submodule update --init --recursive"
