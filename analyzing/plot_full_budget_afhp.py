@@ -163,6 +163,19 @@ def mean_or_nan(values) -> float:
     return float(np.nanmean(values))
 
 
+def _point_level_seed_set(point_meta) -> Optional[Set[int]]:
+    summary = point_meta["summary"]["test"]
+    level_seeds = summary.get("level_seeds", None)
+    if level_seeds is None:
+        return None
+    return {int(seed) for seed in level_seeds}
+
+
+def level_seed_sets_from_original(original_npz: Path) -> List[Optional[Set[int]]]:
+    data = np.load(original_npz, allow_pickle=True)
+    return [_point_level_seed_set(point_meta) for point_meta in data["meta"]]
+
+
 def help_only_performances_from_original(original_npz: Path) -> np.ndarray:
     data = np.load(original_npz, allow_pickle=True)
     help_performances = []
@@ -177,15 +190,28 @@ def help_only_performances_from_original(original_npz: Path) -> np.ndarray:
     return np.array(help_performances, dtype=float)
 
 
-def help_only_performances_from_full_budget(full_budget_meta) -> np.ndarray:
+def help_only_performances_from_full_budget(
+    full_budget_meta,
+    original_level_seed_sets: Optional[List[Optional[Set[int]]]] = None,
+) -> np.ndarray:
     help_performances = []
-    for point_meta in full_budget_meta:
+    for point_idx, point_meta in enumerate(full_budget_meta):
         summary = point_meta.get("summary", {})
         level_ood_pred = summary.get("level_ood_pred", [])
         raw_returns = summary.get("raw_returns", [])
-        help_returns = [
-            ret for pred, ret in zip(level_ood_pred, raw_returns) if bool(pred)
-        ]
+        level_seeds = summary.get("level_seeds", [])
+        original_seed_set = (
+            original_level_seed_sets[point_idx]
+            if original_level_seed_sets is not None
+            and point_idx < len(original_level_seed_sets)
+            else None
+        )
+        help_returns = []
+        for pred, ret, seed in zip(level_ood_pred, raw_returns, level_seeds):
+            if original_seed_set is not None and int(seed) not in original_seed_set:
+                continue
+            if bool(pred):
+                help_returns.append(ret)
         help_performances.append(mean_or_nan(help_returns))
     return np.array(help_performances, dtype=float)
 
@@ -225,7 +251,9 @@ def load_full_budget_data(full_budget_npz: Path, original_npz: Optional[Path] = 
         raise ValueError(f"{full_budget_npz} has misaligned output arrays")
 
     original_help_performances = np.full(len(thresholds), np.nan, dtype=float)
+    original_level_seed_sets = None
     if original_npz is not None:
+        original_level_seed_sets = level_seed_sets_from_original(original_npz)
         original_help_performances = help_only_performances_from_original(original_npz)
         if len(original_help_performances) != len(thresholds):
             raise ValueError(
@@ -234,7 +262,8 @@ def load_full_budget_data(full_budget_npz: Path, original_npz: Optional[Path] = 
             )
 
     full_budget_help_performances = help_only_performances_from_full_budget(
-        full_budget_meta
+        full_budget_meta,
+        original_level_seed_sets,
     )
 
     run_metadata = data["run_metadata"].item() if "run_metadata" in data.files else {}
@@ -473,9 +502,8 @@ def plot_perf_diff_mode(
                         f"{method} exp{exp_id}: {exc}"
                     )
                     continue
-                if (
-                    len(weak_on_help) != len(strong_on_help)
-                    or len(weak_on_help) != len(original_perf)
+                if len(weak_on_help) != len(strong_on_help) or len(weak_on_help) != len(
+                    original_perf
                 ):
                     print(
                         f"Warning: subset baseline lengths misaligned for "
@@ -493,7 +521,12 @@ def plot_perf_diff_mode(
                 weak, expert = weak_expert_performances(
                     data["original_afhps"], data["original_performances"]
                 )
-                if weak is None or expert is None or not np.isfinite(expert - weak) or (expert - weak) == 0:
+                if (
+                    weak is None
+                    or expert is None
+                    or not np.isfinite(expert - weak)
+                    or (expert - weak) == 0
+                ):
                     print(
                         f"Warning: cannot normalize {method} exp{exp_id} "
                         f"(weak={weak}, expert={expert}); skipping."
@@ -838,10 +871,7 @@ def plot_full_budget_afhp(
         print("Warning: --paper currently only affects --perf-diff mode.")
 
     if normalize_by_subset and not perf_diff:
-        print(
-            "Warning: --normalize-by-subset only affects --perf-diff mode; "
-            "ignoring."
-        )
+        print("Warning: --normalize-by-subset only affects --perf-diff mode; ignoring.")
 
     results = extract_full_budget_results(
         eval_dir, prefix_filter, env_filter, exp_id_filter
@@ -861,7 +891,9 @@ def plot_full_budget_afhp(
         return
 
     if overlay and perf_diff:
-        print("Warning: --perf-diff overrides --overlay; plotting normalized difference.")
+        print(
+            "Warning: --perf-diff overrides --overlay; plotting normalized difference."
+        )
 
     if help_only and not (overlay or perf_diff):
         print("Warning: --help-only only affects --overlay or --perf-diff modes.")
@@ -1003,8 +1035,8 @@ def main():
         action="store_true",
         help=(
             "In --overlay or --perf-diff mode, plot mean return only on episodes "
-            "where that eval asked for help. Regular and full-budget curves use "
-            "their own help-requested episode sets."
+            "where that eval asked for help. Full-budget help-only means are "
+            "restricted to the level seeds present in the original eval artifact."
         ),
     )
     parser.add_argument(
