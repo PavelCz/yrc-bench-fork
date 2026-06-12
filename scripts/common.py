@@ -16,29 +16,29 @@ EXP_ID_TO_SEED = {
 }
 
 SERVER_PATHS = {
-    "chai": {
-        "checkpoint_base": "/nas/ucb/czempin/data/goal-misgen/policy/icml",
-        "rollouts_base": "/nas/ucb/czempin/data/goal-misgen/rollouts",
-        "seeds_base": "/nas/ucb/czempin/data/goal-misgen/seeds/icml",
-        "svdd_base": "/nas/ucb/czempin/data/goal-misgen/trained_svdd",
-        "log_base": "/nas/ucb/czempin/data/goal-misgen/slurm-logs",
-        "evals_base": "/nas/ucb/czempin/data/goal-misgen/experiments/evals",
+    "cluster1": {
+        "checkpoint_base": "/path/to/cluster1/data/goal-misgen/policy/icml",
+        "rollouts_base": "/path/to/cluster1/data/goal-misgen/rollouts",
+        "seeds_base": "/path/to/cluster1/data/goal-misgen/seeds/icml",
+        "svdd_base": "/path/to/cluster1/data/goal-misgen/trained_svdd",
+        "log_base": "/path/to/cluster1/data/goal-misgen/slurm-logs",
+        "evals_base": "/path/to/cluster1/data/goal-misgen/experiments/evals",
     },
-    "snoopy": {
-        "checkpoint_base": "/scr/pavel/data/goal-misgen/policy/icml",
-        "rollouts_base": "/scr/pavel/data/goal-misgen/rollouts",
-        "seeds_base": "/scr/pavel/data/goal-misgen/seeds/icml",
-        "svdd_base": "/scr/pavel/data/goal-misgen/trained_svdd",
-        "log_base": "/scr/pavel/data/goal-misgen/slurm-logs",
-        "evals_base": "/scr/pavel/data/goal-misgen/experiments/evals",
+    "cluster2": {
+        "checkpoint_base": "/path/to/cluster2/data/goal-misgen/policy/icml",
+        "rollouts_base": "/path/to/cluster2/data/goal-misgen/rollouts",
+        "seeds_base": "/path/to/cluster2/data/goal-misgen/seeds/icml",
+        "svdd_base": "/path/to/cluster2/data/goal-misgen/trained_svdd",
+        "log_base": "/path/to/cluster2/data/goal-misgen/slurm-logs",
+        "evals_base": "/path/to/cluster2/data/goal-misgen/experiments/evals",
     },
-    "carc": {
-        "checkpoint_base": "/project2/biyik_1165/czempin/data/goal-misgen/policy/icml",
-        "rollouts_base": "/project2/biyik_1165/czempin/data/goal-misgen/rollouts",
-        "seeds_base": "/project2/biyik_1165/czempin/data/goal-misgen/seeds/icml",
-        "svdd_base": "/project2/biyik_1165/czempin/data/goal-misgen/trained_svdd",
-        "log_base": "/project2/biyik_1165/czempin/data/goal-misgen/slurm-logs",
-        "evals_base": "/project2/biyik_1165/czempin/data/goal-misgen/experiments/evals",
+    "cluster3": {
+        "checkpoint_base": "/path/to/cluster3/data/goal-misgen/policy/icml",
+        "rollouts_base": "/path/to/cluster3/data/goal-misgen/rollouts",
+        "seeds_base": "/path/to/cluster3/data/goal-misgen/seeds/icml",
+        "svdd_base": "/path/to/cluster3/data/goal-misgen/trained_svdd",
+        "log_base": "/path/to/cluster3/data/goal-misgen/slurm-logs",
+        "evals_base": "/path/to/cluster3/data/goal-misgen/experiments/evals",
     },
 }
 

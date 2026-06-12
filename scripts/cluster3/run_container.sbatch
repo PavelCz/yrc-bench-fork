@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --account=biyik_1165
+#SBATCH --account=account_id
 #SBATCH --partition=gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -30,7 +30,7 @@ SIF_PATH="${YRC_SIF_PATH:-${REPO_DIR}/${SIF_NAME}}"
 
 if [[ ! -f "${SIF_PATH}" ]]; then
     echo "Apptainer image not found: ${SIF_PATH}"
-    echo "Build it with: sbatch scripts/carc/build_apptainer.sbatch"
+    echo "Build it with: sbatch scripts/cluster3/build_apptainer.sbatch"
     exit 1
 fi
 
@@ -48,7 +48,7 @@ APPTAINER_ARGS=(
     exec
     --nv
     --bind "${REPO_DIR}:/workspace"
-    --bind "/project2/biyik_1165:/project2/biyik_1165"
+    --bind "/path/to/cluster3:/path/to/cluster3"
     --env "PYTHONUNBUFFERED=1"
     --env "PYTHONPATH=/workspace"
     --env "MPLCONFIGDIR=/workspace/.container_cache/matplotlib"

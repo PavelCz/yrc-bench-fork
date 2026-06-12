@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -uo pipefail  # Remove 'e' flag to allow continuing after errors
 
-SRC_BASE="rnn:/nas/ucb/czempin/data/goal-misgen/experiments/evals"
-DST_BASE="/home/pavel/data/goal-misgen/icml-evals"
+SRC_BASE="cluster1:/path/to/cluster1/data/goal-misgen/experiments/evals"
+DST_BASE="/home/user/data/goal-misgen/icml-evals"
 
 usage() {
   echo "Usage: $0 [--with-videos] [prefix]"

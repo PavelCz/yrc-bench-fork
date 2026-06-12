@@ -417,11 +417,11 @@ def test_run_gather_rollouts_defaults_to_neurips_extra_seed_dir():
         sys.path.pop(0)
 
     seeds_dir = run_gather_rollouts.get_default_level_seeds_dir(
-        "/nas/ucb/czempin/data/goal-misgen/seeds/icml"
+        "/path/to/cluster1/data/goal-misgen/seeds/icml"
     )
 
     assert seeds_dir == Path(
-        "/nas/ucb/czempin/data/goal-misgen/seeds/neurips_extra_ood_train_1024"
+        "/path/to/cluster1/data/goal-misgen/seeds/neurips_extra_ood_train_1024"
     )
     assert run_gather_rollouts.GATHER_DEFAULTS["rollout_chunk_size"] is None
 

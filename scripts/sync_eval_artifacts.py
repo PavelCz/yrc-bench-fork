@@ -372,19 +372,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--exp-ids", type=int, nargs="+", required=True)
     parser.add_argument(
         "--source-server",
-        default="chai",
+        default="cluster1",
         choices=sorted(SERVER_PATHS.keys()),
         help="Source path layout from scripts/common.py.",
     )
     parser.add_argument(
         "--target-server",
-        default="carc",
+        default="cluster3",
         choices=sorted(SERVER_PATHS.keys()),
         help="Destination path layout from scripts/common.py.",
     )
     parser.add_argument(
         "--source-host",
-        default="chai",
+        default="cluster1",
         help="SSH host that exposes the source-server paths.",
     )
     parser.add_argument(

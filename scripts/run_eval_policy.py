@@ -158,9 +158,9 @@ def parse_args():
     )
     parser.add_argument(
         "--server",
-        choices=["chai", "snoopy"],
-        default="chai",
-        help="Server to use for paths (default: chai)",
+        choices=["cluster1", "cluster2"],
+        default="cluster1",
+        help="Server to use for paths (default: cluster1)",
     )
     parser.add_argument(
         "--qos",

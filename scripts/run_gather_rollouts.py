@@ -166,9 +166,9 @@ def main():
     )
     parser.add_argument(
         "--server",
-        choices=["chai", "snoopy"],
-        default="snoopy",
-        help="Server to use for paths (default: snoopy)",
+        choices=["cluster1", "cluster2"],
+        default="cluster2",
+        help="Server to use for paths (default: cluster2)",
     )
     parser.add_argument(
         "--env", required=True, choices=ENVS, help="Environment to gather rollouts for"

@@ -36,16 +36,16 @@ ROBUST_SUFFIX_RE = re.compile(r"_(robust\d+)$")
 DEFAULT_CONDA_ENV = "ood-stable"
 
 # Redirect wandb staging + artifact cache off the (often-full) root volume.
-WANDB_DATA_DIR_PATH = "/nas/ttl=60d/czempin/wandb-data"
-WANDB_CACHE_DIR_PATH = "/nas/ttl=60d/czempin/wandb-cache"
+WANDB_DATA_DIR_PATH = "/path/to/scratch/wandb-data"
+WANDB_CACHE_DIR_PATH = "/path/to/scratch/wandb-cache"
 
 
 def build_wandb_env_block(server: str) -> str:
     """Shell lines that point wandb staging/cache at the NAS volume.
 
-    Only emitted on chai; other servers have their own dedicated scratch.
+    Only emitted on cluster1; other servers have their own dedicated scratch.
     """
-    if server != "chai":
+    if server != "cluster1":
         return ""
     return (
         f"export WANDB_DATA_DIR='{WANDB_DATA_DIR_PATH}'\n"
@@ -136,8 +136,8 @@ def parse_arguments():
     parser.add_argument(
         "--server",
         choices=list(SERVER_PATHS.keys()),
-        default="chai",
-        help="Server to use for paths (default: chai)",
+        default="cluster1",
+        help="Server to use for paths (default: cluster1)",
     )
     parser.add_argument(
         "--qos",
@@ -688,7 +688,7 @@ def submit_job(
     overwrite: bool = False,
     dry_run: bool = False,
     *,
-    server: str = "chai",
+    server: str = "cluster1",
 ) -> None:
     """Submit a single job via sbatch."""
     sbatch_script = build_sbatch_script(
@@ -742,7 +742,7 @@ def build_sbatch_script(
     greedy: bool = False,
     overwrite: bool = False,
     *,
-    server: str = "chai",
+    server: str = "cluster1",
 ) -> str:
     """Build the sbatch script for job submission."""
     # Override QOS in SLURM config

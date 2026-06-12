@@ -170,7 +170,7 @@ def test_raw_threshold_sampler_picks_threshold_adjacent_pair_across_afhp_boundar
         max_total_evals=30,
     )
 
-    # Reconstruct the rnn smoke-test (job 1132772) point cloud after 21 raw
+    # Reconstruct a cluster smoke-test point cloud after 21 raw
     # evaluations. Order of insertion matters: stable-sort tie-breaking on
     # AFHP-only used to put eval 7 at the head of the AFHP=1 cluster, even
     # though eval 21 (added later) is the one threshold-adjacent to eval 20.

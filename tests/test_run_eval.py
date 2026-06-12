@@ -105,14 +105,14 @@ def test_container_sbatch_wraps_eval_in_apptainer():
         execution="apptainer",
         container_image=Path("/repo/yrc-bench-procgen.sif"),
         repo_dir=Path("/repo"),
-        container_binds=["/project2/biyik_1165:/project2/biyik_1165"],
+        container_binds=["/path/to/cluster3:/path/to/cluster3"],
     )
 
     assert "conda activate" not in command
     assert "module load apptainer" in command
     assert "apptainer exec --nv" in command
     assert "--bind /repo:/workspace" in command
-    assert "--bind /project2/biyik_1165:/project2/biyik_1165" in command
+    assert "--bind /path/to/cluster3:/path/to/cluster3" in command
     assert "--pwd /workspace /repo/yrc-bench-procgen.sif bash -lc" in command
     assert "Container Python not found: /opt/venv/bin/python" in command
     assert "export PATH=/opt/venv/bin:${PATH}; hash -r; python eval_afhp.py" in command
@@ -143,7 +143,7 @@ def test_container_packed_sbatch_wraps_each_eval_in_apptainer():
         execution="apptainer",
         container_image=Path("/repo/yrc-bench-procgen.sif"),
         repo_dir=Path("/repo"),
-        container_binds=["/project2/biyik_1165:/project2/biyik_1165"],
+        container_binds=["/path/to/cluster3:/path/to/cluster3"],
     )
 
     assert "conda activate" not in command
@@ -160,7 +160,7 @@ def test_container_preflight_does_not_require_gpu_visibility():
         execution="apptainer",
         container_image=Path("/repo/yrc-bench-procgen.sif"),
         repo_dir=Path("/repo"),
-        container_binds=["/project2/biyik_1165:/project2/biyik_1165"],
+        container_binds=["/path/to/cluster3:/path/to/cluster3"],
     )
 
     shell_command = command[-1]
@@ -210,13 +210,13 @@ def test_svdd_default_prefix_is_neurips04():
         "coinrun",
         0,
         "svdd-image",
-        "/nas/ucb/czempin/data/goal-misgen/trained_svdd",
+        "/path/to/cluster1/data/goal-misgen/trained_svdd",
         run_eval.EVAL_DEFAULTS["svdd_prefix"],
     )
 
     assert run_eval.EVAL_DEFAULTS["svdd_prefix"] == "neurips04"
     assert expected == Path(
-        "/nas/ucb/czempin/data/goal-misgen/trained_svdd/"
+        "/path/to/cluster1/data/goal-misgen/trained_svdd/"
         "neurips04/svdd_coinrun_image_exp0/trained.joblib"
     )
 
@@ -276,7 +276,7 @@ def test_main_stops_before_submit_when_preflight_fails(monkeypatch):
             "--exp-ids",
             "1",
             "--server",
-            "chai",
+            "cluster1",
             "--env",
             "coinrun_proxy_fail",
             "--method",

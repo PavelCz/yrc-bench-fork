@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-DEFAULT_MANIFEST="/nas/ucb/czempin/data/goal-misgen/rollouts/rollouts-neurips/coinrun/gather_coinrun_exp0/rollouts_manifest_10240levels.json"
+DEFAULT_MANIFEST="/path/to/cluster1/data/goal-misgen/rollouts/rollouts-neurips/coinrun/gather_coinrun_exp0/rollouts_manifest_10240levels.json"
 MANIFEST="${1:-$DEFAULT_MANIFEST}"
 
 eval "$(conda shell.bash hook)"

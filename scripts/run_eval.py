@@ -70,23 +70,23 @@ ARTIFACT_ENVS = {
 }
 
 DEFAULT_CONTAINER_BINDS = {
-    "carc": ["/project2/biyik_1165:/project2/biyik_1165"],
-    "chai": ["/nas/ucb:/nas/ucb"],
-    "snoopy": ["/scr/pavel:/scr/pavel"],
+    "cluster3": ["/path/to/cluster3:/path/to/cluster3"],
+    "cluster1": ["/path/to/cluster1:/path/to/cluster1"],
+    "cluster2": ["/path/to/cluster2:/path/to/cluster2"],
 }
 
 # Redirect wandb staging + artifact cache off the (often-full) root volume.
-WANDB_DATA_DIR_PATH = "/nas/ttl=60d/czempin/wandb-data"
-WANDB_CACHE_DIR_PATH = "/nas/ttl=60d/czempin/wandb-cache"
+WANDB_DATA_DIR_PATH = "/path/to/scratch/wandb-data"
+WANDB_CACHE_DIR_PATH = "/path/to/scratch/wandb-cache"
 
 
 def build_wandb_env_block(server: str) -> str:
     """Shell lines that point wandb staging/cache at the NAS volume.
 
-    Only emitted on chai, where the root volume is contended and the NAS path
+    Only emitted on cluster1, where the root volume is contended and the NAS path
     above is available. Other servers have their own dedicated scratch.
     """
-    if server != "chai":
+    if server != "cluster1":
         return ""
     return (
         f"export WANDB_DATA_DIR='{WANDB_DATA_DIR_PATH}'\n"
@@ -380,7 +380,7 @@ def build_sbatch_command(
     log_dir: Path,
     qos: str = "default",
     *,
-    server: str = "chai",
+    server: str = "cluster1",
     execution: str = "conda",
     container_image: Optional[Path] = None,
     repo_dir: Path = REPO_ROOT,
@@ -427,7 +427,7 @@ def build_packed_sbatch_command(
     log_dir: Path,
     qos: str = "default",
     *,
-    server: str = "chai",
+    server: str = "cluster1",
     execution: str = "conda",
     container_image: Optional[Path] = None,
     repo_dir: Path = REPO_ROOT,
@@ -528,7 +528,7 @@ def submit_job(
     qos: str = "default",
     dry_run: bool = False,
     *,
-    server: str = "chai",
+    server: str = "cluster1",
     execution: str = "conda",
     container_image: Optional[Path] = None,
     repo_dir: Path = REPO_ROOT,
@@ -579,7 +579,7 @@ def submit_packed_job(
     qos: str = "default",
     dry_run: bool = False,
     *,
-    server: str = "chai",
+    server: str = "cluster1",
     execution: str = "conda",
     container_image: Optional[Path] = None,
     repo_dir: Path = REPO_ROOT,
@@ -746,8 +746,8 @@ def main():
     parser.add_argument(
         "--server",
         choices=sorted(SERVER_PATHS.keys()),
-        default="chai",
-        help="Server to use for paths (default: chai)",
+        default="cluster1",
+        help="Server to use for paths (default: cluster1)",
     )
     parser.add_argument(
         "--qos",

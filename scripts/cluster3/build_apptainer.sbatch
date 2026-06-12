@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --account=biyik_1165
+#SBATCH --account=account_id
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -52,7 +52,7 @@ SIF_PATH="${REPO_DIR}/${SIF_NAME}"
 
 mkdir -p "${REPO_DIR}/logs"
 
-DEFAULT_APPTAINER_ROOT="/project2/biyik_1165/${USER}/tmp/apptainer"
+DEFAULT_APPTAINER_ROOT="/path/to/cluster3/${USER}/tmp/apptainer"
 export APPTAINER_TMPDIR="${APPTAINER_TMPDIR:-${DEFAULT_APPTAINER_ROOT}/tmp}"
 export APPTAINER_CACHEDIR="${APPTAINER_CACHEDIR:-${DEFAULT_APPTAINER_ROOT}/cache}"
 export GOMAXPROCS="${GOMAXPROCS:-4}"
@@ -63,7 +63,7 @@ if command -v spython >/dev/null 2>&1; then
 elif python -m spython --help >/dev/null 2>&1; then
     SPYTHON_CMD=(python -m spython)
 else
-    echo "spython is not available. Install it on CARC, for example: pipx install spython"
+    echo "spython is not available. Install it on cluster3, for example: pipx install spython"
     exit 1
 fi
 

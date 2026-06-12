@@ -8,7 +8,7 @@ REPO_DIR="$(realpath "${SCRIPT_DIR}/../..")"
 CONTAINER_IMAGE="${YRC_SIF_PATH:-${REPO_DIR}/yrc-bench-procgen.sif}"
 
 python "${REPO_DIR}/scripts/run_eval.py" \
-    --server carc \
+    --server cluster3 \
     --use-container \
     --container-image "${CONTAINER_IMAGE}" \
     "$@"

@@ -229,8 +229,8 @@ def main():
     parser.add_argument(
         "--server",
         choices=list(SERVER_PATHS.keys()),
-        default="chai",
-        help="Server to use for paths (default: chai)",
+        default="cluster1",
+        help="Server to use for paths (default: cluster1)",
     )
     parser.add_argument(
         "--env", required=True, choices=ENVS, help="Environment to train on"
