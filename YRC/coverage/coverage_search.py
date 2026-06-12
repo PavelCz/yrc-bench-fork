@@ -12,7 +12,6 @@ from acs import BinarySearchSampler
 from acs.types import CurvePoint, SamplingResult
 from acs.wait_policy_sampler import WaitPolicyAwareSampler
 from YRC.policies.ood import OODPolicy
-from YRC.policies.lightning_ae import LightningAEPolicy
 from YRC.policies.base import (
     LevelBasedRandomPolicy,
     OracleLevelBasedRandomPolicy,
@@ -991,11 +990,7 @@ def create_step_afhp_threshold_sampler(
 
 
 def update_policy_params(policy, threshold):
-    if (
-        isinstance(policy, LightningAEPolicy)
-        or isinstance(policy, OODPolicy)
-        or isinstance(policy, ThresholdPolicy)
-    ):
+    if isinstance(policy, OODPolicy) or isinstance(policy, ThresholdPolicy):
         params = policy.params.copy()
         params["threshold"] = threshold
 

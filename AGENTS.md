@@ -105,8 +105,7 @@ pip install -e lib/LIBRARY_NAME
 ### Core Components
 
 1. **YRC/algorithms/**: Coordination algorithms
-   - `ood.py`: Out-of-distribution detection methods (Deep SVDD, Mahalanobis AE)
-   - `lightning_ae.py`: Lightning-based autoencoder for OOD detection
+   - `ood.py`: Out-of-distribution detection methods (Deep SVDD)
    - `rl.py`: Reinforcement learning-based coordination (PPO)
    - `threshold.py`: Threshold-based methods using confidence metrics
    - `random.py`: Baseline strategies (random, always weak/strong)
@@ -115,7 +114,6 @@ pip install -e lib/LIBRARY_NAME
    - `evaluator.py`: Unified evaluation framework with adaptive threshold sampling
    - `configs/config.py`: Configuration data structure
    - `configs/utils.py`: Configuration loading and command-line override handling
-   - `dataset.py`: Rollout data handling
    - `rollout_helper.py`: Utility for collecting rollouts
    - `algorithm.py`: Base algorithm interface
    - `environment.py`: Environment factory and wrappers
@@ -132,8 +130,6 @@ pip install -e lib/LIBRARY_NAME
    - `heuristic.py`: `ExponentialHeuristicPolicy`, `WaitPolicy`
    - `threshold.py`: `ThresholdPolicy` (confidence-based: `max_prob`, `max_logit`, `ensemble_variance`)
    - `ood.py`: `OODPolicy` (Deep SVDD, AutoEncoder)
-   - `lightning_ae.py`: `LightningAEPolicy` (PyTorch Lightning autoencoders)
-   - `mahalanobis_ae.py`: `MahalanobisAEPolicy`
    - `rl.py`: RL-based coordination policies
 
 ### Configuration System

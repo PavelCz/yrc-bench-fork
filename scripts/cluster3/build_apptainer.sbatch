@@ -35,7 +35,6 @@ required_paths=(
     "lib/procgen/setup.py"
     "lib/procgen/procgen/src/game-registry.cpp"
     "lib/pyod/setup.py"
-    "lib/pytorch_vae/models/__init__.py"
 )
 
 for path in "${required_paths[@]}"; do

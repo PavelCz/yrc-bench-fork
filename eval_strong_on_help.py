@@ -21,7 +21,6 @@ from YRC.core import Evaluator
 from YRC.core.eval_script_utils import init_eval_wandb_run, save_npz_results
 from YRC.core.level_seeds import load_level_seed_splits
 from YRC.coverage.coverage_search import update_policy_params
-from YRC.policies.mahalanobis_ae import MahalanobisAEPolicy
 
 
 @dataclass
@@ -350,8 +349,6 @@ def load_coordination_model_if_needed(policy, config):
                 "config.file_name to load its model."
             )
         policy.load_model(os.path.join(config.experiment_dir, config.file_name))
-        if isinstance(policy, MahalanobisAEPolicy):
-            policy.initialize_mahalanobis_detector(config)
 
 
 def rollout(policy, env, num_episodes, expected_seeds=None, greedy=False):

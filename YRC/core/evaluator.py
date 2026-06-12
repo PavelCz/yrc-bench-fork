@@ -304,7 +304,7 @@ class Evaluator:
             # once it becomes available from the first info dict.
             obs["level_ood_gt"] = np.array(current_level_ood_gt, dtype=bool)
             # For most policies I have seen, the greedy flag is ignored. These include
-            # random, lightning_ae, and ood.
+            # random and ood.
             action, scores, recons = policy.act(
                 obs, greedy=args.act_greedy, return_scores_and_recons=True
             )

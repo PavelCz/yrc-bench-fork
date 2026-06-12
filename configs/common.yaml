@@ -29,10 +29,6 @@ coord_policy:
         method: 'DeepSVDD'
         feature_type: 'obs'
         collect_data_agent: 'weak'
-    lightning_ae:
-        cls: LightningAEPolicy
-    mahalanobis_ae:
-        cls: MahalanobisAEPolicy
 coord_env:
     procgen:
         strong_query_cost_ratio: 0.0
@@ -186,15 +182,8 @@ algorithm:
         epoch: 100
         batch_size: 64
         feature_size: 64
-    lightning_ae:
-        cls: AutoencoderAlgorithm
-        epoch: 200
-        batch_size: 64
-        model_config_path: 'lib/pytorch_vae/configs/base_ae.yaml'
-        disable_test: False 
 gather_rollouts:
     num_rollouts: 256
     feature_type: 'obs'
     collect_data_agent: 'weak'
     rollout_dir: 'experiments/rollouts'
-    val_rollout_dir: 'experiments/val_rollouts'

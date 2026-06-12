@@ -22,7 +22,7 @@ import time
 from gather_rollouts import make_gather_env_and_agent
 
 # Algorithms that support training without threshold search.
-ALGORITHMS = ["ood", "lightning_ae"]
+ALGORITHMS = ["ood"]
 
 
 def select_level_seed_subset(all_level_seeds, requested_levels, split_name):
