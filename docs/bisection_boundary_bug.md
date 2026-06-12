@@ -34,7 +34,7 @@ search if that midpoint hits a previously-seen threshold key.
 
 ### How it manifests
 
-Reproduced on rnn smoke-test job `1132772` (commit `8ba74c6`), coinrun
+Reproduced on cluster1 smoke-test job `1132772` (commit `8ba74c6`), coinrun
 svdd-image. After the raw sampler ran 21 evaluations, the points list
 contained:
 
@@ -137,20 +137,20 @@ points pre-loaded and confirms the next bisection target is
 
 ---
 
-## 2. Reproducing the bug on rnn
+## 2. Reproducing the bug on cluster1
 
 The smoke test reproduces the exact failure mode the sampler is
 designed to handle (degenerate calibration scores, near-step AFHP
 curve on eval). It is the cheapest end-to-end check that any sampler
 patch behaves correctly.
 
-See [`docs/rnn_smoke_tests.md`](rnn_smoke_tests.md) for the generic
-rnn workflow (prerequisites, pulling, log paths, tailing, cancelling,
+See [`docs/cluster_smoke_tests.md`](cluster_smoke_tests.md) for the generic
+cluster1 workflow (prerequisites, pulling, log paths, tailing, cancelling,
 timing). The bug-specific submission is:
 
 ```bash
-ssh rnn 'cd /nas/ucb/czempin/code/goal-misgen/yrc-bench-fork \
-  && source /nas/ucb/czempin/anaconda3/etc/profile.d/conda.sh \
+ssh cluster1 'cd /path/to/cluster1/code/goal-misgen/yrc-bench-fork \
+  && source /path/to/cluster1/anaconda3/etc/profile.d/conda.sh \
   && conda activate ood-stable \
   && python scripts/run_eval.py \
        --env coinrun \
@@ -168,7 +168,7 @@ ssh rnn 'cd /nas/ucb/czempin/code/goal-misgen/yrc-bench-fork \
 ```
 
 The job name is `coinrun_svdd-image_exp0`; logs land under
-`/nas/ucb/czempin/data/goal-misgen/slurm-logs/default/debug-image-svdd-threshold/<YYYY-MM-DD>/`.
+`/path/to/cluster1/data/goal-misgen/slurm-logs/default/debug-image-svdd-threshold/<YYYY-MM-DD>/`.
 
 ### Signals to watch for in `.err`
 
@@ -206,7 +206,7 @@ In rough chronological order:
 
 The probe burns 6 evals before the dispatch decision, so the earliest
 signal that the probe selected raw expansion arrives roughly 10 minutes
-after submission (see [`rnn_smoke_tests.md`](rnn_smoke_tests.md) for
+after submission (see [`cluster_smoke_tests.md`](cluster_smoke_tests.md) for
 baseline per-eval timing).
 
 ---
@@ -296,20 +296,20 @@ Key numbers to print:
 | non-zero        | non-zero, overlap | Model has some sensitivity but does not separate themes. Aggregation change (mean / fraction-above-threshold) may help. |
 | non-zero        | non-zero, no overlap | Model works at per-frame level. Episode-max aggregation is the only thing collapsing the signal. Switching aggregation is the fix. |
 
-### Running on rnn
+### Running on cluster1
 
-Copy or rsync the script into the rnn checkout, then run it via the
+Copy or rsync the script into the cluster1 checkout, then run it via the
 generic SSH/conda wrapper documented in
-[`rnn_smoke_tests.md`](rnn_smoke_tests.md) ("Running an arbitrary script
-on rnn"). The bug-specific invocation is:
+[`cluster_smoke_tests.md`](cluster_smoke_tests.md) ("Running an arbitrary script
+on cluster1"). The bug-specific invocation is:
 
 ```bash
 python scripts/inspect_image_svdd_scores.py \
     -c configs/eval/coinrun/image_svdd.yaml \
     -en coinrun \
     -sim <weak.pth> -weak <weak.pth> -strong <strong.pth> \
-    -f_n /nas/ucb/czempin/data/goal-misgen/trained_svdd/neurips04/svdd_coinrun_image_exp0/trained.joblib \
-    -level_seeds_file /nas/ucb/czempin/data/goal-misgen/seeds/icml/0.json
+    -f_n /path/to/cluster1/data/goal-misgen/trained_svdd/neurips04/svdd_coinrun_image_exp0/trained.joblib \
+    -level_seeds_file /path/to/cluster1/data/goal-misgen/seeds/icml/0.json
 ```
 
 Run for a few thousand frames; one minute or two is enough to get a

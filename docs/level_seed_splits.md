@@ -43,11 +43,11 @@ rather than editing the canonical level seed files:
 
 ```bash
 python scripts/generate_extra_ood_train_seeds.py \
-    --existing-level-seeds /nas/ucb/czempin/data/goal-misgen/seeds/icml/0.json \
+    --existing-level-seeds /path/to/cluster1/data/goal-misgen/seeds/icml/0.json \
     --ood-train 1024 \
     --base-seed 6033 \
     --name extra_ood_train_1024 \
-    -o /nas/ucb/czempin/data/goal-misgen/seeds/extra_ood_train_1024/0.json
+    -o /path/to/cluster1/data/goal-misgen/seeds/extra_ood_train_1024/0.json
 ```
 
 The generated file has the standard `seeds` object, but only `ood_train` is
@@ -59,9 +59,9 @@ python scripts/run_gather_rollouts.py \
     --env coinrun \
     --prefix rollouts-neurips \
     --exp-ids 0 \
-    --server chai \
+    --server cluster1 \
     --num-levels all \
-    --level-seeds-file /nas/ucb/czempin/data/goal-misgen/seeds/extra_ood_train_1024/0.json
+    --level-seeds-file /path/to/cluster1/data/goal-misgen/seeds/extra_ood_train_1024/0.json
 ```
 
 ## Naming Notes

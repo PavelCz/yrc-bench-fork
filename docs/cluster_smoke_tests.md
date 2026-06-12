@@ -1,23 +1,23 @@
-# Running smoke tests on rnn
+# Running smoke tests on cluster1
 
-The `rnn` server is the primary place to run end-to-end smoke tests
+The `cluster1` server is the primary place to run end-to-end smoke tests
 against the frozen experiment conda env. Use it when you need to validate
 a sampler / eval / policy change before launching a larger sweep, or to
 run one-off diagnostic scripts against real checkpoints.
 
 ## Prerequisites
 
-- SSH access to `rnn` configured as host alias `rnn`.
+- SSH access to `cluster1` configured as host alias `cluster1`.
 - The branch under test must be pushed to `origin/ood`. Smoke jobs pull
-  from `origin/ood` on rnn before submitting.
+  from `origin/ood` on cluster1 before submitting.
 - Conda env `ood-stable` must exist at
-  `/nas/ucb/czempin/anaconda3/envs/ood-stable` (frozen experiment env).
-- The repo on rnn is at `/nas/ucb/czempin/code/goal-misgen/yrc-bench-fork`.
+  `/path/to/cluster1/anaconda3/envs/ood-stable` (frozen experiment env).
+- The repo on cluster1 is at `/path/to/cluster1/code/goal-misgen/yrc-bench-fork`.
 
 ## Pulling the latest commit
 
 ```bash
-ssh rnn 'cd /nas/ucb/czempin/code/goal-misgen/yrc-bench-fork \
+ssh cluster1 'cd /path/to/cluster1/code/goal-misgen/yrc-bench-fork \
   && git fetch origin ood \
   && git pull --ff-only \
   && git log --oneline -3'
@@ -33,8 +33,8 @@ to finish quickly while still exercising the calibration + sampler path
 end to end:
 
 ```bash
-ssh rnn 'cd /nas/ucb/czempin/code/goal-misgen/yrc-bench-fork \
-  && source /nas/ucb/czempin/anaconda3/etc/profile.d/conda.sh \
+ssh cluster1 'cd /path/to/cluster1/code/goal-misgen/yrc-bench-fork \
+  && source /path/to/cluster1/anaconda3/etc/profile.d/conda.sh \
   && conda activate ood-stable \
   && python scripts/run_eval.py \
        --env <coinrun|maze|...> \
@@ -73,8 +73,8 @@ Add `--dry-run` to preview the sbatch script without submitting.
 For a job submitted with `--prefix PFX`, the two SLURM files land at
 
 ```
-/nas/ucb/czempin/data/goal-misgen/slurm-logs/default/<PFX>/<YYYY-MM-DD>/<job_name>_<JOBID>.err
-/nas/ucb/czempin/data/goal-misgen/slurm-logs/default/<PFX>/<YYYY-MM-DD>/<job_name>_<JOBID>.out
+/path/to/cluster1/data/goal-misgen/slurm-logs/default/<PFX>/<YYYY-MM-DD>/<job_name>_<JOBID>.err
+/path/to/cluster1/data/goal-misgen/slurm-logs/default/<PFX>/<YYYY-MM-DD>/<job_name>_<JOBID>.out
 ```
 
 The `.err` file holds the per-run log (everything from `logging.info`,
@@ -90,30 +90,30 @@ block-buffered.
 ## Tailing in real time
 
 ```bash
-ssh rnn 'tail -F /nas/ucb/czempin/data/goal-misgen/slurm-logs/default/<PFX>/<YYYY-MM-DD>/<job_name>_<JOBID>.err'
+ssh cluster1 'tail -F /path/to/cluster1/data/goal-misgen/slurm-logs/default/<PFX>/<YYYY-MM-DD>/<job_name>_<JOBID>.err'
 ```
 
 ## Cancelling
 
 ```bash
-ssh rnn 'scancel <JOBID>'
+ssh cluster1 'scancel <JOBID>'
 ```
 
-## Typical timing on rnn (`ood-stable` env, single GPU)
+## Typical timing on cluster1 (`ood-stable` env, single GPU)
 
 - Calibration: about 2 minutes for 64 episodes.
 - Per evaluation (any threshold): about 1 to 2 minutes.
 
 Scale expectations with `--num-levels` and `--calibration-levels`.
 
-## Running an arbitrary script on rnn
+## Running an arbitrary script on cluster1
 
 When you need to run a one-off diagnostic rather than a full eval batch,
 reuse the same SSH/conda wrapper and call the script directly:
 
 ```bash
-ssh rnn 'cd /nas/ucb/czempin/code/goal-misgen/yrc-bench-fork \
-  && source /nas/ucb/czempin/anaconda3/etc/profile.d/conda.sh \
+ssh cluster1 'cd /path/to/cluster1/code/goal-misgen/yrc-bench-fork \
+  && source /path/to/cluster1/anaconda3/etc/profile.d/conda.sh \
   && conda activate ood-stable \
   && python <path/to/script.py> [args]'
 ```

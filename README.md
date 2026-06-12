@@ -9,7 +9,7 @@ YRC-Bench's original readme follows further down.
 ## Installation
 
 To set up the project, follow the installation steps from the original readme below.
-For the Docker-to-Apptainer workflow used on CARC, see
+For the Docker-to-Apptainer workflow used on cluster3, see
 [docs/container_workflow.md](docs/container_workflow.md).
 
 ## Reproducing the paper
@@ -48,7 +48,7 @@ Now evals can be run for all methods:
 python scripts/run_eval.py \
     --prefix icml \
     --exp-ids 0 1 2 3 \
-    --server chai \
+    --server cluster1 \
     --conda-env ood \
     --env coinrun \
     --method max-prob   

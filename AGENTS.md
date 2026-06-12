@@ -69,15 +69,15 @@ python eval_policy.py -c configs/procgen_threshold.yaml \
 python scripts/run_eval.py --env coinrun --method max-prob --exp-ids 0 1 2 3
 ```
 
-### Smoke tests on rnn
+### Smoke tests on cluster1
 
 End-to-end smoke tests against the frozen `ood-stable` env run on the
-`rnn` server via SSH + `scripts/run_eval.py`. See
-[`docs/rnn_smoke_tests.md`](docs/rnn_smoke_tests.md) for the full
+`cluster1` server via SSH + `scripts/run_eval.py`. See
+[`docs/cluster_smoke_tests.md`](docs/cluster_smoke_tests.md) for the full
 workflow: prerequisites, pulling the latest commit, submitting a job,
-log paths under `/nas/ucb/czempin/data/goal-misgen/slurm-logs/`, tailing
+log paths under `/path/to/cluster1/data/goal-misgen/slurm-logs/`, tailing
 in real time, cancelling, and baseline timing. The same SSH/conda
-wrapper is used for one-off diagnostic scripts on rnn.
+wrapper is used for one-off diagnostic scripts on cluster1.
 
 ### Analysis
 ```bash

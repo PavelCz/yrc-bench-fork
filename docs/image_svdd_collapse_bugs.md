@@ -3,7 +3,7 @@
 ## Context
 
 While debugging the image-SVDD checkpoint
-`/nas/ucb/czempin/data/goal-misgen/trained_svdd/neurips04/svdd_coinrun_image_exp0/trained.joblib`,
+`/path/to/cluster1/data/goal-misgen/trained_svdd/neurips04/svdd_coinrun_image_exp0/trained.joblib`,
 we observed that `clf.decision_function` returns the constant
 `0.32000002264977` for every input tried:
 
