@@ -1,4 +1,4 @@
-FROM docker.io/pavelcz/yrc-bench-procgen-base:py38-cu121
+FROM docker.io/anonymous/yrc-bench-procgen-base:py38-cu121
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 ENV PIP_NO_CACHE_DIR=1
