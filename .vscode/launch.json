@@ -40,7 +40,7 @@
             "justMyCode": true,
             "cwd": "${workspaceFolder}",
             "env": {
-                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+                "SM_OUTPUT_DIR": "/home/user/data/goal-misgen/tmp/experiments"
             }
         },
         {
@@ -83,7 +83,7 @@
             "justMyCode": true,
             "cwd": "${workspaceFolder}",
             "env": {
-                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+                "SM_OUTPUT_DIR": "/home/user/data/goal-misgen/tmp/experiments"
             }
         },
         {
@@ -126,7 +126,7 @@
             "justMyCode": true,
             "cwd": "${workspaceFolder}",
             "env": {
-                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+                "SM_OUTPUT_DIR": "/home/user/data/goal-misgen/tmp/experiments"
             }
         },
         {
@@ -169,7 +169,7 @@
             "justMyCode": true,
             "cwd": "${workspaceFolder}",
             "env": {
-                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+                "SM_OUTPUT_DIR": "/home/user/data/goal-misgen/tmp/experiments"
             }
         },
         {
@@ -206,7 +206,7 @@
             "justMyCode": true,
             "cwd": "${workspaceFolder}",
             "env": {
-                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+                "SM_OUTPUT_DIR": "/home/user/data/goal-misgen/tmp/experiments"
             }
         },
         {
@@ -245,7 +245,7 @@
             "justMyCode": true,
             "cwd": "${workspaceFolder}",
             "env": {
-                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+                "SM_OUTPUT_DIR": "/home/user/data/goal-misgen/tmp/experiments"
             }
         },
         {
@@ -290,7 +290,7 @@
             "justMyCode": true,
             "cwd": "${workspaceFolder}",
             "env": {
-                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+                "SM_OUTPUT_DIR": "/home/user/data/goal-misgen/tmp/experiments"
             }
         },
         {
@@ -339,7 +339,7 @@
             "justMyCode": true,
             "cwd": "${workspaceFolder}",
             "env": {
-                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+                "SM_OUTPUT_DIR": "/home/user/data/goal-misgen/tmp/experiments"
             }
         },
         {
@@ -380,7 +380,7 @@
             "justMyCode": true,
             "cwd": "${workspaceFolder}",
             "env": {
-                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+                "SM_OUTPUT_DIR": "/home/user/data/goal-misgen/tmp/experiments"
             }
         },
         {
@@ -421,7 +421,7 @@
             "justMyCode": true,
             "cwd": "${workspaceFolder}",
             "env": {
-                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+                "SM_OUTPUT_DIR": "/home/user/data/goal-misgen/tmp/experiments"
             }
         },
         {
@@ -469,7 +469,7 @@
             "justMyCode": true,
             "cwd": "${workspaceFolder}",
             "env": {
-                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+                "SM_OUTPUT_DIR": "/home/user/data/goal-misgen/tmp/experiments"
             }
         },
         {
@@ -526,7 +526,7 @@
             "justMyCode": true,
             "cwd": "${workspaceFolder}",
             "env": {
-                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+                "SM_OUTPUT_DIR": "/home/user/data/goal-misgen/tmp/experiments"
             }
         },
         {
@@ -579,7 +579,7 @@
             "justMyCode": true,
             "cwd": "${workspaceFolder}",
             "env": {
-                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+                "SM_OUTPUT_DIR": "/home/user/data/goal-misgen/tmp/experiments"
             }
         },
         {
@@ -623,7 +623,7 @@
             "justMyCode": true,
             "cwd": "${workspaceFolder}",
             "env": {
-                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+                "SM_OUTPUT_DIR": "/home/user/data/goal-misgen/tmp/experiments"
             }
         },
         {
@@ -645,7 +645,7 @@
             "module": "analyzing.coinrun_counterfactual_analysis",
             "args": [
                 "--weak_agent_path",
-                "/home/pavel/data/goal-misgen/policy/coinrun_hard_bg/model_200015872.pth",
+                "/home/user/data/goal-misgen/policy/coinrun_hard_bg/model_200015872.pth",
             ],
             "console": "integratedTerminal",
             "justMyCode": true,
@@ -684,7 +684,7 @@
             "justMyCode": true,
             "cwd": "${workspaceFolder}",
             "env": {
-                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+                "SM_OUTPUT_DIR": "/home/user/data/goal-misgen/tmp/experiments"
             }
         },
         {
@@ -720,7 +720,7 @@
             "justMyCode": true,
             "cwd": "${workspaceFolder}",
             "env": {
-                "SM_OUTPUT_DIR": "/home/pavel/data/goal-misgen/tmp/experiments"
+                "SM_OUTPUT_DIR": "/home/user/data/goal-misgen/tmp/experiments"
             }
         }
     ]

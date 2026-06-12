@@ -110,7 +110,7 @@ def main():
     parser.add_argument(
         "--csv_path",
         type=str,
-        default="/home/pavel/data/goal-misgen/policy/train/coinrun/coinrun_hard_bg/2025-08-22__23-20-39__seed_6033/log-append.csv",
+        default="/home/user/data/goal-misgen/policy/train/coinrun/coinrun_hard_bg/2025-08-22__23-20-39__seed_6033/log-append.csv",
         help="Path to the CSV file containing training logs",
     )
     parser.add_argument(

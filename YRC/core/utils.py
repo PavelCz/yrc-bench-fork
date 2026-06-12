@@ -25,9 +25,9 @@ def to_tensor(data):
     if isinstance(data, tuple):
         return data
     if not torch.is_tensor(data):
-        # (pavel 2025-06-11) I removed the to device call since we don't want our
+        # (2025-06-11) The to-device call was removed since we don't want our
         # training dataset to be fully moved to the GPU by default. If this breaks
-        # something somewhere else, I might have to reconsider this.
+        # something somewhere else, this might have to be reconsidered.
         return torch.from_numpy(data).float()  # .to(self.device)
     return data
 
