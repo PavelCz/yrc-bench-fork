@@ -47,7 +47,7 @@ def configure_matplotlib_backend(save_path: Optional[str]) -> None:
         ) from exc
 
 
-# Method display names mapping (same as icml_plot.py)
+# Method display names mapping (same as paper_plot.py)
 METHOD_NAMES = {
     "max_prob": "MaxProb",
     "max_logit": "MaxLogit",

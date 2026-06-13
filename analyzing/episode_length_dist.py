@@ -2,7 +2,7 @@
 """
 Script to plot episode length distributions for ID vs OOD levels.
 
-Uses similar data loading infrastructure to icml_plot.py.
+Uses similar data loading infrastructure to paper_plot.py.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
-from analyzing.icml_plot import extract_icml_results
+from analyzing.paper_plot import extract_icml_results
 from analyzing.plotting_common import (
     setup_plot_style,
     style_plot_for_publication,

@@ -1,10 +1,5 @@
 # Explanation of the files in this directory
 
-## `yrc_bench`
-
-This directory contains the analysis code for the YRC benchmark.
-Kept here for reference.
-
 ## `afhp_plot.py`
 
 Plot the AFHP -> performance curve.
