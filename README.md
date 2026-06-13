@@ -28,16 +28,16 @@ Similarly, `generate_ensemble_seeds.py` creates seeds for ensemble policies that
 Train RL policies by running the following for `coinrun` and `maze`, for all 4 experiment ids:
 
 ```
-./scripts/train_policies.sh --env heist --experiment 0
+./scripts/train_policies.sh --env coinrun --experiment 0
 ```
 
 Train ensemble policies by running the following for `coinrun` and `maze`, for all 4 experiment ids:
 
 ```
-./scripts/train_ensemble_policies.sh --env heist --experiment 0
+./scripts/train_ensemble_policies.sh --env coinrun --experiment 0
 ```
 
-Use `run_gather_results.py` to gather results for the DeepSVDD methods.
+Use `run_gather_rollouts.py` to gather rollouts for the DeepSVDD methods.
 
 Use `run_svdd_train.py` to train DeepSVDD policies.
 
