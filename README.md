@@ -86,7 +86,7 @@ python -m analyzing.episode_length_dist      --eval_dir /path/to/evals     --env
 
 (You need to specify a method so the script knows where to grab the data, but the results are the same for all the methods since we only calculate level lengths for the weak agent, which is equivalent to AFHP = 0.)
 
-## Original YRC-Bench Readme
+## Original YRC-Bench Readme (kept for reference, but many parts will be outdated)
 
 <p align="center">
     <img src="configs/assets/pipeline.png" width="900" height="350">
