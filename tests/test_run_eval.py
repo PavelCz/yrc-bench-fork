@@ -205,7 +205,7 @@ def test_svdd_model_path_uses_training_prefix(tmp_path):
     )
 
 
-def test_svdd_default_prefix_is_neurips04():
+def test_svdd_default_prefix_is_neurips05():
     expected = run_eval.get_svdd_expected_model_path(
         "coinrun",
         0,
@@ -214,10 +214,10 @@ def test_svdd_default_prefix_is_neurips04():
         run_eval.EVAL_DEFAULTS["svdd_prefix"],
     )
 
-    assert run_eval.EVAL_DEFAULTS["svdd_prefix"] == "neurips04"
+    assert run_eval.EVAL_DEFAULTS["svdd_prefix"] == "neurips05"
     assert expected == Path(
         "/nas/ucb/czempin/data/goal-misgen/trained_svdd/"
-        "neurips04/svdd_coinrun_image_exp0/trained.joblib"
+        "neurips05/svdd_coinrun_image_exp0/trained.joblib"
     )
 
 
