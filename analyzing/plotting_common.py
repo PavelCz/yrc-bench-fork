@@ -156,7 +156,7 @@ def format_label(method: str, paper_mode: bool, n_experiments: Optional[int] = N
         Formatted label string
     """
     # Get display name. METHOD_NAMES is keyed in a mix of snake and kebab
-    # case; callers (e.g. plot_ood_rate.py, icml_plot.py) canonicalize their
+    # case; callers (e.g. plot_ood_rate.py, paper_plot.py) canonicalize their
     # method names to kebab-case, so we also try the snake-cased equivalent
     # to keep the `\textsc{...}` pretty-name lookup working in both cases.
     label = METHOD_NAMES.get(

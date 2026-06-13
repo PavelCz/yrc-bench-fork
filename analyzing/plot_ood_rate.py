@@ -216,7 +216,7 @@ def extract_icml_results(
         Dictionary mapping method names to dict of {exp_id: result_file_path}
     """
     results: Dict[str, Dict[int, Path]] = defaultdict(dict)
-    # Match icml_plot behavior: when multiple prefixes provide the same
+    # Match paper_plot behavior: when multiple prefixes provide the same
     # canonical method and experiment id, keep the newest timestamped run.
     latest_run_dir_name: Dict[Tuple[str, int], str] = {}
 

@@ -88,7 +88,7 @@ python analyzing/yrc_bench/parse.py
 python analyzing/yrc_bench/aggregate.py
 
 # Generate plots
-python -m analyzing.icml_plot --eval_dir PATH/TO/EVALS --env coinrun
+python -m analyzing.paper_plot --eval_dir PATH/TO/EVALS --env coinrun
 ```
 
 ### Installation
