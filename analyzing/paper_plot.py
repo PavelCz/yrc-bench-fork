@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Script to plot ICML evaluation results with aggregation across experiments.
+Script to plot dummy evaluation results with aggregation across experiments.
 
 Handles directory structure like:
-    imcl04_coinrun_exp0/
-    imcl04_coinrun_exp1/
-    imcl04_maze_exp0/
-    imcl04_robust400_maze_exp0/
+    dummy04_coinrun_exp0/
+    dummy04_coinrun_exp1/
+    dummy04_maze_exp0/
+    dummy04_robust400_maze_exp0/
     ...
 
 Aggregates results for the same method across different experiment IDs,
@@ -107,7 +107,7 @@ def parse_robust_experiment_dir(
     Parse robust experiment directory names.
 
     Expected format: {prefix}_robust{200,400}_{env}_exp{id}
-    Example: icml04_robust400_maze_exp0
+    Example: dummy04_robust400_maze_exp0
 
     Returns:
         Tuple of (base_prefix, robust_variant, env, exp_id), or None.
@@ -128,7 +128,7 @@ def parse_experiment_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
     Parse experiment directory name to extract prefix, env, and experiment ID.
 
     Expected format: {prefix}_{env}_exp{id}
-    Examples: imcl04_coinrun_exp0, imcl04_maze_proxy_fail_exp1
+    Examples: dummy04_coinrun_exp0, dummy04_maze_proxy_fail_exp1
 
     Returns:
         Tuple of (prefix, env, exp_id) or None if pattern doesn't match
@@ -424,13 +424,13 @@ def parse_method_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
     return None
 
 
-def extract_icml_results(
+def extract_dummy_results(
     eval_dir: Path,
     prefix_filter: Optional[List[str]] = None,
     env_filter: Optional[str] = None,
 ) -> Dict[str, Dict[int, Path]]:
     """
-    Extract evaluation results from ICML directory structure.
+    Extract evaluation results from dummy directory structure.
 
     Args:
         eval_dir: Directory containing evaluation results
@@ -1097,7 +1097,7 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
     print("-" * sep_width)
 
 
-def plot_icml_results(
+def plot_dummy_results(
     eval_dir: Path,
     prefix_filter: Optional[List[str]],
     env_filter: Optional[str],
@@ -1121,7 +1121,7 @@ def plot_icml_results(
     show_accuracy: bool = False,
 ):
     """
-    Plot ICML results with aggregation across experiments.
+    Plot dummy results with aggregation across experiments.
 
     Args:
         eval_dir: Directory containing evaluation results
@@ -1141,7 +1141,7 @@ def plot_icml_results(
         paper_mode: If True, remove title and n=X from labels for paper figures
         calculate_auc: If True, calculate and display AUC for each method
     """
-    results = extract_icml_results(eval_dir, prefix_filter, env_filter)
+    results = extract_dummy_results(eval_dir, prefix_filter, env_filter)
 
     if not results:
         print("No results found matching the filters.")
@@ -1686,7 +1686,7 @@ def list_available_methods(
     robust_filter: str = "all",
 ):
     """List available methods and their experiment coverage."""
-    results = extract_icml_results(eval_dir, prefix_filter, env_filter)
+    results = extract_dummy_results(eval_dir, prefix_filter, env_filter)
 
     if not results:
         print("No results found matching the filters.")
@@ -1707,7 +1707,7 @@ def list_available_methods(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Plot ICML evaluation results with aggregation across experiments"
+        description="Plot dummy evaluation results with aggregation across experiments"
     )
     parser.add_argument(
         "--eval_dir",
@@ -1720,7 +1720,7 @@ def main():
         type=str,
         nargs="+",
         default=None,
-        help="Prefix filter(s) for experiment directories (e.g., 'icml04' or 'icml04 icml05')",
+        help="Prefix filter(s) for experiment directories (e.g., 'dummy04' or 'dummy04 dummy05')",
     )
     parser.add_argument(
         "--env",
@@ -1890,7 +1890,7 @@ def main():
     if args.method_order:
         method_order = [m.strip() for m in args.method_order.split(",")]
 
-    plot_icml_results(
+    plot_dummy_results(
         eval_dir=eval_dir,
         prefix_filter=args.prefix,
         env_filter=args.env,

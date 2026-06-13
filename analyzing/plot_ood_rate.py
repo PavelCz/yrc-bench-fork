@@ -199,13 +199,13 @@ def parse_method_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
     return None
 
 
-def extract_icml_results(
+def extract_dummy_results(
     eval_dir: Path,
     prefix_filter: Optional[List[str]] = None,
     env_filter: Optional[str] = None,
 ) -> Dict[str, Dict[int, Path]]:
     """
-    Extract evaluation results from ICML directory structure.
+    Extract evaluation results from dummy directory structure.
 
     Args:
         eval_dir: Directory containing evaluation results
@@ -1214,7 +1214,7 @@ def plot_ood_rate_main():
         type=str,
         nargs="+",
         default=None,
-        help="Prefix filter(s) for experiment directories (e.g., 'icml04' or 'icml04 icml05')",
+        help="Prefix filter(s) for experiment directories (e.g., 'dummy04' or 'dummy04 dummy05')",
     )
     parser.add_argument(
         "--env",
@@ -1310,9 +1310,9 @@ def plot_ood_rate_main():
 
     eval_dir = Path(args.eval_dir)
 
-    # Extract all runs using ICML directory structure
+    # Extract all runs using dummy directory structure
     print("Extracting available runs...")
-    results = extract_icml_results(eval_dir, args.prefix, args.env)
+    results = extract_dummy_results(eval_dir, args.prefix, args.env)
 
     if not results:
         print("No runs found!")

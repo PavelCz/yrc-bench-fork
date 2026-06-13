@@ -57,7 +57,7 @@ TRAIN_DEFAULTS = {
     "cp_method": "DeepSVDD",
     "num_rollouts": 64,
     "query_cost": 0,
-    "rollouts_prefix": "neurips03",
+    "rollouts_prefix": "dummy03",
     "rollout_max_levels": 1024,
     "svdd_val_levels": 64,
 }

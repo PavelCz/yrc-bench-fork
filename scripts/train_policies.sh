@@ -7,8 +7,8 @@ TRAIN_DIR="${PROJECT_ROOT}/lib/train-procgen-pytorch"
 
 # Default configuration
 CONDA_ENV="ood-stable"
-EXP_PREFIX="icml2"
-LEVEL_SEEDS_FOLDER="/path/to/cluster1/data/goal-misgen/seeds/icml"
+EXP_PREFIX="dummy2"
+LEVEL_SEEDS_FOLDER="/path/to/cluster1/data/goal-misgen/seeds/dummy"
 LOG_DIR="/path/to/cluster1/data/goal-misgen/logs/train_policies"
 RANDOM_PERCENTS=(0 50 100)
 

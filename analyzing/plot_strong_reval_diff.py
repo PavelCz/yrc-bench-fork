@@ -68,7 +68,7 @@ def parse_experiment_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
     Parse experiment directory name to extract prefix, env, and experiment ID.
 
     Expected format: {prefix}_{env}_exp{id}
-    Examples: imcl04_coinrun_exp0, imcl04_maze_exp1
+    Examples: dummy04_coinrun_exp0, dummy04_maze_exp1
 
     Returns:
         Tuple of (prefix, env, exp_id) or None if pattern doesn't match
@@ -1034,7 +1034,7 @@ def main():
         type=str,
         nargs="+",
         default=None,
-        help="Prefix filter(s) for experiment directories (e.g., 'icml04' or 'icml04 icml05')",
+        help="Prefix filter(s) for experiment directories (e.g., 'dummy04' or 'dummy04 dummy05')",
     )
     parser.add_argument(
         "--env",

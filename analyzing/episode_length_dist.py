@@ -15,7 +15,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
-from analyzing.paper_plot import extract_icml_results
+from analyzing.paper_plot import extract_dummy_results
 from analyzing.plotting_common import (
     setup_plot_style,
     style_plot_for_publication,
@@ -33,7 +33,7 @@ def extract_episode_lengths_by_ood_status(
     Extract episode lengths separated by OOD ground truth status.
 
     Args:
-        results: Dictionary from extract_icml_results
+        results: Dictionary from extract_dummy_results
         method: Method name to extract data for
         threshold_idx: If provided, use specific threshold index.
                       If None, uses all thresholds.
@@ -111,7 +111,7 @@ def plot_episode_length_distribution(
         title: Custom title for the plot
         paper_mode: If True, use paper-ready styling
     """
-    results = extract_icml_results(eval_dir, prefix_filter, env_filter)
+    results = extract_dummy_results(eval_dir, prefix_filter, env_filter)
 
     if not results:
         print("No results found matching the filters.")
@@ -231,7 +231,7 @@ def list_available_methods(
     eval_dir: Path, prefix_filter: Optional[List[str]], env_filter: Optional[str]
 ):
     """List available methods."""
-    results = extract_icml_results(eval_dir, prefix_filter, env_filter)
+    results = extract_dummy_results(eval_dir, prefix_filter, env_filter)
 
     if not results:
         print("No results found matching the filters.")
@@ -259,7 +259,7 @@ def main():
         "--prefix",
         type=str,
         default=None,
-        help="Prefix filter for experiment directories (e.g., 'icml04')",
+        help="Prefix filter for experiment directories (e.g., 'dummy04')",
     )
     parser.add_argument(
         "--env",

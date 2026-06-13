@@ -7,8 +7,8 @@ TRAIN_DIR="${PROJECT_ROOT}/lib/train-procgen-pytorch"
 
 # Default configuration
 CONDA_ENV="ood-stable"
-EXP_PREFIX="icml2_ensemble"
-LEVEL_SEEDS_FOLDER="/path/to/cluster1/data/goal-misgen/seeds/icml"
+EXP_PREFIX="dummy2_ensemble"
+LEVEL_SEEDS_FOLDER="/path/to/cluster1/data/goal-misgen/seeds/dummy"
 LOG_DIR="/path/to/cluster1/data/goal-misgen/logs/train_ensemble_policies"
 NUM_ENSEMBLE_MEMBERS=4
 

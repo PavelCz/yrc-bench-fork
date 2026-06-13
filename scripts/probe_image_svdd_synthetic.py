@@ -14,7 +14,7 @@ collapse is theme-specific to procgen rather than a true network collapse.
 Run on a GPU node (the checkpoint pickles cuda tensors). Example::
 
     python scripts/probe_image_svdd_synthetic.py \\
-        /path/to/cluster1/data/goal-misgen/trained_svdd/neurips04/svdd_coinrun_image_exp0/trained.joblib
+        /path/to/cluster1/data/goal-misgen/trained_svdd/dummy04/svdd_coinrun_image_exp0/trained.joblib
 """
 
 import argparse

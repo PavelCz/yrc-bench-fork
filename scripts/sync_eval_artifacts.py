@@ -27,7 +27,7 @@ ARTIFACT_ENVS = {
     "maze_proxy_fail": "maze",
 }
 EVAL_ENVS = ["maze", "coinrun", "coinrun_proxy_fail", "maze_proxy_fail"]
-DEFAULT_SVDD_PREFIX = "neurips04"
+DEFAULT_SVDD_PREFIX = "dummy04"
 DEFAULT_NUM_ENSEMBLE_MEMBERS = 4
 EXPECTED_TIMESTEPS = 200015872
 
@@ -171,7 +171,7 @@ def resolve_acting_checkpoint(
     pct: int,
 ) -> Optional[Path]:
     env_folder = get_env_folder(env)
-    parent = checkpoint_base / env_folder / f"icml2_{env}_exp{exp_id}_{pct}p"
+    parent = checkpoint_base / env_folder / f"dummy2_{env}_exp{exp_id}_{pct}p"
     ts_dir = resolver.newest_timestamp_dir(parent)
     if ts_dir is None:
         print(f"Warning: missing timestamp dir: {resolver.host}:{parent}")
@@ -194,7 +194,7 @@ def resolve_ensemble_member(
         checkpoint_base
         / env_folder
         / "ensembles"
-        / f"icml2_ensemble_{env}_exp{exp_id}_m{member_id}"
+        / f"dummy2_ensemble_{env}_exp{exp_id}_m{member_id}"
     )
     ts_dir = resolver.newest_timestamp_dir(parent)
     if ts_dir is None:
@@ -258,9 +258,9 @@ def build_sync_items(args: argparse.Namespace) -> list[SyncItem]:
         else:
             robust_parent = (
                 source_policy_base
-                / "neurips"
+                / "dummy"
                 / "maze_afh_random_start"
-                / f"icml2_maze_exp{exp_id}_50p_random_start"
+                / f"dummy2_maze_exp{exp_id}_50p_random_start"
             )
             robust_ts_dir = resolver.newest_timestamp_dir(robust_parent)
             if robust_ts_dir is None:

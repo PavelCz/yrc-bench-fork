@@ -17,25 +17,25 @@ EXP_ID_TO_SEED = {
 
 SERVER_PATHS = {
     "cluster1": {
-        "checkpoint_base": "/path/to/cluster1/data/goal-misgen/policy/icml",
+        "checkpoint_base": "/path/to/cluster1/data/goal-misgen/policy/dummy",
         "rollouts_base": "/path/to/cluster1/data/goal-misgen/rollouts",
-        "seeds_base": "/path/to/cluster1/data/goal-misgen/seeds/icml",
+        "seeds_base": "/path/to/cluster1/data/goal-misgen/seeds/dummy",
         "svdd_base": "/path/to/cluster1/data/goal-misgen/trained_svdd",
         "log_base": "/path/to/cluster1/data/goal-misgen/slurm-logs",
         "evals_base": "/path/to/cluster1/data/goal-misgen/experiments/evals",
     },
     "cluster2": {
-        "checkpoint_base": "/path/to/cluster2/data/goal-misgen/policy/icml",
+        "checkpoint_base": "/path/to/cluster2/data/goal-misgen/policy/dummy",
         "rollouts_base": "/path/to/cluster2/data/goal-misgen/rollouts",
-        "seeds_base": "/path/to/cluster2/data/goal-misgen/seeds/icml",
+        "seeds_base": "/path/to/cluster2/data/goal-misgen/seeds/dummy",
         "svdd_base": "/path/to/cluster2/data/goal-misgen/trained_svdd",
         "log_base": "/path/to/cluster2/data/goal-misgen/slurm-logs",
         "evals_base": "/path/to/cluster2/data/goal-misgen/experiments/evals",
     },
     "cluster3": {
-        "checkpoint_base": "/path/to/cluster3/data/goal-misgen/policy/icml",
+        "checkpoint_base": "/path/to/cluster3/data/goal-misgen/policy/dummy",
         "rollouts_base": "/path/to/cluster3/data/goal-misgen/rollouts",
-        "seeds_base": "/path/to/cluster3/data/goal-misgen/seeds/icml",
+        "seeds_base": "/path/to/cluster3/data/goal-misgen/seeds/dummy",
         "svdd_base": "/path/to/cluster3/data/goal-misgen/trained_svdd",
         "log_base": "/path/to/cluster3/data/goal-misgen/slurm-logs",
         "evals_base": "/path/to/cluster3/data/goal-misgen/experiments/evals",
@@ -152,8 +152,8 @@ def get_checkpoints(env: str, exp_id: int, checkpoint_base_path: str) -> dict:
     env_folder = get_env_folder(env)
     base_path = Path(checkpoint_base_path) / env_folder
 
-    weak_parent = base_path / f"icml2_{env}_exp{exp_id}_0p"
-    strong_parent = base_path / f"icml2_{env}_exp{exp_id}_50p"
+    weak_parent = base_path / f"dummy2_{env}_exp{exp_id}_0p"
+    strong_parent = base_path / f"dummy2_{env}_exp{exp_id}_50p"
 
     weak_ts_dir = find_newest_timestamp_dir(weak_parent)
     strong_ts_dir = find_newest_timestamp_dir(strong_parent)
@@ -176,9 +176,9 @@ def get_robust_maze_strong_checkpoint(
     policy_base_path = Path(checkpoint_base_path).parent
     robust_parent = (
         policy_base_path
-        / "neurips"
+        / "dummy"
         / "maze_afh_random_start"
-        / f"icml2_maze_exp{exp_id}_50p_random_start"
+        / f"dummy2_maze_exp{exp_id}_50p_random_start"
     )
     robust_ts_dir = find_newest_timestamp_dir(robust_parent)
     if robust_ts_dir is None:
@@ -198,7 +198,7 @@ def get_strong_checkpoint(
     env_folder = get_env_folder(env)
     base_path = Path(checkpoint_base_path) / env_folder
 
-    strong_parent = base_path / f"icml2_{env}_exp{exp_id}_50p"
+    strong_parent = base_path / f"dummy2_{env}_exp{exp_id}_50p"
     strong_ts_dir = find_newest_timestamp_dir(
         strong_parent, allow_compact_timestamp=allow_compact_timestamp
     )

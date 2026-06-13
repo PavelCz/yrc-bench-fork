@@ -36,7 +36,7 @@ GATHER_DEFAULTS = {
     "use_bg": True,
     "query_cost": 0,
     "rollout_chunk_size": None,
-    "level_seeds_dir_name": "neurips_extra_ood_train_1024",
+    "level_seeds_dir_name": "dummy_extra_ood_train_1024",
 }
 
 
@@ -206,7 +206,7 @@ def main():
         default=None,
         help=(
             "Override the directory containing {exp_id}.json level seed files. "
-            "Defaults to the selected server's neurips_extra_ood_train_1024 "
+            "Defaults to the selected server's dummy_extra_ood_train_1024 "
             "seed directory."
         ),
     )

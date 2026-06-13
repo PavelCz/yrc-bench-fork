@@ -50,7 +50,7 @@ EVAL_DEFAULTS = {
     "video_logging_mode": "folder",
     "video_filter_mode": "any",
     "coverage_fraction": 0.05,
-    "svdd_prefix": "neurips05",
+    "svdd_prefix": "dummy05",
 }
 
 # Default number of ensemble members (excluding weak agent which is added automatically)
@@ -152,7 +152,7 @@ def get_ensemble_member_paths(
     """Get paths to ensemble member checkpoints.
 
     Ensemble members are stored at:
-    {checkpoint_base}/ensembles/icml2_ensemble_{env}_exp{id}_m{member_id}/...
+    {checkpoint_base}/ensembles/dummy2_ensemble_{env}_exp{id}_m{member_id}/...
 
     Args:
         env: Environment name (maze, coinrun)
@@ -168,7 +168,7 @@ def get_ensemble_member_paths(
 
     member_paths = []
     for member_id in range(num_members):
-        member_parent = base_path / f"icml2_ensemble_{env}_exp{exp_id}_m{member_id}"
+        member_parent = base_path / f"dummy2_ensemble_{env}_exp{exp_id}_m{member_id}"
         member_ts_dir = find_newest_timestamp_dir(member_parent)
         member_model = (
             find_best_model_checkpoint(member_ts_dir) if member_ts_dir else None
@@ -1037,7 +1037,7 @@ def main():
                     env_folder = get_env_folder(artifact_env)
                     print(
                         f"Warning: exp{exp_id} ensemble member m{i} not found at "
-                        f"{checkpoint_base_path}/{env_folder}/ensembles/icml2_ensemble_{artifact_env}_exp{exp_id}_m{i}/"
+                        f"{checkpoint_base_path}/{env_folder}/ensembles/dummy2_ensemble_{artifact_env}_exp{exp_id}_m{i}/"
                     )
                     missing = True
 

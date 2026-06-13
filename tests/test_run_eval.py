@@ -188,24 +188,24 @@ def test_chunk_job_specs_handles_non_multiple_counts():
 
 
 def test_svdd_model_path_uses_training_prefix(tmp_path):
-    model_file = tmp_path / "neurips02" / "svdd_coinrun_image_exp0" / "trained.joblib"
+    model_file = tmp_path / "dummy02" / "svdd_coinrun_image_exp0" / "trained.joblib"
     model_file.parent.mkdir(parents=True)
     model_file.write_text("model")
 
     resolved = run_eval.get_svdd_model_path(
-        "coinrun", 0, "svdd-image", str(tmp_path), "neurips02"
+        "coinrun", 0, "svdd-image", str(tmp_path), "dummy02"
     )
 
     assert resolved == str(model_file)
     assert (
         run_eval.get_svdd_expected_model_path(
-            "coinrun", 0, "svdd-image", str(tmp_path), "neurips02"
+            "coinrun", 0, "svdd-image", str(tmp_path), "dummy02"
         )
         == model_file
     )
 
 
-def test_svdd_default_prefix_is_neurips05():
+def test_svdd_default_prefix_is_dummy05():
     expected = run_eval.get_svdd_expected_model_path(
         "coinrun",
         0,
@@ -214,10 +214,10 @@ def test_svdd_default_prefix_is_neurips05():
         run_eval.EVAL_DEFAULTS["svdd_prefix"],
     )
 
-    assert run_eval.EVAL_DEFAULTS["svdd_prefix"] == "neurips05"
+    assert run_eval.EVAL_DEFAULTS["svdd_prefix"] == "dummy05"
     assert expected == Path(
         "/path/to/cluster1/data/goal-misgen/trained_svdd/"
-        "neurips05/svdd_coinrun_image_exp0/trained.joblib"
+        "dummy05/svdd_coinrun_image_exp0/trained.joblib"
     )
 
 

@@ -302,9 +302,9 @@ def test_run_svdd_train_default_rollout_dir_matches_gather_output_layout():
         "coinrun", 0, "/rollouts", run_svdd_train.TRAIN_DEFAULTS["rollouts_prefix"]
     )
 
-    assert run_svdd_train.TRAIN_DEFAULTS["rollouts_prefix"] == "neurips03"
+    assert run_svdd_train.TRAIN_DEFAULTS["rollouts_prefix"] == "dummy03"
     assert run_svdd_train.TRAIN_DEFAULTS["rollout_max_levels"] == 1024
-    assert rollout_dir == "/rollouts/neurips03/coinrun/gather_coinrun_exp0"
+    assert rollout_dir == "/rollouts/dummy03/coinrun/gather_coinrun_exp0"
 
 
 def test_run_svdd_train_expected_model_path_includes_prefix():
@@ -315,14 +315,14 @@ def test_run_svdd_train_expected_model_path_includes_prefix():
     finally:
         sys.path.pop(0)
 
-    output_dir = run_svdd_train.get_svdd_output_dir("/trained_svdd", "neurips02")
+    output_dir = run_svdd_train.get_svdd_output_dir("/trained_svdd", "dummy02")
     model_file = run_svdd_train.get_expected_model_file(
         output_dir, "svdd_coinrun_image_exp0"
     )
 
-    assert output_dir == Path("/trained_svdd/neurips02")
+    assert output_dir == Path("/trained_svdd/dummy02")
     assert model_file == Path(
-        "/trained_svdd/neurips02/svdd_coinrun_image_exp0/trained.joblib"
+        "/trained_svdd/dummy02/svdd_coinrun_image_exp0/trained.joblib"
     )
 
 
@@ -335,7 +335,7 @@ def test_run_gather_rollouts_exports_prefixed_rollout_output_dir():
         sys.path.pop(0)
 
     output_dir = run_gather_rollouts.get_rollout_output_dir(
-        "/rollouts", "rollouts-neurips", "coinrun"
+        "/rollouts", "rollouts-dummy", "coinrun"
     )
     command = run_gather_rollouts.build_sbatch_command(
         "job",
@@ -343,7 +343,7 @@ def test_run_gather_rollouts_exports_prefixed_rollout_output_dir():
             "wandb_mode": "offline",
             "config": "configs/procgen_gather.yaml",
             "name": "gather_coinrun_exp0",
-            "experiment_group": "rollouts-neurips_coinrun_exp0",
+            "experiment_group": "rollouts-dummy_coinrun_exp0",
             "env_name": "coinrun",
             "random_percent": 0,
             "sim": "sim.pth",
@@ -359,8 +359,8 @@ def test_run_gather_rollouts_exports_prefixed_rollout_output_dir():
         },
     )
 
-    assert output_dir == Path("/rollouts/rollouts-neurips/coinrun")
-    assert 'export SM_OUTPUT_DIR="/rollouts/rollouts-neurips/coinrun"' in command
+    assert output_dir == Path("/rollouts/rollouts-dummy/coinrun")
+    assert 'export SM_OUTPUT_DIR="/rollouts/rollouts-dummy/coinrun"' in command
     assert "-rollout_chunk_size" not in command
 
 
@@ -391,7 +391,7 @@ def test_run_gather_rollouts_rejects_plain_maze_procgen_env():
                 "wandb_mode": "offline",
                 "config": "configs/procgen_gather.yaml",
                 "name": "gather_maze_exp0",
-                "experiment_group": "rollouts-neurips_maze_exp0",
+                "experiment_group": "rollouts-dummy_maze_exp0",
                 "env_name": "maze",
                 "random_percent": 0,
                 "sim": "sim.pth",
@@ -403,12 +403,12 @@ def test_run_gather_rollouts_rejects_plain_maze_procgen_env():
                 "query_cost": 0,
                 "rollout_levels": None,
                 "rollout_chunk_size": None,
-                "output_dir": "/rollouts/rollouts-neurips/maze",
+                "output_dir": "/rollouts/rollouts-dummy/maze",
             },
         )
 
 
-def test_run_gather_rollouts_defaults_to_neurips_extra_seed_dir():
+def test_run_gather_rollouts_defaults_to_dummy_extra_seed_dir():
     scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
     sys.path.insert(0, str(scripts_dir))
     try:
@@ -417,11 +417,11 @@ def test_run_gather_rollouts_defaults_to_neurips_extra_seed_dir():
         sys.path.pop(0)
 
     seeds_dir = run_gather_rollouts.get_default_level_seeds_dir(
-        "/path/to/cluster1/data/goal-misgen/seeds/icml"
+        "/path/to/cluster1/data/goal-misgen/seeds/dummy"
     )
 
     assert seeds_dir == Path(
-        "/path/to/cluster1/data/goal-misgen/seeds/neurips_extra_ood_train_1024"
+        "/path/to/cluster1/data/goal-misgen/seeds/dummy_extra_ood_train_1024"
     )
     assert run_gather_rollouts.GATHER_DEFAULTS["rollout_chunk_size"] is None
 

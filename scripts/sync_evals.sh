@@ -2,7 +2,7 @@
 set -uo pipefail  # Remove 'e' flag to allow continuing after errors
 
 SRC_BASE="cluster1:/path/to/cluster1/data/goal-misgen/experiments/evals"
-DST_BASE="/home/user/data/goal-misgen/icml-evals"
+DST_BASE="/home/user/data/goal-misgen/dummy-evals"
 
 usage() {
   echo "Usage: $0 [--with-videos] [prefix]"
@@ -16,7 +16,7 @@ usage() {
 }
 
 SYNC_VIDEOS=0
-PREFIX="icml04"
+PREFIX="dummy04"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
