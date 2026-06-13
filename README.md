@@ -13,10 +13,13 @@ Ignore the submodules that were removed from this repository.
 
 ## Reproducing the paper
 
-`scripts` includes convencience scripts to reproduce the experiments for this paper.
-The scripts run on Slurm.
-They assume a directory structure that can be defined in the respective script file.
-The results in the paper were collected with experiments ids 0,1,2,3 (= 4 independent seeds).
+`scripts` includes convenience scripts that orchestrate the experiments for this paper on a Slurm cluster.
+They are environment-specific and will not run as-is: before using them you must update the placeholder values to match your own setup. In particular:
+
+- Server paths and Slurm settings in `scripts/common.py` — the `SERVER_PATHS` entries point at dummy paths like `/path/to/cluster1/...`.
+- The experiment prefix tokens that name and locate checkpoints, rollouts, and eval outputs. These have been replaced with the placeholder `dummy` (e.g. `dummy2` for policies, `dummy03` for rollouts, `dummy05` for trained SVDD detectors, and the `--prefix dummy` eval filter). Set them to whatever prefix you use.
+
+The results in the paper were collected with experiment ids 0,1,2,3 (= 4 independent seeds).
 
 ### Training pipeline
 
@@ -45,7 +48,7 @@ Now evals can be run for all methods:
 
 ```
 python scripts/run_eval.py \
-    --prefix icml \
+    --prefix dummy \
     --exp-ids 0 1 2 3 \
     --server cluster1 \
     --conda-env ood \
@@ -64,7 +67,7 @@ To generate the main AFHP curves (level_afhp is the per-episode AFHP metric. The
 ```
 python -m analyzing.paper_plot \
   --eval_dir path/to/evals \
-  --prefix icml \
+  --prefix dummy \
   --env coinrun \
   --x_data_key level_afhp \
   --y_data_key performance \
@@ -75,7 +78,7 @@ python -m analyzing.paper_plot \
 This to generate the percentage of asking for help:
 
 ```
-python -m analyzing.plot_ood_rate --eval_dir path/to/evals --prefix icml --env maze --bins 50 --compare_runs --target_afhp 50 -a
+python -m analyzing.plot_ood_rate --eval_dir path/to/evals --prefix dummy --env maze --bins 50 --compare_runs --target_afhp 50 -a
 ```
 
 This to generate the episode length distribution plot:
