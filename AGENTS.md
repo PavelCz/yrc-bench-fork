@@ -81,12 +81,6 @@ wrapper is used for one-off diagnostic scripts on rnn.
 
 ### Analysis
 ```bash
-# Parse raw results
-python analyzing/yrc_bench/parse.py
-
-# Aggregate results
-python analyzing/yrc_bench/aggregate.py
-
 # Generate plots
 python -m analyzing.paper_plot --eval_dir PATH/TO/EVALS --env coinrun
 ```
