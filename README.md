@@ -58,6 +58,32 @@ python scripts/run_eval.py \
 
 The methods are `ts-random`, `max-prob`, `max-logit`, `ensemble-single`, `svdd-latent`, `svdd-image`.
 
+### Re-evaluating the expert on help-requested levels (reval)
+
+The "reval" step measures the performance difference between handing control to the expert mid-episode and running the expert from the start of the episode. After the evals above have produced their result NPZ files, `run_eval_strong_on_help.py` finds those files and re-runs the strong (expert) agent on exactly the levels where the coordination policy asked for help, recording the expert's return on that same help-requested subset.
+
+```
+python scripts/run_eval_strong_on_help.py \
+    --prefix dummy \
+    --exp-ids 0 1 2 3 \
+    --server cluster1 \
+    --conda-env ood \
+    --env coinrun \
+    --method max-prob
+```
+
+It reuses the outputs of `run_eval.py`, so run that first. `--env` and `--prefix` are required; `--method` restricts to a single method (otherwise all methods found are processed), and `--dry-run` prints the SLURM commands without submitting.
+
+To plot the difference between the coordination policy and the expert-from-start on the help-requested levels:
+
+```
+python -m analyzing.plot_strong_reval_diff \
+    --eval_dir path/to/evals \
+    --prefix dummy \
+    --env coinrun \
+    --paper
+```
+
 ### Data analysis and plots
 
 To analyze the results and generate plots, use the following scripts in the `analyzing` directory:
