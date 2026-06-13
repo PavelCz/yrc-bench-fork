@@ -2,15 +2,14 @@
 
 ## Explanation
 
-This is the code for the paper "Getting by Goal Misgeneralization with a Little Help From an Expert."  
+This is the code for the paper "Does Asking for Help Mitigate Goal Misgeneralization?"  
 It is built on top of YRC-Bench.
 YRC-Bench's original readme follows further down.
 
 ## Installation
 
-To set up the project, follow the installation steps from the original readme below.
-For the Docker-to-Apptainer workflow used on cluster3, see
-[docs/container_workflow.md](docs/container_workflow.md).
+To set up the project, follow the installation steps from the original readme below. 
+Ignore the submodules that were removed from this repository.
 
 ## Reproducing the paper
 
