@@ -200,6 +200,32 @@ Reference docs live in `docs/`:
 - [bisection_boundary_bug.md](docs/bisection_boundary_bug.md), [image_svdd_collapse_bugs.md](docs/image_svdd_collapse_bugs.md) — SVDD bug write-ups.
 - [known_issues.md](docs/known_issues.md) — open issues.
 
+## GitHub issues (no `gh` CLI)
+
+Project tracking (e.g. the additional-seeds campaign) lives in GitHub issues on **`PavelCz/yrc-bench-fork`**. The `gh` CLI is **not installed** on the dev box, but a GitHub OAuth token is available in `~/.config/gh/hosts.yml`, and the git remote authenticates over SSH as `PavelCz`. Use the REST API directly:
+
+```bash
+# Grab the token (never print or commit it)
+TOKEN=$(python3 -c "import yaml,os; print(yaml.safe_load(open(os.path.expanduser('~/.config/gh/hosts.yml')))['github.com']['oauth_token'])")
+REPO=PavelCz/yrc-bench-fork
+AUTH=(-H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json")
+
+# List open issues (number + title)
+curl -sS "${AUTH[@]}" "https://api.github.com/repos/$REPO/issues?state=open" \
+  | python3 -c "import json,sys; [print(i['number'], i['title']) for i in json.load(sys.stdin) if 'pull_request' not in i]"
+
+# Read one issue (body + metadata)
+curl -sS "${AUTH[@]}" "https://api.github.com/repos/$REPO/issues/20"
+
+# Comment on an issue
+curl -sS "${AUTH[@]}" -X POST "https://api.github.com/repos/$REPO/issues/20/comments" \
+  -d "$(python3 -c 'import json;print(json.dumps({"body":"..."}))')"
+
+# Create an issue / edit a body: POST .../issues  /  PATCH .../issues/N
+```
+
+Creating issues and posting comments is outward-facing — do it only when the user asks.
+
 ## Python Best Practices
 
 - Use Pathlib to interact with paths instead of the os package
