@@ -41,7 +41,7 @@ Experiment configurations:
     EXPERIMENT_ID | SEED                   | LEVEL_SEEDS_FILE | TRAIN_MODE | NUM_LEVELS
     --------------|------------------------|------------------|------------|------------
     0             | 6033/1080/1111 (env)   | 0.json           | fallback   | 100000
-    1-4           | same as ID             | {ID}.json        | random     | (not set)
+    1-7           | same as ID             | {ID}.json        | random     | (not set)
 
     Default seeds by environment: coinrun=6033, maze=1080, heist=1111
 
