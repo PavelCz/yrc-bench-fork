@@ -36,6 +36,9 @@ Optional arguments:
     --cpus-per-task N         SLURM CPUs per task (default: cluster default).
                               Set near --num_threads (4) when packing shards.
     --mem SIZE                SLURM memory per job (default: 128G).
+    --qos NAME                SLURM QOS (default: default). Use "high" for the
+                              7-day wall the 400M maze robust expert needs;
+                              "default" caps at 3 days.
 
 Experiment configurations:
     EXPERIMENT_ID | SEED                   | LEVEL_SEEDS_FILE | TRAIN_MODE | NUM_LEVELS
@@ -63,6 +66,7 @@ TRAIN_DAYS=3
 GPU_SHARDS=""
 CPUS_PER_TASK=""
 MEM="128G"
+QOS="default"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -103,6 +107,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --mem)
             MEM="$2"
+            shift 2
+            ;;
+        --qos)
+            QOS="$2"
             shift 2
             ;;
         *)
@@ -240,6 +248,7 @@ echo "  TRAIN_DAYS:    $TRAIN_DAYS"
 echo "  GRES:          $GRES_ARG"
 echo "  CPUS_PER_TASK: ${CPUS_PER_TASK:-(cluster default)}"
 echo "  MEM:           $MEM"
+echo "  QOS:           $QOS"
 echo ""
 
 if [ -n "$RANDOM_PERCENT_OVERRIDE" ]; then
@@ -263,7 +272,7 @@ for random_percent in "${RANDOM_PERCENTS[@]}"; do
 
     echo "Submitting job: $exp_name"
 
-    sbatch --qos=default \
+    sbatch --qos="$QOS" \
         --gres="$GRES_ARG" \
         "${SBATCH_EXTRA[@]}" \
         --time=${TRAIN_DAYS}-00:00:00 \
