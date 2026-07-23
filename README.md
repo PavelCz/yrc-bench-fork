@@ -38,6 +38,8 @@ Train ensemble policies by running the following for `coinrun` and `maze`, for a
 ./scripts/train_ensemble_policies.sh --env coinrun --experiment 0
 ```
 
+On the RNN cluster these Procgen PPO jobs under-use a whole GPU. Both training scripts accept `--gpu-shards N` (fractional GPU via SLURM `shard`), `--cpus-per-task N`, and `--mem SIZE` to pack several runs per card — see [docs/gpu_sharding.md](docs/gpu_sharding.md) for the shard topology, measured resource footprint, and recommended settings.
+
 Use `run_gather_rollouts.py` to gather rollouts for the DeepSVDD methods.
 
 Use `run_svdd_train.py` to train DeepSVDD policies.

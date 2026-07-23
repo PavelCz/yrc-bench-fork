@@ -8,6 +8,17 @@ This is a fork of YRC-Bench (Yield and Request Control Benchmark) focused exclus
 
 **Note:** While the codebase contains code for MiniGrid and Cliport environments from the original benchmark, this fork only uses Procgen. Focus on `YRC/envs/procgen/`, `configs/procgen_*.yaml`, and `YRC/checkpoints/procgen/` when working with this codebase.
 
+### The paper this fork supports
+
+This fork is the codebase for **"Getting by Goal Misgeneralization with a Little Help From an Expert"** (TMLR submission; project page https://asking-for-help-gmg.github.io/). The paper studies whether **goal misgeneralization (GMG)** in Procgen agents can be mitigated by letting a weak *novice* policy **ask a strong *expert* for help**. A coordination policy decides when to defer, and results are reported as return-vs-**AFHP** (ask-for-help percentage) curves.
+
+Facts that matter when working in this repo:
+- **Environments:** the paper's experiments use **`coinrun` and `maze`** (`maze_afh` at eval). `scripts/common.py:ENVS` is `["maze", "coinrun"]`. Checkpoints/configs for `heist` and other Procgen games exist in the tree but are not part of the paper's results.
+- **Metric:** the paper uses **`level_afhp`** (fraction of episodes with any help). `step_afhp` (per-timestep) is an older definition retained for backward compatibility, not the paper's metric.
+- **Two result families:** the main/recoverable benchmarks (§5.1) and the irrecoverable **"proxy-fail"** variants (§5.5, Procgen envs `coinrun_proxy_fail` / `maze_proxy_fail`), the latter being the paper's central limitation finding. Proxy-fail reuses the same trained policies — it is an eval-time environment change handled by `run_eval.py`, not separate training.
+- **Maze expert:** maze main-curve results use a **robust expert trained from randomized agent-start positions** (`robust400`, 400M steps); see `scripts/common.py:get_robust_maze_strong_checkpoint` and `run_eval.py --robust400`. The non-robust maze expert appears only in the §5.3 brittleness analysis.
+- **Seeds:** results use 4 independent seeds (experiment ids 0–3), reported as average + interquartile range.
+
 ## Reflective Memories
 
 - Remember, that when you implement some algorithm I suggested or you came up with, that you will be biased towards thinking this alg is efficient or well-suited. However, this might not be true and it is hard to know how much you have thought about this. When writing conclusions or documentation, refrain from using language that subjectively assigns value to parts of the code or algorithms concept. Only use these, if we have some proof that these types of judements are correct.
@@ -53,6 +64,8 @@ python train_svdd.py -c configs/procgen_ood.yaml -n RUN_NAME -en ENV_NAME \
     -sim PATH/TO/SIM_WEAK.pt -weak PATH/TO/WEAK.pt -strong PATH/TO/STRONG.pt \
     -query_cost COST -cp_feature FEATURE_TYPE
 ```
+
+The acting-policy training orchestrators (`scripts/train_policies.sh`, `scripts/train_ensemble_policies.sh`) submit Procgen PPO jobs via SLURM. On the RNN cluster these runs under-use a whole GPU, so both scripts accept `--gpu-shards N` (fractional GPU), `--cpus-per-task N`, and `--mem SIZE` to pack several runs per card — see [docs/gpu_sharding.md](docs/gpu_sharding.md) for the shard topology, measured resource footprint, and recommended settings.
 
 ### Evaluation
 ```bash
@@ -174,6 +187,18 @@ The project uses hierarchical YAML configs in `configs/`:
 7. **Acting Policy Requirements**: Pre-trained acting policies (sim weak, weak, strong) must be provided for most environments. These should be placed in `YRC/checkpoints/{environment}/` following the existing structure.
 
 8. **Procgen Evaluation Flow**: AFHP evaluation in this fork goes through `eval_afhp.py`, which calibrates percentile-to-threshold mappings, then calls `YRC/coverage/coverage_search.py` to sample thresholds adaptively. Batch evaluation is typically launched via `scripts/run_eval.py`. See `docs/adaptive_coverage_sampling.md` and `docs/percentile_calibration.md` for the current behavior.
+
+## Documentation
+
+Reference docs live in `docs/`:
+- [gpu_sharding.md](docs/gpu_sharding.md) — fractional-GPU (`shard`) training on RNN: cluster topology, measured VRAM/CPU/RAM footprint, and recommended `--gpu-shards`/`--cpus-per-task`/`--mem` settings.
+- [rnn_smoke_tests.md](docs/rnn_smoke_tests.md) — end-to-end smoke-test workflow on the `rnn` server (SSH + `scripts/run_eval.py`, log paths, tailing/cancelling).
+- [container_workflow.md](docs/container_workflow.md) — Docker→Apptainer workflow used on CARC.
+- [level_seed_splits.md](docs/level_seed_splits.md) — how `policy_train`, `ood_train`, `validation`, and `ood_eval` seed splits flow through the pipeline.
+- [percentile_calibration.md](docs/percentile_calibration.md) — percentile→threshold calibration (support matrix, per-policy formulas, data sources).
+- [adaptive_coverage_sampling.md](docs/adaptive_coverage_sampling.md) — the AFHP coverage sampler behavior.
+- [bisection_boundary_bug.md](docs/bisection_boundary_bug.md), [image_svdd_collapse_bugs.md](docs/image_svdd_collapse_bugs.md) — SVDD bug write-ups.
+- [known_issues.md](docs/known_issues.md) — open issues.
 
 ## Python Best Practices
 
