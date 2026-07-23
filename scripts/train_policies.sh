@@ -21,7 +21,7 @@ Train policies for goal misgeneralization experiments.
 
 Required arguments:
     -e, --env ENV_TYPE        Environment type: "coinrun", "maze", or "heist"
-    -x, --experiment ID       Experiment ID: 0-4
+    -x, --experiment ID       Experiment ID: 0-7
 
 Optional arguments:
     -h, --help                Show this help message
@@ -174,9 +174,9 @@ if [ -n "$CPUS_PER_TASK" ] && ! [[ "$CPUS_PER_TASK" =~ ^[1-9][0-9]*$ ]]; then
     exit 1
 fi
 
-# Validate EXPERIMENT_ID is a number 0-4
-if ! [[ "$EXPERIMENT_ID" =~ ^[0-4]$ ]]; then
-    echo "Error: EXPERIMENT_ID must be an integer between 0 and 4, got '$EXPERIMENT_ID'"
+# Validate EXPERIMENT_ID is a number 0-7
+if ! [[ "$EXPERIMENT_ID" =~ ^[0-7]$ ]]; then
+    echo "Error: EXPERIMENT_ID must be an integer between 0 and 7, got '$EXPERIMENT_ID'"
     exit 1
 fi
 
