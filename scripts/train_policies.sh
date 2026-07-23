@@ -29,6 +29,13 @@ Optional arguments:
     --random-percent PERCENT  Train only this random_percent value (default: 0 50 100)
     --num-timesteps N         Training timesteps per job (default: 200000000)
     --days N                  SLURM wall-time days per job (default: 3)
+    --gpu-shards N            Request N GPU shards (~1GB VRAM each) instead of a
+                              whole GPU, to pack several runs onto one physical
+                              GPU. Restricts jobs to shard-enabled nodes. Accepts
+                              N or TYPE:N (e.g. A6000:3). Default: whole GPU.
+    --cpus-per-task N         SLURM CPUs per task (default: cluster default).
+                              Set near --num_threads (4) when packing shards.
+    --mem SIZE                SLURM memory per job (default: 128G).
 
 Experiment configurations:
     EXPERIMENT_ID | SEED                   | LEVEL_SEEDS_FILE | TRAIN_MODE | NUM_LEVELS
@@ -53,6 +60,9 @@ RANDOMIZE_AGENT_START=false
 RANDOM_PERCENT_OVERRIDE=""
 NUM_TIMESTEPS=200000000
 TRAIN_DAYS=3
+GPU_SHARDS=""
+CPUS_PER_TASK=""
+MEM="128G"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -81,6 +91,18 @@ while [[ $# -gt 0 ]]; do
             ;;
         --days)
             TRAIN_DAYS="$2"
+            shift 2
+            ;;
+        --gpu-shards)
+            GPU_SHARDS="$2"
+            shift 2
+            ;;
+        --cpus-per-task)
+            CPUS_PER_TASK="$2"
+            shift 2
+            ;;
+        --mem)
+            MEM="$2"
             shift 2
             ;;
         *)
@@ -142,6 +164,16 @@ if [ "$TRAIN_DAYS" -le 0 ]; then
     exit 1
 fi
 
+if [ -n "$GPU_SHARDS" ] && ! [[ "$GPU_SHARDS" =~ ^([A-Za-z0-9-]+:)?[1-9][0-9]*$ ]]; then
+    echo "Error: --gpu-shards must be N or TYPE:N (positive integer), got '$GPU_SHARDS'"
+    exit 1
+fi
+
+if [ -n "$CPUS_PER_TASK" ] && ! [[ "$CPUS_PER_TASK" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: --cpus-per-task must be a positive integer, got '$CPUS_PER_TASK'"
+    exit 1
+fi
+
 # Validate EXPERIMENT_ID is a number 0-4
 if ! [[ "$EXPERIMENT_ID" =~ ^[0-4]$ ]]; then
     echo "Error: EXPERIMENT_ID must be an integer between 0 and 4, got '$EXPERIMENT_ID'"
@@ -184,6 +216,19 @@ else
     SEED="$EXPERIMENT_ID"
 fi
 
+# Build the GPU GRES request: whole GPU by default, or fractional shards.
+if [ -n "$GPU_SHARDS" ]; then
+    GRES_ARG="shard:${GPU_SHARDS}"
+else
+    GRES_ARG="gpu:1"
+fi
+
+# Optional extra sbatch flags (only added when set).
+SBATCH_EXTRA=()
+if [ -n "$CPUS_PER_TASK" ]; then
+    SBATCH_EXTRA+=(--cpus-per-task="$CPUS_PER_TASK")
+fi
+
 echo "Starting training with:"
 echo "  ENV_TYPE:      $ENV_TYPE"
 echo "  EXPERIMENT_ID: $EXPERIMENT_ID"
@@ -192,6 +237,9 @@ echo "  TRAIN_MODE:    $TRAIN_MODE"
 echo "  RANDOM_START:  $RANDOMIZE_AGENT_START"
 echo "  TIMESTEPS:     $NUM_TIMESTEPS"
 echo "  TRAIN_DAYS:    $TRAIN_DAYS"
+echo "  GRES:          $GRES_ARG"
+echo "  CPUS_PER_TASK: ${CPUS_PER_TASK:-(cluster default)}"
+echo "  MEM:           $MEM"
 echo ""
 
 if [ -n "$RANDOM_PERCENT_OVERRIDE" ]; then
@@ -216,9 +264,10 @@ for random_percent in "${RANDOM_PERCENTS[@]}"; do
     echo "Submitting job: $exp_name"
 
     sbatch --qos=default \
-        --gres=gpu:1 \
+        --gres="$GRES_ARG" \
+        "${SBATCH_EXTRA[@]}" \
         --time=${TRAIN_DAYS}-00:00:00 \
-        --mem=128G \
+        --mem="$MEM" \
         --job-name="$exp_name" \
         --output="${LOG_DIR}/${exp_name}_%j.out" \
         --wrap="cd $TRAIN_DIR && conda run -n $CONDA_ENV python train.py \

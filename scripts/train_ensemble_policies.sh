@@ -26,6 +26,13 @@ Required arguments:
 Optional arguments:
     -m, --member ID           Train only a specific ensemble member (0-3)
     -h, --help                Show this help message
+    --gpu-shards N            Request N GPU shards (~1GB VRAM each) instead of a
+                              whole GPU, to pack several runs onto one physical
+                              GPU. Restricts jobs to shard-enabled nodes. Accepts
+                              N or TYPE:N (e.g. A6000:3). Default: whole GPU.
+    --cpus-per-task N         SLURM CPUs per task (default: cluster default).
+                              Set near --num_threads (4) when packing shards.
+    --mem SIZE                SLURM memory per job (default: 100G).
 
 Experiment configurations:
     Each experiment trains 4 ensemble members, each with different training seeds.
@@ -47,6 +54,9 @@ EOF
 ENV_TYPE=""
 EXPERIMENT_ID=""
 MEMBER_ID=""
+GPU_SHARDS=""
+CPUS_PER_TASK=""
+MEM="100G"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -60,6 +70,18 @@ while [[ $# -gt 0 ]]; do
             ;;
         -m|--member)
             MEMBER_ID="$2"
+            shift 2
+            ;;
+        --gpu-shards)
+            GPU_SHARDS="$2"
+            shift 2
+            ;;
+        --cpus-per-task)
+            CPUS_PER_TASK="$2"
+            shift 2
+            ;;
+        --mem)
+            MEM="$2"
             shift 2
             ;;
         -h|--help)
@@ -103,6 +125,29 @@ if [ -n "$MEMBER_ID" ]; then
     fi
 fi
 
+if [ -n "$GPU_SHARDS" ] && ! [[ "$GPU_SHARDS" =~ ^([A-Za-z0-9-]+:)?[1-9][0-9]*$ ]]; then
+    echo "Error: --gpu-shards must be N or TYPE:N (positive integer), got '$GPU_SHARDS'"
+    exit 1
+fi
+
+if [ -n "$CPUS_PER_TASK" ] && ! [[ "$CPUS_PER_TASK" =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: --cpus-per-task must be a positive integer, got '$CPUS_PER_TASK'"
+    exit 1
+fi
+
+# Build the GPU GRES request: whole GPU by default, or fractional shards.
+if [ -n "$GPU_SHARDS" ]; then
+    GRES_ARG="shard:${GPU_SHARDS}"
+else
+    GRES_ARG="gpu:1"
+fi
+
+# Optional extra sbatch flags (only added when set).
+SBATCH_EXTRA=()
+if [ -n "$CPUS_PER_TASK" ]; then
+    SBATCH_EXTRA+=(--cpus-per-task="$CPUS_PER_TASK")
+fi
+
 # Create log directory if it doesn't exist
 mkdir -p "$LOG_DIR"
 
@@ -126,6 +171,9 @@ if [ -n "$MEMBER_ID" ]; then
 else
     echo "  MEMBERS:       0-$((NUM_ENSEMBLE_MEMBERS-1)) (all)"
 fi
+echo "  GRES:          $GRES_ARG"
+echo "  CPUS_PER_TASK: ${CPUS_PER_TASK:-(cluster default)}"
+echo "  MEM:           $MEM"
 echo ""
 
 # Determine which members to train
@@ -157,9 +205,10 @@ for member in "${MEMBERS[@]}"; do
     echo "  Seed: $SEED"
 
     sbatch --qos=default \
-        --gres=gpu:1 \
+        --gres="$GRES_ARG" \
+        "${SBATCH_EXTRA[@]}" \
         --time=3-00:00:00 \
-        --mem=100G \
+        --mem="$MEM" \
         --job-name="$exp_name" \
         --output="${LOG_DIR}/${exp_name}_%j.out" \
         --wrap="cd $TRAIN_DIR && conda run -n $CONDA_ENV python train.py \
