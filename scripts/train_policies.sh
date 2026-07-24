@@ -7,6 +7,7 @@ TRAIN_DIR="${PROJECT_ROOT}/lib/train-procgen-pytorch"
 
 # Default configuration
 CONDA_ENV="ood-stable"
+CONDA_BASE="/nas/ucb/czempin/anaconda3"
 EXP_PREFIX="icml2"
 LEVEL_SEEDS_FOLDER="/nas/ucb/czempin/data/goal-misgen/seeds/icml"
 LOG_DIR="/nas/ucb/czempin/data/goal-misgen/logs/train_policies"
@@ -247,6 +248,7 @@ fi
 echo "Starting training with:"
 echo "  ENV_TYPE:      $ENV_TYPE"
 echo "  EXPERIMENT_ID: $EXPERIMENT_ID"
+echo "  CONDA_ENV:     $CONDA_ENV"
 echo "  SEED:          $SEED"
 echo "  TRAIN_MODE:    $TRAIN_MODE"
 echo "  RANDOM_START:  $RANDOMIZE_AGENT_START"
@@ -287,7 +289,7 @@ for random_percent in "${RANDOM_PERCENTS[@]}"; do
         --mem="$MEM" \
         --job-name="$exp_name" \
         --output="${LOG_DIR}/${exp_name}_%j.out" \
-        --wrap="cd $TRAIN_DIR && conda run -n $CONDA_ENV python train.py \
+        --wrap=". ${CONDA_BASE}/etc/profile.d/conda.sh && cd $TRAIN_DIR && conda run -n $CONDA_ENV python train.py \
             --level_seeds_file ${LEVEL_SEEDS_FOLDER}/${LEVEL_SEEDS_FILE} \
             --train_mode $TRAIN_MODE \
             --eval_mode sequential \
