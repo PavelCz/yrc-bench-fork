@@ -35,7 +35,10 @@ Optional arguments:
                               N or TYPE:N (e.g. A6000:3). Default: whole GPU.
     --cpus-per-task N         SLURM CPUs per task (default: cluster default).
                               Set near --num_threads (4) when packing shards.
-    --mem SIZE                SLURM memory per job (default: 128G).
+    --mem SIZE                SLURM memory per job (default: 24G). Measured
+                              Procgen PPO peak is ~13G (incl. the 400M maze
+                              robust expert); 24G leaves headroom. Hard cap ->
+                              OOM-kill if exceeded.
     --qos NAME                SLURM QOS (default: default). Use "high" for the
                               7-day wall the 400M maze robust expert needs;
                               "default" caps at 3 days.
@@ -65,7 +68,7 @@ NUM_TIMESTEPS=200000000
 TRAIN_DAYS=3
 GPU_SHARDS=""
 CPUS_PER_TASK=""
-MEM="128G"
+MEM="24G"
 QOS="default"
 
 while [[ $# -gt 0 ]]; do
