@@ -3,6 +3,7 @@ import json
 import os
 import random
 import time
+from pathlib import Path
 
 import gym
 import torch
@@ -89,6 +90,15 @@ if __name__ == "__main__":
     parser.add_argument("--model_file", type=str)
     parser.add_argument("--use_wandb", action="store_true")
     parser.add_argument("--disable_backgrounds", action="store_true")
+    parser.add_argument(
+        "--logdir_base",
+        type=Path,
+        default=Path("logs") / "train",
+        help=(
+            "Base directory for training output. Final path: "
+            "{logdir_base}/{env_name}/{exp_name}/{run_name}/."
+        ),
+    )
 
     parser.add_argument("--wandb_tags", type=str, nargs="+")
     parser.add_argument(
@@ -342,7 +352,7 @@ if __name__ == "__main__":
 
     print("INITIALIZING LOGGER...")
 
-    logdir = os.path.join("logs", "train", env_name, exp_name)
+    logdir = args.logdir_base / env_name / exp_name
     if args.model_file == "auto":  # try to figure out which file to load
         logdirs_with_model = [
             d

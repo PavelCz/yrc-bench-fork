@@ -10,6 +10,7 @@ CONDA_ENV="ood-stable"
 EXP_PREFIX="icml2"
 LEVEL_SEEDS_FOLDER="/nas/ucb/czempin/data/goal-misgen/seeds/icml"
 LOG_DIR="/nas/ucb/czempin/data/goal-misgen/logs/train_policies"
+CHECKPOINT_BASE="/nas/ucb/czempin/data/goal-misgen/policy/icml"
 RANDOM_PERCENTS=(0 50 100)
 
 # Usage function
@@ -36,6 +37,8 @@ Optional arguments:
     --cpus-per-task N         SLURM CPUs per task (default: cluster default).
                               Set near --num_threads (4) when packing shards.
     --mem SIZE                SLURM memory per job (default: 128G).
+    --checkpoint-base PATH    Base directory for policy checkpoints
+                              (default: $CHECKPOINT_BASE).
     --qos NAME                SLURM QOS (default: default). Use "high" for the
                               7-day wall the 400M maze robust expert needs;
                               "default" caps at 3 days.
@@ -107,6 +110,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --mem)
             MEM="$2"
+            shift 2
+            ;;
+        --checkpoint-base)
+            CHECKPOINT_BASE="$2"
             shift 2
             ;;
         --qos)
@@ -248,6 +255,7 @@ echo "  TRAIN_DAYS:    $TRAIN_DAYS"
 echo "  GRES:          $GRES_ARG"
 echo "  CPUS_PER_TASK: ${CPUS_PER_TASK:-(cluster default)}"
 echo "  MEM:           $MEM"
+echo "  CHECKPOINTS:   $CHECKPOINT_BASE"
 echo "  QOS:           $QOS"
 echo ""
 
@@ -295,6 +303,7 @@ for random_percent in "${RANDOM_PERCENTS[@]}"; do
             --num_checkpoints 10 \
             --num_threads 4 \
             --seed $SEED \
+            --logdir_base $CHECKPOINT_BASE \
             $EXTRA_ARGS"
 done
 
