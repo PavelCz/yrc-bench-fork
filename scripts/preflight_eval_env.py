@@ -25,6 +25,7 @@ SUPPORTED_ENVS = [
     "coinrun_proxy_fail",
     "maze_afh",
     "maze_proxy_fail",
+    "heist_afh",
 ]
 ENV_CHOICES = [*SUPPORTED_ENVS, "maze", "all"]
 LOCAL_PACKAGES = {
