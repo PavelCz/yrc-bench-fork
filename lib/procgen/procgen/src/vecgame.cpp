@@ -343,6 +343,50 @@ VecGame::VecGame(int _nenvs, VecOptions opts) {
 
 	{
 	    struct libenv_tensortype s;
+	    strcpy(s.name, "prev_level/keys_collected");
+	    s.scalar_type = LIBENV_SCALAR_TYPE_DISCRETE;
+	    s.dtype = LIBENV_DTYPE_INT32;
+	    s.ndim = 0,
+	    s.low.int32 = 0;
+	    s.high.int32 = INT32_MAX;
+	    info_types.push_back(s);
+	}
+
+	{
+	    struct libenv_tensortype s;
+	    strcpy(s.name, "prev_level/num_keys");
+	    s.scalar_type = LIBENV_SCALAR_TYPE_DISCRETE;
+	    s.dtype = LIBENV_DTYPE_INT32;
+	    s.ndim = 0,
+	    s.low.int32 = 0;
+	    s.high.int32 = INT32_MAX;
+	    info_types.push_back(s);
+	}
+
+	{
+	    struct libenv_tensortype s;
+	    strcpy(s.name, "prev_level/total_chests");
+	    s.scalar_type = LIBENV_SCALAR_TYPE_DISCRETE;
+	    s.dtype = LIBENV_DTYPE_INT32;
+	    s.ndim = 0,
+	    s.low.int32 = 0;
+	    s.high.int32 = INT32_MAX;
+	    info_types.push_back(s);
+	}
+
+	{
+	    struct libenv_tensortype s;
+	    strcpy(s.name, "prev_level/chests_opened");
+	    s.scalar_type = LIBENV_SCALAR_TYPE_DISCRETE;
+	    s.dtype = LIBENV_DTYPE_INT32;
+	    s.ndim = 0,
+	    s.low.int32 = 0;
+	    s.high.int32 = INT32_MAX;
+	    info_types.push_back(s);
+	}
+
+	{
+	    struct libenv_tensortype s;
 	    strcpy(s.name, "randomize_goal");
 	    s.scalar_type = LIBENV_SCALAR_TYPE_DISCRETE;
 	    s.dtype = LIBENV_DTYPE_INT32;

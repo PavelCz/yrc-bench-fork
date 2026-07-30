@@ -28,6 +28,17 @@ class HeistGameAFH : public BasicAbstractGame {
     bool many_keys_mode = false;  // whether OOD (many_keys: 2:1 ratio) was used
     bool prev_level_many_keys_mode = false;  // mode from previous level
 
+    // Cumulative keys picked up this episode (agent_keys is decremented on chest open)
+    int keys_collected = 0;
+
+    // Episode-end snapshots (gym3 auto-resets before observe, so done=True info is
+    // for the next level; prev_level/* exposes the completed episode's counters)
+    int prev_level_keys_collected = 0;
+    int prev_level_num_keys = 0;
+    int prev_level_total_chests = 0;
+    int prev_level_chests_opened = 0;
+    int prev_level_total_steps = 0;
+
     HeistGameAFH()
         : BasicAbstractGame(NAME) {
         maze_gen_aisc = nullptr;
@@ -134,6 +145,7 @@ class HeistGameAFH : public BasicAbstractGame {
             obj->will_erase = true;
             step_data.reward -= options.key_penalty / 10.;
             agent_keys += 1;
+            keys_collected += 1;
         } else if (obj->type == LOCKED_DOOR) {
             if (agent_keys > 0) {
                 obj->will_erase = true;
@@ -180,7 +192,17 @@ class HeistGameAFH : public BasicAbstractGame {
         // Decide key/chest ratio based on random_percent (like maze_afh/coinrun)
         // random_percent=0 means always ID (many_chests: 1:2 keys:chests)
         // random_percent=100 means always OOD (many_keys: 2:1 keys:chests)
+        // Snapshot completed episode BEFORE drawing the next level's layout.
+        // cur_time is still the previous episode's value here (reset to 0 after
+        // game_reset returns); see coinrun.cpp for the same pattern.
         prev_level_many_keys_mode = many_keys_mode;
+        prev_level_keys_collected = keys_collected;
+        prev_level_num_keys = num_keys;
+        prev_level_total_chests = total_chests;
+        prev_level_chests_opened = total_chests - env_chests;
+        prev_level_total_steps = cur_time;
+        keys_collected = 0;
+
         int rand_check = rand_gen.randn(100);
         many_keys_mode = (rand_check < options.random_percent);
 
@@ -293,6 +315,12 @@ class HeistGameAFH : public BasicAbstractGame {
         b->write_int(world_dim);
         b->write_vector_bool(has_keys);
         b->write_bool(many_keys_mode);
+        b->write_int(keys_collected);
+        b->write_int(prev_level_keys_collected);
+        b->write_int(prev_level_num_keys);
+        b->write_int(prev_level_total_chests);
+        b->write_int(prev_level_chests_opened);
+        b->write_int(prev_level_total_steps);
     }
 
     void deserialize(ReadBuffer *b) override {
@@ -301,6 +329,12 @@ class HeistGameAFH : public BasicAbstractGame {
         world_dim = b->read_int();
         has_keys = b->read_vector_bool();
         many_keys_mode = b->read_bool();
+        keys_collected = b->read_int();
+        prev_level_keys_collected = b->read_int();
+        prev_level_num_keys = b->read_int();
+        prev_level_total_chests = b->read_int();
+        prev_level_chests_opened = b->read_int();
+        prev_level_total_steps = b->read_int();
     }
 
     // Expose key/chest ratio mode info for OOD detection (like maze_afh/coinrun)
@@ -308,6 +342,12 @@ class HeistGameAFH : public BasicAbstractGame {
         Game::observe();
         *(int32_t *)(info_bufs[info_name_to_offset.at("randomize_goal")]) = many_keys_mode;
         *(int32_t *)(info_bufs[info_name_to_offset.at("prev_level/randomize_goal")]) = prev_level_many_keys_mode;
+        *(int32_t *)(info_bufs[info_name_to_offset.at("prev_level/keys_collected")]) = prev_level_keys_collected;
+        *(int32_t *)(info_bufs[info_name_to_offset.at("prev_level/num_keys")]) = prev_level_num_keys;
+        *(int32_t *)(info_bufs[info_name_to_offset.at("prev_level/total_chests")]) = prev_level_total_chests;
+        *(int32_t *)(info_bufs[info_name_to_offset.at("prev_level/chests_opened")]) = prev_level_chests_opened;
+        *(int32_t *)(info_bufs[info_name_to_offset.at("prev_level/total_steps")]) = prev_level_total_steps;
+        *(int32_t *)(info_bufs[info_name_to_offset.at("total_steps")]) = cur_time;
     }
 };
 
