@@ -13,6 +13,8 @@ LEVEL_SEEDS_FOLDER="/nas/ucb/czempin/data/goal-misgen/seeds/icml"
 LOG_DIR="/nas/ucb/czempin/data/goal-misgen/logs/train_policies"
 CHECKPOINT_BASE="/nas/ucb/czempin/data/goal-misgen/policy/icml"
 RANDOM_PERCENTS=(0 50 100)
+DISTRIBUTION_MODE="hard"
+PARAM_NAME="paper"
 
 # Usage function
 usage() {
@@ -40,6 +42,15 @@ Optional arguments:
     --mem SIZE                SLURM memory per job (default: 128G).
     --checkpoint-base PATH    Base directory for policy checkpoints
                               (default: $CHECKPOINT_BASE).
+    --exp-prefix NAME         Experiment-name prefix (default: $EXP_PREFIX). Use a
+                              distinct prefix for side experiments so their
+                              checkpoints do not land in the same directory as
+                              the main runs (checkpoint lookup picks the NEWEST
+                              timestamp dir under a given exp name).
+    --distribution-mode MODE  Procgen distribution_mode (default: $DISTRIBUTION_MODE).
+                              Note the per-level reward cap is mode-dependent
+                              for heist: mean 3.5 in hard, 2.5 in easy.
+    --param-name NAME         Hyper-parameter set (default: $PARAM_NAME).
     --qos NAME                SLURM QOS (default: default). Use "high" for the
                               7-day wall the 400M maze robust expert needs;
                               "default" caps at 3 days.
@@ -115,6 +126,18 @@ while [[ $# -gt 0 ]]; do
             ;;
         --checkpoint-base)
             CHECKPOINT_BASE="$2"
+            shift 2
+            ;;
+        --exp-prefix)
+            EXP_PREFIX="$2"
+            shift 2
+            ;;
+        --distribution-mode)
+            DISTRIBUTION_MODE="$2"
+            shift 2
+            ;;
+        --param-name)
+            PARAM_NAME="$2"
             shift 2
             ;;
         --qos)
@@ -259,6 +282,9 @@ echo "  CPUS_PER_TASK: ${CPUS_PER_TASK:-(cluster default)}"
 echo "  MEM:           $MEM"
 echo "  CHECKPOINTS:   $CHECKPOINT_BASE"
 echo "  QOS:           $QOS"
+echo "  EXP_PREFIX:    $EXP_PREFIX"
+echo "  DIST_MODE:     $DISTRIBUTION_MODE"
+echo "  PARAM_NAME:    $PARAM_NAME"
 echo ""
 
 if [ -n "$RANDOM_PERCENT_OVERRIDE" ]; then
@@ -298,8 +324,8 @@ for random_percent in "${RANDOM_PERCENTS[@]}"; do
             --val_env_name $VAL_ENV_NAME \
             --random_percent $random_percent \
             --random_percent_val 50 \
-            --distribution_mode hard \
-            --param_name paper \
+            --distribution_mode $DISTRIBUTION_MODE \
+            --param_name $PARAM_NAME \
             --num_timesteps $NUM_TIMESTEPS \
             --log_interval 4000000 \
             --num_checkpoints 10 \
