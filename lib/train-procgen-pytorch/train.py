@@ -343,12 +343,14 @@ if __name__ == "__main__":
     def get_latest_model(model_dir):
         """given model_dir with files named model_n.pth where n is an integer,
         return the filename with largest n"""
-        steps = [
-            int(filename[6:-4])
+        models = [
+            filename
             for filename in os.listdir(model_dir)
-            if filename.startswith("model_")
+            if filename.startswith("model_") and filename.endswith(".pth")
         ]
-        return list(os.listdir(model_dir))[np.argmax(steps)]
+        if not models:
+            raise FileNotFoundError(f"No model_*.pth files in {model_dir}")
+        return max(models, key=lambda f: int(f[6:-4]))
 
     print("INITIALIZING LOGGER...")
 

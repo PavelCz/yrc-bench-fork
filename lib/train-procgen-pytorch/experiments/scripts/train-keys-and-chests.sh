@@ -3,6 +3,11 @@ set -o errexit
 
 # this script trains on the heist_aisc_many_chests environment
 # applying a small penalty for picking up keys.
+#
+# NOTE (yrc-bench-fork): key_penalty=3 and param_name=A100 are script knobs.
+# They are not the paper's keys-and-chests mainline description, and they differ
+# from our coinrun/maze/heist baseline in scripts/train_policies.sh
+# (param_name=paper, key_penalty=0). See GitHub issue #23.
 
 experiment_name="key-penalty"
 key_penalty=3

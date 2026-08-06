@@ -32,7 +32,9 @@ Optional arguments:
                               N or TYPE:N (e.g. A6000:3). Default: whole GPU.
     --cpus-per-task N         SLURM CPUs per task (default: cluster default).
                               Set near --num_threads (4) when packing shards.
-    --mem SIZE                SLURM memory per job (default: 100G).
+    --mem SIZE                SLURM memory per job (default: 24G). Measured
+                              Procgen PPO peak is ~13G; 24G leaves headroom.
+                              Hard cap -> OOM-kill if exceeded.
 
 Experiment configurations:
     Each experiment trains 4 ensemble members, each with different training seeds.
@@ -56,7 +58,7 @@ EXPERIMENT_ID=""
 MEMBER_ID=""
 GPU_SHARDS=""
 CPUS_PER_TASK=""
-MEM="100G"
+MEM="24G"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
