@@ -2,12 +2,20 @@
 #
 # Reproduce Langosco et al. Fig 10 (heist "keys and chests") — see issue #23.
 #
-# This runs the paper's own training script,
+# This mirrors their training script
 # lib/train-procgen-pytorch/experiments/scripts/train-keys-and-chests.sh
 # (byte-identical to upstream jbkjr/train-procgen-pytorch @ 2906e6f), through
 # our train.py. Our PPO `optimize`/`predict` are AST-identical to upstream and
 # our ProcgenEnv construction matches modulo kwargs that are no-ops at their
-# defaults, so with these flags the run is the paper's setup.
+# defaults.
+#
+# IMPORTANT — script knobs ≠ paper description / our coinrun–maze baseline:
+#   train-keys-and-chests.sh sets key_penalty=3 (−0.3 per key) and
+#   --param_name A100 (80M steps). That is not what the paper's keys-and-chests
+#   writeup describes as the mainline setup, and it is not what
+#   scripts/train_policies.sh uses for coinrun/maze/heist (param_name=paper,
+#   key_penalty unset → 0, 200M). This sbatch intentionally tracks the SCRIPT;
+#   treat key_penalty=3 as script-specific (plausibly an ablation). See issue #23.
 #
 # Their training loop IS the eval: it steps the OOD env in lockstep with
 # training and logs both to the same row of {logdir}/log-append.csv:

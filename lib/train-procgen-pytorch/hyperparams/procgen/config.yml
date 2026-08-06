@@ -98,7 +98,9 @@ hard-500:
     architecture: impala
     recurrent: False
 
-# Hyperparameters from the Langosco et al. paper.
+# Hyperparameters from the Langosco et al. paper (as used for coinrun/maze/heist
+# in scripts/train_policies.sh). Distinct from train-keys-and-chests.sh, which
+# uses param_name=A100 and key_penalty=3 — see issue #23.
 # Setting n_envs to 256 and using this with num_threads=4, gives us on average
 # 64 envs/thread, which corresponds to the values they use in the paper.
 paper:
