@@ -9,6 +9,40 @@ matplotlib.use("Agg")  # Use non-interactive backend
 import matplotlib.pyplot as plt
 
 from YRC.core.video_utils import process_and_log_video, resolve_video_output_folder
+from YRC.envs.procgen.heist_metrics import (
+    HEIST_ENV_NAME,
+    HEIST_RAW_FIELDS,
+    append_heist_episode_data,
+    build_heist_metric_summary,
+    new_heist_episode_data,
+)
+
+
+HEIST_WANDB_METRICS = (
+    "mean_oracle_regret",
+    "id_mean_oracle_regret",
+    "ood_mean_oracle_regret",
+    "mean_surplus_keys",
+    "id_mean_surplus_keys",
+    "ood_mean_surplus_keys",
+    "timeout_fraction",
+    "id_timeout_fraction",
+    "ood_timeout_fraction",
+)
+
+
+def _heist_wandb_metrics(summary: Dict[str, Any]) -> Dict[str, float]:
+    """Return available scalar Heist metrics under a dedicated W&B namespace."""
+    return {
+        f"heist/{field}": float(summary[field])
+        for field in HEIST_WANDB_METRICS
+        if summary.get(field) is not None
+    }
+
+
+def _format_optional_metric(value: Optional[float]) -> str:
+    """Format a metric that may be unavailable for an empty ID/OOD split."""
+    return "n/a" if value is None else f"{value:.4f}"
 
 
 def _deep_copy_obs(obs):
@@ -95,6 +129,12 @@ class Evaluator:
         self.defer_to_oracle: Optional[bool] = None
 
         self.env_config = env_config
+        common_env_config = (
+            getattr(env_config, "common", None) if env_config is not None else None
+        )
+        self.collect_heist_metrics = (
+            getattr(common_env_config, "env_name", None) == HEIST_ENV_NAME
+        )
 
         self.episode_metadata: List[List[Dict]] = []
 
@@ -218,6 +258,7 @@ class Evaluator:
                     wandb_metrics["randomize_goal_percentage"] = summary[split][
                         "randomize_goal_percentage"
                     ]
+                wandb_metrics.update(_heist_wandb_metrics(summary[split]))
                 logger.experiment.log(wandb_metrics)
 
         return summary
@@ -248,6 +289,8 @@ class Evaluator:
             # Track total number of finished episodes
             "num_finished_episodes": 0,
         }
+        if self.collect_heist_metrics:
+            log.update(new_heist_episode_data())
 
         # A temporary log that only contains stats for the current episode.
         episode_log = {
@@ -446,6 +489,8 @@ class Evaluator:
                         log["level_seeds"].append(
                             int(info[i].get("prev_level_seed", -1))
                         )
+                        if self.collect_heist_metrics:
+                            append_heist_episode_data(log, info[i])
 
                     # Always increment episode counter (for upper bound check)
                     num_episodes += 1
@@ -595,7 +640,7 @@ class Evaluator:
         total_steps = int(sum(log["episode_length"]))
         level_afhp = float(np.mean(log["level_ood_pred"]))
         ood_accuracy = float(np.mean(log["level_ood_pred"] == log["level_ood_gt"]))
-        return {
+        summary = {
             "steps": total_steps,
             "num_finished_episodes": log["num_finished_episodes"],
             "episode_length_mean": float(np.mean(log["episode_length"])),
@@ -624,6 +669,13 @@ class Evaluator:
             # Level seeds for each completed episode
             "level_seeds": log["level_seeds"],
         }
+        if self.collect_heist_metrics:
+            episode_data = {field: log[field] for field in HEIST_RAW_FIELDS}
+            heist_summary = build_heist_metric_summary(
+                log["env_returns"], episode_data, log["level_ood_gt"]
+            )
+            summary.update(heist_summary.to_result_dict())
+        return summary
 
     def write_summary(self, split, summary):
         log_str = f"   Steps:       {summary['steps']}\n"
@@ -649,6 +701,26 @@ class Evaluator:
         if summary.get("randomize_goal_percentage") is not None:
             log_str += (
                 f"   Random Goal %: {summary['randomize_goal_percentage']:7.2f}%\n"
+            )
+        if summary.get("mean_oracle_regret") is not None:
+            log_str += "   Heist outcomes:\n"
+            log_str += (
+                "      Oracle regret: "
+                f"overall={_format_optional_metric(summary['mean_oracle_regret'])}, "
+                f"ID={_format_optional_metric(summary['id_mean_oracle_regret'])}, "
+                f"OOD={_format_optional_metric(summary['ood_mean_oracle_regret'])}\n"
+            )
+            log_str += (
+                "      Surplus keys:  "
+                f"overall={_format_optional_metric(summary['mean_surplus_keys'])}, "
+                f"ID={_format_optional_metric(summary['id_mean_surplus_keys'])}, "
+                f"OOD={_format_optional_metric(summary['ood_mean_surplus_keys'])}\n"
+            )
+            log_str += (
+                "      Timeout frac:  "
+                f"overall={_format_optional_metric(summary['timeout_fraction'])}, "
+                f"ID={_format_optional_metric(summary['id_timeout_fraction'])}, "
+                f"OOD={_format_optional_metric(summary['ood_timeout_fraction'])}\n"
             )
         log_str += "   Raw Rewards: "
         for r in summary["raw_returns"]:
