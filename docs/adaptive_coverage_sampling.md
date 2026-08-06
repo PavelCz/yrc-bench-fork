@@ -72,12 +72,44 @@ Each evaluation runs `num_levels` episodes and computes (in `YRC/core/evaluator.
 - `level_seeds` — which level seeds were used
 - `level_ood_pred` — per-episode OOD predictions (used downstream by `eval_strong_on_help.py`)
 
+For `heist_afh`, each threshold point also records the completed episode's raw
+`keys_collected`, `num_keys`, `total_chests`, `chests_opened`, `total_steps`, and
+`level_complete` arrays. These support three outcome diagnostics:
+
+- `oracle_regret = 1 - env_return / min(num_keys, total_chests)`
+- `surplus_keys = keys_collected - chests_opened`
+- `timeout_fraction` — the fraction of episodes where `level_complete` is false
+
+The artifact contains overall, ID, and OOD summaries for each diagnostic. Oracle
+regret uses the raw environment return, not the coordination reward after query
+or switching costs. Its current normalization assumes the zero-key-penalty Heist
+evaluation setup; configurations with reward penalties need a separately justified
+oracle-return definition.
+
 ## Output
 
 Results are saved to an NPZ file containing:
 - All sampled curve points (threshold, AFHP, return)
 - Per-point metadata including per-episode predictions
 - Coverage statistics (max normalized gap on the output axis)
+
+Heist outcome arrays and summaries live in each curve point's
+`meta["summary"]["test"]` entry rather than as duplicate top-level NPZ arrays. They
+do not affect calibration, threshold selection, AFHP, or the return performance
+axis. Plot them with the existing analysis command, for example:
+
+```bash
+python -m analyzing.paper_plot --eval_dir PATH/TO/EVALS --env heist \
+    --y_data_key mean_oracle_regret
+python -m analyzing.paper_plot --eval_dir PATH/TO/EVALS --env heist \
+    --y_data_key ood_mean_surplus_keys
+python -m analyzing.paper_plot --eval_dir PATH/TO/EVALS --env heist \
+    --y_data_key ood_timeout_fraction
+```
+
+The corresponding `id_...` keys select ID-only summaries. Legacy and non-Heist
+artifacts do not contain these fields and are rejected with a descriptive error
+when a Heist outcome key is requested.
 
 ## Coverage Metric
 

@@ -1,4 +1,6 @@
 import pytest
+import numpy as np
+from procgen import ProcgenEnv
 
 from YRC.envs.procgen.heist_metrics import (
     append_heist_episode_data,
@@ -128,3 +130,35 @@ def test_build_heist_metric_summary_rejects_misaligned_counter_array():
 
     with pytest.raises(ValueError, match="total_steps has 0 values for 1 returns"):
         build_heist_metric_summary([3.0], episode_data, [False])
+
+
+@pytest.mark.parametrize("random_percent", [0, 100])
+def test_real_heist_env_exposes_terminal_episode_counters(random_percent):
+    env = ProcgenEnv(
+        num_envs=1,
+        env_name="heist_afh",
+        num_levels=1,
+        start_level=123,
+        distribution_mode="hard",
+        random_percent=random_percent,
+        timeout=1,
+    )
+    env.reset()
+
+    try:
+        _, _, done, info = env.step(np.array([0], dtype=np.int32))
+    finally:
+        env.close()
+
+    assert done[0]
+    episode = extract_heist_episode_data(info[0])
+    assert episode["num_keys"] > 0
+    assert episode["total_chests"] > 0
+    assert episode["total_steps"] == 1
+    assert not episode["level_complete"]
+    if random_percent == 0:
+        assert episode["total_chests"] == episode["num_keys"] * 2
+        assert info[0]["prev_level/randomize_goal"] == 0
+    else:
+        assert episode["num_keys"] == episode["total_chests"] * 2
+        assert info[0]["prev_level/randomize_goal"] == 1

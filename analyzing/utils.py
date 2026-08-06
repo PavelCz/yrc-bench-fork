@@ -32,6 +32,19 @@ from YRC.envs.procgen.wrappers import (
 )
 
 
+HEIST_OUTCOME_DATA_KEYS = {
+    "mean_oracle_regret",
+    "id_mean_oracle_regret",
+    "ood_mean_oracle_regret",
+    "mean_surplus_keys",
+    "id_mean_surplus_keys",
+    "ood_mean_surplus_keys",
+    "timeout_fraction",
+    "id_timeout_fraction",
+    "ood_timeout_fraction",
+}
+
+
 def create_env(random_percent: int = 100, start_level: int = 0, num_levels: int = 1):
     """
     Create a coinrun environment with specified parameters.
@@ -293,6 +306,19 @@ def extract_from_data(data, key: str) -> np.ndarray:
             else:
                 means.append(np.nan)
         return np.array(means)
+    elif key in HEIST_OUTCOME_DATA_KEYS:
+        values = []
+        for point_index, element in enumerate(data["meta"]):
+            test_summary = element["summary"]["test"]
+            if key not in test_summary:
+                raise ValueError(
+                    f"Heist outcome metric '{key}' is unavailable at curve point "
+                    f"{point_index}; use a heist_afh artifact generated after Heist "
+                    "outcome metric collection was added"
+                )
+            value = test_summary[key]
+            values.append(np.nan if value is None else float(value))
+        return np.asarray(values, dtype=float)
     else:
         raise ValueError(f"Invalid key: {key}")
 

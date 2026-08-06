@@ -88,6 +88,15 @@ DATA_KEY_NAMES = {
     "episode_length_mean": "Mean Episode Length",
     "episode_length_success_mean": "Mean Episode Length (Success)",
     "first_ood_timestep_mean": "Mean First OOD Timestep",
+    "mean_oracle_regret": "Mean Oracle Regret",
+    "id_mean_oracle_regret": "Mean Oracle Regret (ID)",
+    "ood_mean_oracle_regret": "Mean Oracle Regret (OOD)",
+    "mean_surplus_keys": "Mean Surplus Keys",
+    "id_mean_surplus_keys": "Mean Surplus Keys (ID)",
+    "ood_mean_surplus_keys": "Mean Surplus Keys (OOD)",
+    "timeout_fraction": "Timeout Fraction",
+    "id_timeout_fraction": "Timeout Fraction (ID)",
+    "ood_timeout_fraction": "Timeout Fraction (OOD)",
 }
 
 # Keys that filter by asking behavior (need special handling for reference lines)
