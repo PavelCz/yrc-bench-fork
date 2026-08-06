@@ -87,6 +87,13 @@ from YRC.core.video_utils import (
     save_video_to_folder,
     resolve_video_output_folder,
 )
+from YRC.envs.procgen.heist_metrics import (
+    HEIST_ENV_NAME,
+    HeistMetricSummary,
+    append_heist_episode_data,
+    build_heist_metric_summary,
+    new_heist_episode_data,
+)
 
 
 # Video configuration
@@ -152,34 +159,6 @@ def summarize_returns(returns: List[float]) -> Dict[str, Optional[float]]:
         "min": float(np.min(returns_np)),
         "max": float(np.max(returns_np)),
     }
-
-
-def compute_oracle_regret(
-    episode_return: float, num_keys: int, total_chests: int
-) -> float:
-    """Oracle-normalized regret: 1 - return / min(num_keys, total_chests)."""
-    cap = min(num_keys, total_chests)
-    return 1.0 - float(episode_return) / float(cap)
-
-
-def summarize_heist_metric_split(
-    values: List[float], level_ood_gt: List[bool]
-) -> Dict[str, Dict[str, Optional[float]]]:
-    """Overall / ID / OOD summaries for a heist per-episode metric."""
-    id_values = [v for v, is_ood in zip(values, level_ood_gt) if not is_ood]
-    ood_values = [v for v, is_ood in zip(values, level_ood_gt) if is_ood]
-    return {
-        "overall": summarize_returns(values),
-        "id": summarize_returns(id_values),
-        "ood": summarize_returns(ood_values),
-    }
-
-
-def timeout_fraction(level_complete: List[bool]) -> Optional[float]:
-    """Fraction of episodes that timed out (level_complete == False)."""
-    if len(level_complete) == 0:
-        return None
-    return float(sum(1 for done in level_complete if not done) / len(level_complete))
 
 
 def print_heist_metric_summary(
@@ -322,7 +301,7 @@ def main():
 
     # Run evaluation
     env_name = config.environment.common.env_name
-    collect_heist_metrics = env_name.startswith("heist")
+    collect_heist_metrics = env_name == HEIST_ENV_NAME
     returns, level_ood_gt, level_seeds, video_episodes, heist_episode_data = (
         rollout_and_get_returns(
             policy,
@@ -341,34 +320,11 @@ def main():
     id_stats = summarize_returns(id_returns)
     ood_stats = summarize_returns(ood_returns)
 
-    heist_oracle_regret: Optional[List[float]] = None
-    heist_surplus_keys: Optional[List[float]] = None
-    heist_oracle_regret_stats = None
-    heist_surplus_keys_stats = None
-    heist_timeout_fraction = None
+    heist_metric_summary: Optional[HeistMetricSummary] = None
     if heist_episode_data is not None:
-        heist_oracle_regret = [
-            compute_oracle_regret(ret, num_keys, total_chests)
-            for ret, num_keys, total_chests in zip(
-                returns,
-                heist_episode_data["num_keys"],
-                heist_episode_data["total_chests"],
-            )
-        ]
-        heist_surplus_keys = [
-            float(keys_collected - chests_opened)
-            for keys_collected, chests_opened in zip(
-                heist_episode_data["keys_collected"],
-                heist_episode_data["chests_opened"],
-            )
-        ]
-        heist_oracle_regret_stats = summarize_heist_metric_split(
-            heist_oracle_regret, level_ood_gt
+        heist_metric_summary = build_heist_metric_summary(
+            returns, heist_episode_data, level_ood_gt
         )
-        heist_surplus_keys_stats = summarize_heist_metric_split(
-            heist_surplus_keys, level_ood_gt
-        )
-        heist_timeout_fraction = timeout_fraction(heist_episode_data["level_complete"])
 
     # Print results
     print("\n" + "=" * 60)
@@ -386,11 +342,15 @@ def main():
     print(f"OOD episodes: {ood_stats['count']}")
     if ood_stats["mean"] is not None:
         print(f"OOD mean return: {ood_stats['mean']:.4f}")
-    if heist_oracle_regret_stats is not None and heist_surplus_keys_stats is not None:
-        print_heist_metric_summary("oracle_regret", heist_oracle_regret_stats)
-        print_heist_metric_summary("surplus_keys", heist_surplus_keys_stats)
-        if heist_timeout_fraction is not None:
-            print(f"timeout_fraction: {heist_timeout_fraction:.4f}")
+    if heist_metric_summary is not None:
+        print_heist_metric_summary(
+            "oracle_regret", heist_metric_summary.oracle_regret_stats
+        )
+        print_heist_metric_summary(
+            "surplus_keys", heist_metric_summary.surplus_keys_stats
+        )
+        if heist_metric_summary.timeout_fraction is not None:
+            print(f"timeout_fraction: {heist_metric_summary.timeout_fraction:.4f}")
     print("=" * 60 + "\n")
 
     # Save results
@@ -418,60 +378,8 @@ def main():
         "num_fixed_eval_seeds": len(level_seeds) if level_seeds is not None else None,
     }
 
-    if heist_episode_data is not None:
-        assert heist_oracle_regret is not None
-        assert heist_surplus_keys is not None
-        assert heist_oracle_regret_stats is not None
-        assert heist_surplus_keys_stats is not None
-        results.update(
-            {
-                "keys_collected": heist_episode_data["keys_collected"],
-                "num_keys": heist_episode_data["num_keys"],
-                "total_chests": heist_episode_data["total_chests"],
-                "chests_opened": heist_episode_data["chests_opened"],
-                "total_steps": heist_episode_data["total_steps"],
-                "level_complete": heist_episode_data["level_complete"],
-                "oracle_regret": heist_oracle_regret,
-                "surplus_keys": heist_surplus_keys,
-                "mean_oracle_regret": heist_oracle_regret_stats["overall"]["mean"],
-                "std_oracle_regret": heist_oracle_regret_stats["overall"]["std"],
-                "median_oracle_regret": heist_oracle_regret_stats["overall"]["median"],
-                "min_oracle_regret": heist_oracle_regret_stats["overall"]["min"],
-                "max_oracle_regret": heist_oracle_regret_stats["overall"]["max"],
-                "id_mean_oracle_regret": heist_oracle_regret_stats["id"]["mean"],
-                "id_std_oracle_regret": heist_oracle_regret_stats["id"]["std"],
-                "ood_mean_oracle_regret": heist_oracle_regret_stats["ood"]["mean"],
-                "ood_std_oracle_regret": heist_oracle_regret_stats["ood"]["std"],
-                "mean_surplus_keys": heist_surplus_keys_stats["overall"]["mean"],
-                "std_surplus_keys": heist_surplus_keys_stats["overall"]["std"],
-                "median_surplus_keys": heist_surplus_keys_stats["overall"]["median"],
-                "min_surplus_keys": heist_surplus_keys_stats["overall"]["min"],
-                "max_surplus_keys": heist_surplus_keys_stats["overall"]["max"],
-                "id_mean_surplus_keys": heist_surplus_keys_stats["id"]["mean"],
-                "id_std_surplus_keys": heist_surplus_keys_stats["id"]["std"],
-                "ood_mean_surplus_keys": heist_surplus_keys_stats["ood"]["mean"],
-                "ood_std_surplus_keys": heist_surplus_keys_stats["ood"]["std"],
-                "timeout_fraction": heist_timeout_fraction,
-                "id_timeout_fraction": timeout_fraction(
-                    [
-                        done
-                        for done, is_ood in zip(
-                            heist_episode_data["level_complete"], level_ood_gt
-                        )
-                        if not is_ood
-                    ]
-                ),
-                "ood_timeout_fraction": timeout_fraction(
-                    [
-                        done
-                        for done, is_ood in zip(
-                            heist_episode_data["level_complete"], level_ood_gt
-                        )
-                        if is_ood
-                    ]
-                ),
-            }
-        )
+    if heist_metric_summary is not None:
+        results.update(heist_metric_summary.to_result_dict())
 
     results_path = save_dir / "policy_eval_results.json"
     with results_path.open("w") as f:
@@ -528,12 +436,7 @@ def rollout_and_get_returns(
     # The current episode's OOD ground truth becomes available after the first step.
     current_level_ood_gt = [False] * env.num_envs
 
-    heist_keys_collected: List[int] = []
-    heist_num_keys: List[int] = []
-    heist_total_chests: List[int] = []
-    heist_chests_opened: List[int] = []
-    heist_total_steps: List[int] = []
-    heist_level_complete: List[bool] = []
+    heist_episode_data = new_heist_episode_data() if collect_heist_metrics else None
 
     # Video collection data structures (one per parallel env)
     video_episodes = []
@@ -589,20 +492,8 @@ def rollout_and_get_returns(
                     )
                     level_seeds.append(int(info[i].get("prev_level_seed", -1)))
                     if collect_heist_metrics:
-                        heist_keys_collected.append(
-                            int(info[i]["prev_level/keys_collected"])
-                        )
-                        heist_num_keys.append(int(info[i]["prev_level/num_keys"]))
-                        heist_total_chests.append(
-                            int(info[i]["prev_level/total_chests"])
-                        )
-                        heist_chests_opened.append(
-                            int(info[i]["prev_level/chests_opened"])
-                        )
-                        heist_total_steps.append(int(info[i]["prev_level/total_steps"]))
-                        heist_level_complete.append(
-                            bool(info[i]["prev_level_complete"])
-                        )
+                        assert heist_episode_data is not None
+                        append_heist_episode_data(heist_episode_data, info[i])
                     num_completed += 1
 
                     if num_completed % 10 == 0 or num_completed == target_episodes:
@@ -643,17 +534,6 @@ def rollout_and_get_returns(
                 current_level_ood_gt[i] = bool(info[i]["randomize_goal"])
 
         obs = next_obs
-
-    heist_episode_data = None
-    if collect_heist_metrics:
-        heist_episode_data = {
-            "keys_collected": heist_keys_collected,
-            "num_keys": heist_num_keys,
-            "total_chests": heist_total_chests,
-            "chests_opened": heist_chests_opened,
-            "total_steps": heist_total_steps,
-            "level_complete": heist_level_complete,
-        }
 
     return returns, level_ood_gt, level_seeds, video_episodes, heist_episode_data
 
