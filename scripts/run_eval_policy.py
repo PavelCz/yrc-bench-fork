@@ -41,6 +41,7 @@ DEFAULT_CONFIGS = {
     "coinrun": "configs/eval/coinrun/max_prob.yaml",
     "coinrun_proxy_fail": "configs/eval/coinrun/max_prob.yaml",
     "maze": "configs/eval/maze/max_prob.yaml",
+    "heist": "configs/eval/heist/max_prob.yaml",
 }
 
 EVAL_ENVS = [*ENVS, "coinrun_proxy_fail"]

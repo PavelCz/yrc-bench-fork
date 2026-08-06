@@ -7,10 +7,14 @@ TRAIN_DIR="${PROJECT_ROOT}/lib/train-procgen-pytorch"
 
 # Default configuration
 CONDA_ENV="ood-stable"
+CONDA_BASE="/nas/ucb/czempin/anaconda3"
 EXP_PREFIX="icml2"
 LEVEL_SEEDS_FOLDER="/nas/ucb/czempin/data/goal-misgen/seeds/icml"
 LOG_DIR="/nas/ucb/czempin/data/goal-misgen/logs/train_policies"
+CHECKPOINT_BASE="/nas/ucb/czempin/data/goal-misgen/policy/icml"
 RANDOM_PERCENTS=(0 50 100)
+DISTRIBUTION_MODE="hard"
+PARAM_NAME="paper"
 
 # Usage function
 usage() {
@@ -39,6 +43,17 @@ Optional arguments:
                               Procgen PPO peak is ~13G (incl. the 400M maze
                               robust expert); 24G leaves headroom. Hard cap ->
                               OOM-kill if exceeded.
+    --checkpoint-base PATH    Base directory for policy checkpoints
+                              (default: $CHECKPOINT_BASE).
+    --exp-prefix NAME         Experiment-name prefix (default: $EXP_PREFIX). Use a
+                              distinct prefix for side experiments so their
+                              checkpoints do not land in the same directory as
+                              the main runs (checkpoint lookup picks the NEWEST
+                              timestamp dir under a given exp name).
+    --distribution-mode MODE  Procgen distribution_mode (default: $DISTRIBUTION_MODE).
+                              Note the per-level reward cap is mode-dependent
+                              for heist: mean 3.5 in hard, 2.5 in easy.
+    --param-name NAME         Hyper-parameter set (default: $PARAM_NAME).
     --qos NAME                SLURM QOS (default: default). Use "high" for the
                               7-day wall the 400M maze robust expert needs;
                               "default" caps at 3 days.
@@ -110,6 +125,22 @@ while [[ $# -gt 0 ]]; do
             ;;
         --mem)
             MEM="$2"
+            shift 2
+            ;;
+        --checkpoint-base)
+            CHECKPOINT_BASE="$2"
+            shift 2
+            ;;
+        --exp-prefix)
+            EXP_PREFIX="$2"
+            shift 2
+            ;;
+        --distribution-mode)
+            DISTRIBUTION_MODE="$2"
+            shift 2
+            ;;
+        --param-name)
+            PARAM_NAME="$2"
             shift 2
             ;;
         --qos)
@@ -243,6 +274,7 @@ fi
 echo "Starting training with:"
 echo "  ENV_TYPE:      $ENV_TYPE"
 echo "  EXPERIMENT_ID: $EXPERIMENT_ID"
+echo "  CONDA_ENV:     $CONDA_ENV"
 echo "  SEED:          $SEED"
 echo "  TRAIN_MODE:    $TRAIN_MODE"
 echo "  RANDOM_START:  $RANDOMIZE_AGENT_START"
@@ -251,7 +283,11 @@ echo "  TRAIN_DAYS:    $TRAIN_DAYS"
 echo "  GRES:          $GRES_ARG"
 echo "  CPUS_PER_TASK: ${CPUS_PER_TASK:-(cluster default)}"
 echo "  MEM:           $MEM"
+echo "  CHECKPOINTS:   $CHECKPOINT_BASE"
 echo "  QOS:           $QOS"
+echo "  EXP_PREFIX:    $EXP_PREFIX"
+echo "  DIST_MODE:     $DISTRIBUTION_MODE"
+echo "  PARAM_NAME:    $PARAM_NAME"
 echo ""
 
 if [ -n "$RANDOM_PERCENT_OVERRIDE" ]; then
@@ -282,7 +318,7 @@ for random_percent in "${RANDOM_PERCENTS[@]}"; do
         --mem="$MEM" \
         --job-name="$exp_name" \
         --output="${LOG_DIR}/${exp_name}_%j.out" \
-        --wrap="cd $TRAIN_DIR && conda run -n $CONDA_ENV python train.py \
+        --wrap=". ${CONDA_BASE}/etc/profile.d/conda.sh && cd $TRAIN_DIR && conda run -n $CONDA_ENV python train.py \
             --level_seeds_file ${LEVEL_SEEDS_FOLDER}/${LEVEL_SEEDS_FILE} \
             --train_mode $TRAIN_MODE \
             --eval_mode sequential \
@@ -291,13 +327,14 @@ for random_percent in "${RANDOM_PERCENTS[@]}"; do
             --val_env_name $VAL_ENV_NAME \
             --random_percent $random_percent \
             --random_percent_val 50 \
-            --distribution_mode hard \
-            --param_name paper \
+            --distribution_mode $DISTRIBUTION_MODE \
+            --param_name $PARAM_NAME \
             --num_timesteps $NUM_TIMESTEPS \
             --log_interval 4000000 \
             --num_checkpoints 10 \
             --num_threads 4 \
             --seed $SEED \
+            --logdir_base $CHECKPOINT_BASE \
             $EXTRA_ARGS"
 done
 

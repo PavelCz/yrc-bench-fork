@@ -8,7 +8,7 @@ ROBUST_MAZE_CHECKPOINT_STEPS = {
     "robust200": 200015872,
     "robust400": 400031744,
 }
-ENVS = ["maze", "coinrun"]
+ENVS = ["maze", "coinrun", "heist"]
 EXP_ID_TO_SEED = {
     0: 6033,
     1: 1,
@@ -73,6 +73,8 @@ def get_eval_env_name(env: str) -> str:
     """Map experiment env keys to the Procgen env used at evaluation time."""
     if env == "maze":
         return "maze_afh"
+    if env == "heist":
+        return "heist_afh"
     return env
 
 

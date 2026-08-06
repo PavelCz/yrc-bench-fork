@@ -3,6 +3,7 @@ import json
 import os
 import random
 import time
+from pathlib import Path
 
 import gym
 import torch
@@ -89,6 +90,15 @@ if __name__ == "__main__":
     parser.add_argument("--model_file", type=str)
     parser.add_argument("--use_wandb", action="store_true")
     parser.add_argument("--disable_backgrounds", action="store_true")
+    parser.add_argument(
+        "--logdir_base",
+        type=Path,
+        default=Path("logs") / "train",
+        help=(
+            "Base directory for training output. Final path: "
+            "{logdir_base}/{env_name}/{exp_name}/{run_name}/."
+        ),
+    )
 
     parser.add_argument("--wandb_tags", type=str, nargs="+")
     parser.add_argument(
@@ -333,16 +343,18 @@ if __name__ == "__main__":
     def get_latest_model(model_dir):
         """given model_dir with files named model_n.pth where n is an integer,
         return the filename with largest n"""
-        steps = [
-            int(filename[6:-4])
+        models = [
+            filename
             for filename in os.listdir(model_dir)
-            if filename.startswith("model_")
+            if filename.startswith("model_") and filename.endswith(".pth")
         ]
-        return list(os.listdir(model_dir))[np.argmax(steps)]
+        if not models:
+            raise FileNotFoundError(f"No model_*.pth files in {model_dir}")
+        return max(models, key=lambda f: int(f[6:-4]))
 
     print("INITIALIZING LOGGER...")
 
-    logdir = os.path.join("logs", "train", env_name, exp_name)
+    logdir = args.logdir_base / env_name / exp_name
     if args.model_file == "auto":  # try to figure out which file to load
         logdirs_with_model = [
             d
