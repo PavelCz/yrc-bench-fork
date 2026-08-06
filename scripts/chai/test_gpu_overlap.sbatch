@@ -6,7 +6,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --mem=8G
 #SBATCH --time=00:05:00
-#SBATCH --qos=default
+#SBATCH --qos=high
 #SBATCH --job-name=gpu-overlap-test
 #SBATCH --output=logs/%x_%j.out
 #SBATCH --error=logs/%x_%j.err
