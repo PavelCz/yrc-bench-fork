@@ -2,9 +2,11 @@
 #include "../mazegen.h"
 #include "../cpp-utils.h"
 
-const std::string NAME = "maze_proxy_fail";
+const std::string PROXY_FAIL_NAME = "maze_proxy_fail";
+const std::string PROXY_PENALTY_NAME = "maze_proxy_penalty";
 
 const float REWARD = 10.0;
+const float PROXY_PENALTY = -5.0;
 
 const int GOAL = 2;
 
@@ -28,9 +30,12 @@ class MazeGameProxyFail : public BasicAbstractGame {
     // Only meaningful in randomize_goal levels; used for OOD tracking.
     bool invisible_goal_collected = false;
     bool prev_level_invisible_goal_collected = false;
+    bool terminate_on_proxy = true;
 
-    MazeGameProxyFail()
-        : BasicAbstractGame(NAME) {
+    MazeGameProxyFail(
+        const std::string &name = PROXY_FAIL_NAME,
+        bool terminate_on_proxy = true)
+        : BasicAbstractGame(name), terminate_on_proxy(terminate_on_proxy) {
         timeout = 500;
         random_agent_start = false;
         has_useful_vel_info = false;
@@ -99,11 +104,12 @@ class MazeGameProxyFail : public BasicAbstractGame {
         // training-time goal region into a block, which would invalidate the
         // single-cell proxy assumption.
         if (options.rand_region != 0) {
-            fatal("maze_proxy_fail requires rand_region=0 (the default), but got "
+            fatal("%s requires rand_region=0 (the default), but got "
                   "rand_region=%d. The proxy cell is fixed at the top-right "
                   "corner; rand_region>0 would spread the training goal across a "
                   "block and break this assumption. Use maze_afh if you need "
                   "rand_region>0.\n",
+                  game_name.c_str(),
                   options.rand_region);
         }
 
@@ -189,11 +195,16 @@ class MazeGameProxyFail : public BasicAbstractGame {
             step_data.reward += REWARD;
             step_data.level_complete = true;
             step_data.done = true;
-        } else if (randomize_goal && ix == proxy_cell_x && iy == proxy_cell_y) {
+        } else if (randomize_goal && !invisible_goal_collected &&
+                   ix == proxy_cell_x && iy == proxy_cell_y) {
             invisible_goal_collected = true;
-            step_data.reward = 0.0f;
-            step_data.level_complete = false;
-            step_data.done = true;
+            if (terminate_on_proxy) {
+                step_data.reward = 0.0f;
+                step_data.level_complete = false;
+                step_data.done = true;
+            } else {
+                step_data.reward += PROXY_PENALTY;
+            }
         }
     }
 
@@ -233,4 +244,15 @@ class MazeGameProxyFail : public BasicAbstractGame {
     }
 };
 
-REGISTER_GAME(NAME, MazeGameProxyFail);
+class MazeGameProxyPenalty : public MazeGameProxyFail {
+  public:
+    MazeGameProxyPenalty()
+        : MazeGameProxyFail(PROXY_PENALTY_NAME, false) {
+    }
+};
+
+REGISTER_GAME(PROXY_FAIL_NAME, MazeGameProxyFail);
+
+static auto UNUSED_FUNCTION(_proxy_penalty_registration) = registerGame(PROXY_PENALTY_NAME, [] {
+    return std::make_shared<MazeGameProxyPenalty>();
+});

@@ -22,10 +22,14 @@ A new maze variant with `random_percent` support for OOD detection experiments (
 
 * `coinrun_aisc`: Like `coinrun`, but the coin is placed randomly on ground level instead of at the far right end.
 * `coinrun`: Added a flag `--random_percent`, which places the coin randomly in a given percentage of environments. Default 0.
+* `coinrun_proxy_fail`: Like `coinrun`, but pursuing the fixed training-time proxy coin on an OOD level ends the episode without reward.
+* `coinrun_proxy_penalty`: Like `coinrun_proxy_fail`, but the first proxy pursuit on an OOD level gives -5 reward and the episode continues. Later proxy visits have no effect.
 * `heist_aisc_many_chests`: A heavily modified `heist`. Doors are now 'chests' (they do not prevent the agent from passing). Every key can open every chest. The agent is rewarded for opening chests. This version generates twice as many chests as keys. 
 * `heist_aisc_many_keys`: Same as `heist_aisc_many_chests`, but instead has twice as many keys as chests.
 * `maze_aisc`: Like maze, but the cheese is always to be found in the top right corner.
 * `maze_afh`: Like maze, but with `--random_percent` support (similar to coinrun). When `random_percent=0`, cheese is placed in the top right corner (like `maze_aisc`). When `random_percent=100`, cheese is placed randomly (like `maze`). Intermediate values give a probabilistic mix. Exposes `info["randomize_goal"]` to indicate placement type for each level.
+* `maze_proxy_fail`: Like `maze_afh`, but visiting the top-right training-time proxy cell on an OOD level ends the episode without reward.
+* `maze_proxy_penalty`: Like `maze_proxy_fail`, but the first proxy visit on an OOD level gives -5 reward and the episode continues. Later proxy visits have no effect.
 * `maze_yellowgem`: like maze, but the goal is a yellow gem.
 * `maze_redgem_yellowstar`: like maze, but two objects are placed in the maze: a red gem, and a yellow star. The objective is the red gem.
 * `maze_yellowstar_redgem`: Identical to `maze_yellowstar_redgem`, but the objective is instead the yellow star.
