@@ -17,6 +17,24 @@ def test_coinrun_proxy_fail_uses_coinrun_config_and_checkpoints():
     assert "coinrun_proxy_fail" in run_eval_policy.EVAL_ENVS
 
 
+def test_proxy_penalty_uses_base_configs_and_checkpoints():
+    expected = {
+        "coinrun_proxy_penalty": (
+            "coinrun",
+            "configs/eval/coinrun/max_prob.yaml",
+        ),
+        "maze_proxy_penalty": (
+            "maze",
+            "configs/eval/maze/max_prob.yaml",
+        ),
+    }
+
+    for env_name, (checkpoint_env, config) in expected.items():
+        assert run_eval_policy.DEFAULT_CONFIGS[env_name] == config
+        assert run_eval_policy.CHECKPOINT_ENVS[env_name] == checkpoint_env
+        assert env_name in run_eval_policy.EVAL_ENVS
+
+
 def test_eval_policy_sbatch_overrides_env_name():
     command = run_eval_policy.build_sbatch_command(
         "job",

@@ -40,8 +40,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-ENVS=("maze" "coinrun" "coinrun_proxy_fail" "maze_proxy_fail" "heist")
-ROBUST_ENVS=("maze" "maze_proxy_fail")
+ENVS=("maze" "coinrun" "coinrun_proxy_fail" "coinrun_proxy_penalty" "maze_proxy_fail" "maze_proxy_penalty" "heist")
+ROBUST_ENVS=("maze" "maze_proxy_fail" "maze_proxy_penalty")
 ROBUST_VARIANTS=("robust200" "robust400")
 EXPS=("exp0" "exp1" "exp2" "exp3")
 AGENTS=("sim" "weak" "strong")

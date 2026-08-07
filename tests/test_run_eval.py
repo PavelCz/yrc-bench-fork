@@ -7,11 +7,27 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 run_eval = importlib.import_module("run_eval")
+preflight_eval_env = importlib.import_module("preflight_eval_env")
+sync_eval_artifacts = importlib.import_module("sync_eval_artifacts")
 
 
 def test_coinrun_proxy_fail_uses_coinrun_artifacts():
     assert run_eval.ARTIFACT_ENVS["coinrun_proxy_fail"] == "coinrun"
     assert "coinrun_proxy_fail" in run_eval.EVAL_ENVS
+
+
+def test_proxy_penalty_envs_use_base_artifacts_and_pass_preflight():
+    expected_artifacts = {
+        "coinrun_proxy_penalty": "coinrun",
+        "maze_proxy_penalty": "maze",
+    }
+
+    for env_name, artifact_env in expected_artifacts.items():
+        assert run_eval.ARTIFACT_ENVS[env_name] == artifact_env
+        assert sync_eval_artifacts.ARTIFACT_ENVS[env_name] == artifact_env
+        assert env_name in run_eval.EVAL_ENVS
+        assert env_name in sync_eval_artifacts.EVAL_ENVS
+        assert env_name in preflight_eval_env.SUPPORTED_ENVS
 
 
 def test_eval_sbatch_overrides_env_name():

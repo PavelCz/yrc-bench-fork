@@ -34,7 +34,15 @@ METRIC_LABELS = {
     "id": "ID",
     "ood": "OOD",
 }
-SUPPORTED_ENVS = ["coinrun", "coinrun_proxy_fail", "maze", "maze_afh", "heist"]
+SUPPORTED_ENVS = [
+    "coinrun",
+    "coinrun_proxy_fail",
+    "coinrun_proxy_penalty",
+    "maze",
+    "maze_afh",
+    "maze_proxy_penalty",
+    "heist",
+]
 SERIES_COLORS = {
     "strong": "#1f77b4",
     "weak": "#ff7f0e",
