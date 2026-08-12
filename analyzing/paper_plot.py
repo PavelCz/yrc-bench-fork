@@ -665,6 +665,30 @@ def calculate_auc_with_bands(
     return auc_median, auc_lower, auc_upper
 
 
+def _median_reference_anchors(
+    first_performances: List[float],
+    last_performances: List[float],
+    unfiltered_weak_performances: Optional[List[float]] = None,
+) -> Tuple[float, float]:
+    """Return the median novice and expert anchors for the plotted runs.
+
+    Metrics that condition on asking behavior use the unfiltered novice return
+    for their novice reference, matching the existing baseline semantics.
+    """
+    if not first_performances or not last_performances:
+        raise ValueError("Cannot calculate reference anchors without endpoints.")
+
+    novice_values = (
+        unfiltered_weak_performances
+        if unfiltered_weak_performances
+        else first_performances
+    )
+    return (
+        float(np.median(novice_values)),
+        float(np.median(last_performances)),
+    )
+
+
 def _print_endpoint_baselines(
     results: Dict[str, Dict[int, Path]],
     valid_methods: List[str],
@@ -1212,9 +1236,9 @@ def plot_icml_results(
         robust_filter == "robust" and len(robust_variants_in_plot) == 1
     )
 
-    # Optional y-axis normalization: rescale every curve so that the mean
+    # Optional y-axis normalization: rescale every curve so that the median
     # weak-agent return (curve y[0] across all method × exp) maps to 0 and the
-    # mean expert return (curve y[-1] across all method × exp) maps to 1. We
+    # median expert return (curve y[-1] across all method × exp) maps to 1. We
     # need these constants before the plotting loop, so do a one-time
     # endpoint pre-scan over the .npz files.
     do_normalize_y = False
@@ -1245,17 +1269,22 @@ def plot_icml_results(
                     if len(_y_unf) > 0:
                         _weak_y.append(float(_y_unf[0]))
         if _first_y and _last_y:
-            if y_data_key in FILTERED_PERFORMANCE_KEYS and _weak_y:
-                weak_for_norm = float(np.mean(_weak_y))
-            else:
-                weak_for_norm = float(np.mean(_first_y))
-            _strong_for_norm = float(np.mean(_last_y))
+            unfiltered_weak = (
+                _weak_y
+                if y_data_key in FILTERED_PERFORMANCE_KEYS and _weak_y
+                else None
+            )
+            weak_for_norm, _strong_for_norm = _median_reference_anchors(
+                _first_y,
+                _last_y,
+                unfiltered_weak,
+            )
             perf_range_for_norm = _strong_for_norm - weak_for_norm
             if abs(perf_range_for_norm) > 1e-6:
                 do_normalize_y = True
             else:
                 print(
-                    "Warning: --normalize_y requested but mean weak ~= mean "
+                    "Warning: --normalize_y requested but median weak ~= median "
                     "expert; skipping y normalization."
                 )
 
@@ -1496,26 +1525,33 @@ def plot_icml_results(
                     overall_x_min = min(overall_x_min, common_x.min())
                     overall_x_max = max(overall_x_max, common_x.max())
 
-    # Add reference lines
-    if not disable_horizontal_lines and all_first_performances:
-        mean_first = np.mean(all_first_performances)
-        mean_last = np.mean(all_last_performances)
+    reference_anchors = None
+    if all_first_performances and all_last_performances:
+        unfiltered_weak = (
+            all_weak_performances
+            if y_data_key in FILTERED_PERFORMANCE_KEYS
+            and all_weak_performances
+            else None
+        )
+        reference_anchors = _median_reference_anchors(
+            all_first_performances,
+            all_last_performances,
+            unfiltered_weak,
+        )
 
-        # For filtered performance keys, use unfiltered weak performance
-        if y_data_key in FILTERED_PERFORMANCE_KEYS and all_weak_performances:
-            weak_perf = np.mean(all_weak_performances)
-        else:
-            weak_perf = mean_first
+    # Add median reference lines. IQR bands remain exclusive to method curves.
+    if not disable_horizontal_lines and reference_anchors is not None:
+        novice_anchor, expert_anchor = reference_anchors
 
         plt.axhline(
-            y=weak_perf,
+            y=novice_anchor,
             color="red",
             linestyle="--",
             alpha=0.7,
             label=r"\textsc{Novice}",
         )
         plt.axhline(
-            y=mean_last,
+            y=expert_anchor,
             color="blue",
             linestyle="--",
             alpha=0.7,
@@ -1523,16 +1559,10 @@ def plot_icml_results(
         )
 
     # Add random baseline diagonal line (from weak to oracle)
-    if not disable_random_line and all_first_performances and all_x_min:
-        mean_last = np.mean(all_last_performances)
+    if not disable_random_line and reference_anchors is not None and all_x_min:
+        novice_anchor, expert_anchor = reference_anchors
         x_min = min(all_x_min)
         x_max = max(all_x_max)
-
-        # For filtered performance keys, use unfiltered weak performance
-        if y_data_key in FILTERED_PERFORMANCE_KEYS and all_weak_performances:
-            random_start = np.mean(all_weak_performances)
-        else:
-            random_start = np.mean(all_first_performances)
 
         # Use a unique line style for random that's different from all methods
         # Since methods get assigned styles starting from index 0, we'll use a later style
@@ -1545,7 +1575,7 @@ def plot_icml_results(
             
         plt.plot(
             [x_min, x_max],
-            [random_start, mean_last],
+            [novice_anchor, expert_anchor],
             color="black",
             linestyle=random_linestyle,
             alpha=0.9,
@@ -1658,14 +1688,8 @@ def plot_icml_results(
         else:
             weak_perf = None
             strong_perf = None
-            if all_first_performances:
-                # For filtered performance keys, use unfiltered weak performance
-                if y_data_key in FILTERED_PERFORMANCE_KEYS and all_weak_performances:
-                    weak_perf = np.mean(all_weak_performances)
-                else:
-                    weak_perf = np.mean(all_first_performances)
-            if all_last_performances:
-                strong_perf = np.mean(all_last_performances)
+            if reference_anchors is not None:
+                weak_perf, strong_perf = reference_anchors
 
         # OOD accuracy at AFHP=50% per method (median + IQR across exps).
         # Skipped entirely when the column is disabled to avoid the extra
@@ -1826,8 +1850,8 @@ def main():
         "--normalize-y",
         action="store_true",
         help=(
-            "Rescale plotted curves so that mean novice (curve y[0] across "
-            "all method × exp) maps to 0 and mean expert (curve y[-1]) maps "
+            "Rescale plotted curves so that median novice (curve y[0] across "
+            "all method × exp) maps to 0 and median expert (curve y[-1]) maps "
             "to 1. The y-axis label is suffixed with '(normalized)'. When "
             "combined with --auc, the AUC table reports values already in "
             "this normalized frame."
