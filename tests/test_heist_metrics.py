@@ -4,10 +4,12 @@ from procgen import ProcgenEnv
 
 from YRC.envs.procgen.heist_metrics import (
     append_heist_episode_data,
+    all_keys_triggered,
     build_heist_metric_summary,
     compute_oracle_regret,
     extract_heist_episode_data,
     new_heist_episode_data,
+    redundant_key_triggered,
     summarize_heist_metric_split,
     timeout_fraction,
 )
@@ -90,6 +92,22 @@ def test_timeout_fraction_handles_empty_and_mixed_episodes():
     assert timeout_fraction([True, False, False, True]) == 0.5
 
 
+@pytest.mark.parametrize(
+    ("keys_collected", "total_chests", "expected"),
+    [(3, 3, False), (4, 3, True)],
+)
+def test_redundant_key_trigger(keys_collected, total_chests, expected):
+    assert redundant_key_triggered(keys_collected, total_chests) is expected
+
+
+@pytest.mark.parametrize(
+    ("keys_collected", "num_keys", "expected"),
+    [(5, 6, False), (6, 6, True)],
+)
+def test_all_keys_trigger(keys_collected, num_keys, expected):
+    assert all_keys_triggered(keys_collected, num_keys) is expected
+
+
 def test_build_heist_metric_summary_preserves_flat_result_schema():
     episode_data = new_heist_episode_data()
     append_heist_episode_data(episode_data, terminal_info())
@@ -116,6 +134,14 @@ def test_build_heist_metric_summary_preserves_flat_result_schema():
     assert result["id_mean_oracle_regret"] == 0.0
     assert result["ood_mean_oracle_regret"] == 0.5
     assert result["mean_surplus_keys"] == pytest.approx(2.5)
+    assert result["redundant_key_triggered"] == [True, True]
+    assert result["all_keys_triggered"] == [False, True]
+    assert result["redundant_key_trigger_rate"] == 1.0
+    assert result["id_redundant_key_trigger_rate"] == 1.0
+    assert result["ood_redundant_key_trigger_rate"] == 1.0
+    assert result["all_keys_trigger_rate"] == 0.5
+    assert result["id_all_keys_trigger_rate"] == 0.0
+    assert result["ood_all_keys_trigger_rate"] == 1.0
     assert result["timeout_fraction"] == 0.5
     assert result["id_timeout_fraction"] == 0.0
     assert result["ood_timeout_fraction"] == 1.0

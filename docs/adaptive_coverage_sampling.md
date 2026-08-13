@@ -78,10 +78,18 @@ For `heist_afh`, each threshold point also records the completed episode's raw
 
 - `oracle_regret = 1 - env_return / min(num_keys, total_chests)`
 - `surplus_keys = keys_collected - chests_opened`
+- `redundant_key_triggered` — whether cumulative key pickups exceeded the total
+  number of chests, meaning the first provably redundant key was collected
+- `all_keys_triggered` — whether every key in the level was collected, completing
+  the hypothesized collect-all-keys proxy goal
 - `timeout_fraction` — the fraction of episodes where `level_complete` is false
 
-The artifact contains overall, ID, and OOD summaries for each diagnostic. Oracle
-regret uses the raw environment return, not the coordination reward after query
+The artifact contains overall, ID, and OOD summaries for each diagnostic. The two
+trigger diagnostics are recorded as per-episode booleans and as trigger rates.
+A corresponding environment-consequence ablation should apply these conditions
+only on OOD many-keys levels; the ID rates are retained as behavioral
+diagnostics. Oracle regret uses the raw environment return, not the coordination
+reward after query
 or switching costs. Its current normalization assumes the zero-key-penalty Heist
 evaluation setup; configurations with reward penalties need a separately justified
 oracle-return definition.
@@ -104,12 +112,18 @@ python -m analyzing.paper_plot --eval_dir PATH/TO/EVALS --env heist \
 python -m analyzing.paper_plot --eval_dir PATH/TO/EVALS --env heist \
     --y_data_key ood_mean_surplus_keys
 python -m analyzing.paper_plot --eval_dir PATH/TO/EVALS --env heist \
+    --y_data_key ood_redundant_key_trigger_rate
+python -m analyzing.paper_plot --eval_dir PATH/TO/EVALS --env heist \
+    --y_data_key ood_all_keys_trigger_rate
+python -m analyzing.paper_plot --eval_dir PATH/TO/EVALS --env heist \
     --y_data_key ood_timeout_fraction
 ```
 
 The corresponding `id_...` keys select ID-only summaries. Legacy and non-Heist
 artifacts do not contain these fields and are rejected with a descriptive error
 when a Heist outcome key is requested.
+For older Heist artifacts that contain the raw episode counters but predate the
+two trigger-rate scalars, the analysis code derives the rates on load.
 
 ## Coverage Metric
 
