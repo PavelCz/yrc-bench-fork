@@ -125,11 +125,19 @@ def test_evaluator_collects_heist_metrics_using_raw_env_reward(tmp_path):
     assert summary["level_ood_gt"] == [False, True]
     assert summary["oracle_regret"] == [0.0, 0.5]
     assert summary["surplus_keys"] == [0.0, 3.0]
+    assert summary["redundant_key_triggered"] == [False, True]
+    assert summary["all_keys_triggered"] == [True, True]
     assert summary["keys_collected"] == [2, 4]
     assert summary["level_complete"] == [True, False]
     assert summary["mean_oracle_regret"] == pytest.approx(0.25)
     assert summary["id_mean_oracle_regret"] == 0.0
     assert summary["ood_mean_oracle_regret"] == 0.5
+    assert summary["redundant_key_trigger_rate"] == 0.5
+    assert summary["id_redundant_key_trigger_rate"] == 0.0
+    assert summary["ood_redundant_key_trigger_rate"] == 1.0
+    assert summary["all_keys_trigger_rate"] == 1.0
+    assert summary["id_all_keys_trigger_rate"] == 1.0
+    assert summary["ood_all_keys_trigger_rate"] == 1.0
     assert summary["timeout_fraction"] == 0.5
     assert summary["id_timeout_fraction"] == 0.0
     assert summary["ood_timeout_fraction"] == 1.0
@@ -176,6 +184,8 @@ def test_evaluator_handles_empty_ood_metric_split(tmp_path):
 
     assert summary["ood_mean_oracle_regret"] is None
     assert summary["ood_mean_surplus_keys"] is None
+    assert summary["ood_redundant_key_trigger_rate"] is None
+    assert summary["ood_all_keys_trigger_rate"] is None
     assert summary["ood_timeout_fraction"] is None
 
 
@@ -198,6 +208,8 @@ def test_non_heist_summary_does_not_gain_heist_fields(tmp_path):
     summary = evaluator.summarize(log)
 
     assert "oracle_regret" not in summary
+    assert "redundant_key_trigger_rate" not in summary
+    assert "all_keys_trigger_rate" not in summary
     assert "timeout_fraction" not in summary
 
 
@@ -208,6 +220,10 @@ def test_heist_wandb_metrics_include_only_available_scalars():
             "id_mean_oracle_regret": 0.0,
             "ood_mean_oracle_regret": 0.5,
             "mean_surplus_keys": None,
+            "redundant_key_trigger_rate": 0.4,
+            "id_redundant_key_trigger_rate": 0.1,
+            "ood_redundant_key_trigger_rate": 0.7,
+            "all_keys_trigger_rate": None,
         }
     )
 
@@ -215,4 +231,7 @@ def test_heist_wandb_metrics_include_only_available_scalars():
         "heist/mean_oracle_regret": 0.25,
         "heist/id_mean_oracle_regret": 0.0,
         "heist/ood_mean_oracle_regret": 0.5,
+        "heist/redundant_key_trigger_rate": 0.4,
+        "heist/id_redundant_key_trigger_rate": 0.1,
+        "heist/ood_redundant_key_trigger_rate": 0.7,
     }

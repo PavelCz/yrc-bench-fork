@@ -25,6 +25,12 @@ HEIST_WANDB_METRICS = (
     "mean_surplus_keys",
     "id_mean_surplus_keys",
     "ood_mean_surplus_keys",
+    "redundant_key_trigger_rate",
+    "id_redundant_key_trigger_rate",
+    "ood_redundant_key_trigger_rate",
+    "all_keys_trigger_rate",
+    "id_all_keys_trigger_rate",
+    "ood_all_keys_trigger_rate",
     "timeout_fraction",
     "id_timeout_fraction",
     "ood_timeout_fraction",
@@ -715,6 +721,18 @@ class Evaluator:
                 f"overall={_format_optional_metric(summary['mean_surplus_keys'])}, "
                 f"ID={_format_optional_metric(summary['id_mean_surplus_keys'])}, "
                 f"OOD={_format_optional_metric(summary['ood_mean_surplus_keys'])}\n"
+            )
+            log_str += (
+                "      Redundant-key trigger rate: "
+                f"overall={_format_optional_metric(summary['redundant_key_trigger_rate'])}, "
+                f"ID={_format_optional_metric(summary['id_redundant_key_trigger_rate'])}, "
+                f"OOD={_format_optional_metric(summary['ood_redundant_key_trigger_rate'])}\n"
+            )
+            log_str += (
+                "      All-keys trigger rate:      "
+                f"overall={_format_optional_metric(summary['all_keys_trigger_rate'])}, "
+                f"ID={_format_optional_metric(summary['id_all_keys_trigger_rate'])}, "
+                f"OOD={_format_optional_metric(summary['ood_all_keys_trigger_rate'])}\n"
             )
             log_str += (
                 "      Timeout frac:  "

@@ -27,6 +27,12 @@ EXPECTED_LABELS = {
     "mean_surplus_keys": "Mean Surplus Keys",
     "id_mean_surplus_keys": "Mean Surplus Keys (ID)",
     "ood_mean_surplus_keys": "Mean Surplus Keys (OOD)",
+    "redundant_key_trigger_rate": "Redundant-Key Trigger Rate",
+    "id_redundant_key_trigger_rate": "Redundant-Key Trigger Rate (ID)",
+    "ood_redundant_key_trigger_rate": "Redundant-Key Trigger Rate (OOD)",
+    "all_keys_trigger_rate": "All-Keys Trigger Rate",
+    "id_all_keys_trigger_rate": "All-Keys Trigger Rate (ID)",
+    "ood_all_keys_trigger_rate": "All-Keys Trigger Rate (OOD)",
     "timeout_fraction": "Timeout Fraction",
     "id_timeout_fraction": "Timeout Fraction (ID)",
     "ood_timeout_fraction": "Timeout Fraction (OOD)",
@@ -41,6 +47,12 @@ def make_curve_data():
         "mean_surplus_keys": 1.50,
         "id_mean_surplus_keys": 0.25,
         "ood_mean_surplus_keys": 2.75,
+        "redundant_key_trigger_rate": 0.40,
+        "id_redundant_key_trigger_rate": 0.10,
+        "ood_redundant_key_trigger_rate": 0.70,
+        "all_keys_trigger_rate": 0.25,
+        "id_all_keys_trigger_rate": 0.05,
+        "ood_all_keys_trigger_rate": 0.45,
         "timeout_fraction": 0.40,
         "id_timeout_fraction": 0.10,
         "ood_timeout_fraction": 0.70,
@@ -102,6 +114,48 @@ def test_empty_heist_split_is_exposed_as_nan():
 
     assert np.isnan(values[0])
     assert values[1] == pytest.approx(0.75)
+
+
+def test_trigger_rates_are_derived_from_legacy_episode_counters():
+    test_summary = {
+        "keys_collected": [2, 4, 5, 6],
+        "num_keys": [2, 6, 6, 6],
+        "total_chests": [4, 3, 3, 3],
+        "level_ood_gt": [False, True, True, True],
+        "level_ood_pred": [False, False, False, False],
+    }
+    data = {"meta": np.array([{"summary": {"test": test_summary}}], dtype=object)}
+
+    assert extract_from_data(data, "redundant_key_trigger_rate")[0] == 0.75
+    assert extract_from_data(data, "id_redundant_key_trigger_rate")[0] == 0.0
+    assert extract_from_data(data, "ood_redundant_key_trigger_rate")[0] == 1.0
+    assert extract_from_data(data, "all_keys_trigger_rate")[0] == 0.5
+    assert extract_from_data(data, "id_all_keys_trigger_rate")[0] == 1.0
+    assert extract_from_data(data, "ood_all_keys_trigger_rate")[0] == pytest.approx(
+        1 / 3
+    )
+
+
+def test_trigger_rate_derivation_reports_missing_raw_counter():
+    data = {
+        "meta": np.array(
+            [
+                {
+                    "summary": {
+                        "test": {
+                            "keys_collected": [1],
+                            "level_ood_gt": [True],
+                            "level_ood_pred": [False],
+                        }
+                    }
+                }
+            ],
+            dtype=object,
+        )
+    }
+
+    with pytest.raises(ValueError, match="total_chests"):
+        extract_from_data(data, "ood_redundant_key_trigger_rate")
 
 
 def test_legacy_artifact_reports_missing_heist_metric():

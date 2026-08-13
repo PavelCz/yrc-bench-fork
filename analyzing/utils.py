@@ -39,10 +39,74 @@ HEIST_OUTCOME_DATA_KEYS = {
     "mean_surplus_keys",
     "id_mean_surplus_keys",
     "ood_mean_surplus_keys",
+    "redundant_key_trigger_rate",
+    "id_redundant_key_trigger_rate",
+    "ood_redundant_key_trigger_rate",
+    "all_keys_trigger_rate",
+    "id_all_keys_trigger_rate",
+    "ood_all_keys_trigger_rate",
     "timeout_fraction",
     "id_timeout_fraction",
     "ood_timeout_fraction",
 }
+
+HEIST_TRIGGER_RATE_DATA_KEYS = {
+    "redundant_key_trigger_rate",
+    "id_redundant_key_trigger_rate",
+    "ood_redundant_key_trigger_rate",
+    "all_keys_trigger_rate",
+    "id_all_keys_trigger_rate",
+    "ood_all_keys_trigger_rate",
+}
+
+
+def derive_heist_trigger_rate(test_summary: dict, key: str) -> float:
+    """Derive a Heist proxy-trigger rate from episode counters.
+
+    This keeps artifacts recorded before the scalar trigger metrics were added
+    usable because they already contain the necessary aligned raw arrays.
+    """
+    if key not in HEIST_TRIGGER_RATE_DATA_KEYS:
+        raise ValueError(f"Unknown Heist trigger-rate key: {key}")
+
+    required_fields = {"keys_collected", "level_ood_gt"}
+    if "redundant_key" in key:
+        required_fields.add("total_chests")
+        comparison_field = "total_chests"
+    else:
+        required_fields.add("num_keys")
+        comparison_field = "num_keys"
+
+    missing = sorted(field for field in required_fields if field not in test_summary)
+    if missing:
+        raise ValueError(
+            "Cannot derive Heist trigger rate; summary is missing episode field(s): "
+            + ", ".join(missing)
+        )
+
+    keys_collected = np.asarray(test_summary["keys_collected"])
+    comparison_values = np.asarray(test_summary[comparison_field])
+    level_ood_gt = np.asarray(test_summary["level_ood_gt"], dtype=bool)
+    lengths = {len(keys_collected), len(comparison_values), len(level_ood_gt)}
+    if len(lengths) != 1:
+        raise ValueError(
+            "Cannot derive Heist trigger rate from misaligned episode arrays: "
+            f"keys_collected={len(keys_collected)}, "
+            f"{comparison_field}={len(comparison_values)}, "
+            f"level_ood_gt={len(level_ood_gt)}"
+        )
+
+    if "redundant_key" in key:
+        triggered = keys_collected > comparison_values
+    else:
+        triggered = keys_collected >= comparison_values
+
+    if key.startswith("id_"):
+        triggered = triggered[~level_ood_gt]
+    elif key.startswith("ood_"):
+        triggered = triggered[level_ood_gt]
+
+    return float(np.mean(triggered)) if len(triggered) > 0 else float("nan")
 
 
 def create_env(random_percent: int = 100, start_level: int = 0, num_levels: int = 1):
@@ -310,13 +374,16 @@ def extract_from_data(data, key: str) -> np.ndarray:
         values = []
         for point_index, element in enumerate(data["meta"]):
             test_summary = element["summary"]["test"]
-            if key not in test_summary:
+            if key in test_summary:
+                value = test_summary[key]
+            elif key in HEIST_TRIGGER_RATE_DATA_KEYS:
+                value = derive_heist_trigger_rate(test_summary, key)
+            else:
                 raise ValueError(
                     f"Heist outcome metric '{key}' is unavailable at curve point "
                     f"{point_index}; use a heist_afh artifact generated after Heist "
                     "outcome metric collection was added"
                 )
-            value = test_summary[key]
             values.append(np.nan if value is None else float(value))
         return np.asarray(values, dtype=float)
     else:
