@@ -120,3 +120,19 @@ ssh rnn 'cd /nas/ucb/czempin/code/goal-misgen/yrc-bench-fork \
 
 A GPU is not strictly required for inference-only diagnostics but is
 much faster.
+
+## Syncing repository-local evaluation results
+
+`eval_afhp.py` writes to `experiments/evals` under the RNN repository unless
+`SM_OUTPUT_DIR` is set. Sync those results to the standard local evaluation
+directory by overriding the source used by `scripts/sync_evals.sh`:
+
+```bash
+./scripts/sync_evals.sh \
+  --source-base rnn:/nas/ucb/czempin/code/goal-misgen/yrc-bench-fork/experiments/evals \
+  <campaign-prefix>
+```
+
+The script copies NPZ metadata intact, including Heist outcome metrics. Videos
+and images remain excluded unless `--with-videos` is also passed. It is safe to
+rerun after additional campaign jobs finish.
