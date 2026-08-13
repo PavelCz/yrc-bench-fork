@@ -125,6 +125,19 @@ when a Heist outcome key is requested.
 For older Heist artifacts that contain the raw episode counters but predate the
 two trigger-rate scalars, the analysis code derives the rates on load.
 
+To report both trigger rates at the novice and expert endpoints without rerunning
+evaluation:
+
+```bash
+python -m analyzing.heist_proxy_trigger_rates \
+    --eval_dir PATH/TO/EVALS \
+    --prefix tmlr-heist02-metrics
+```
+
+The report averages the repeated method endpoints within each experiment ID,
+then prints the median and IQR across experiment IDs. Add `--show_runs` to print
+each method-by-experiment endpoint evaluation as well.
+
 ## Coverage Metric
 
 The coverage metric is the **max normalized neighbor gap**: the largest gap between adjacent samples on the output axis, divided by the total output range. With `coverage_fraction=0.05`, the target is that no gap exceeds 5% of the output range.
