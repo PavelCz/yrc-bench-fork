@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -uo pipefail  # Remove 'e' flag to allow continuing after errors
 
-SRC_BASE="rnn:/nas/ucb/czempin/data/goal-misgen/experiments/evals"
+DEFAULT_SRC_BASE="rnn:/nas/ucb/czempin/data/goal-misgen/experiments/evals"
+SRC_BASE="${DEFAULT_SRC_BASE}"
 DST_BASE="/home/pavel/data/goal-misgen/icml-evals"
 
 usage() {
-  echo "Usage: $0 [--with-videos] [prefix]"
+  echo "Usage: $0 [--with-videos] [--source-base HOST:PATH] [prefix]"
   echo
   echo "Sync eval directories from ${SRC_BASE} to ${DST_BASE}."
   echo "Includes both standard eval dirs (<prefix>_<env>_expN) and"
@@ -13,6 +14,8 @@ usage() {
   echo "Also includes robust maze eval dirs (<prefix>_robust{200,400}_<env>_expN)."
   echo "Also includes robust policy-eval dirs (<prefix>_robust{200,400}_<env>_strong_expN)."
   echo "Videos and images in the videos folder are excluded by default."
+  echo
+  echo "Use --source-base when evals were written outside the default data directory."
 }
 
 SYNC_VIDEOS=0
@@ -22,6 +25,19 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --with-videos)
       SYNC_VIDEOS=1
+      shift
+      ;;
+    --source-base)
+      if [[ $# -lt 2 ]]; then
+        echo "Missing value for --source-base" >&2
+        usage >&2
+        exit 1
+      fi
+      SRC_BASE="$2"
+      shift 2
+      ;;
+    --source-base=*)
+      SRC_BASE="${1#*=}"
       shift
       ;;
     -h|--help)
@@ -40,21 +56,26 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ "${SRC_BASE}" != *:* ]]; then
+  echo "Invalid --source-base '${SRC_BASE}': expected HOST:PATH" >&2
+  exit 1
+fi
+
 ENVS=("maze" "coinrun" "coinrun_proxy_fail" "maze_proxy_fail" "heist")
 ROBUST_ENVS=("maze" "maze_proxy_fail")
 ROBUST_VARIANTS=("robust200" "robust400")
 EXPS=("exp0" "exp1" "exp2" "exp3")
 AGENTS=("sim" "weak" "strong")
 
-# Parse "host:path" into host and path for remote existence checks
-SRC_HOST="${SRC_BASE%%:*}"
-SRC_PATH="${SRC_BASE#*:}"
-
 failed_syncs=0
 missing_syncs=0
 available_syncs=0
 SSH_OPTS=(-o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
 RSYNC_ARGS=(-av --progress -e "ssh ${SSH_OPTS[*]}")
+
+# Parse "host:path" into host and path for remote existence checks.
+SRC_HOST="${SRC_BASE%%:*}"
+SRC_PATH="${SRC_BASE#*:}"
 
 if [[ "${SYNC_VIDEOS}" -eq 0 ]]; then
   RSYNC_ARGS+=(
@@ -71,7 +92,7 @@ fi
 
 echo "Listing remote directories under ${SRC_BASE}..."
 if ! REMOTE_LISTING="$(ssh "${SSH_OPTS[@]}" "${SRC_HOST}" "ls -1 ${SRC_PATH}" 2>/dev/null)"; then
-  echo "✗ Failed to list remote directory ${SRC_BASE}" >&2
+  echo "Error: failed to list remote directory ${SRC_BASE}" >&2
   exit 1
 fi
 
