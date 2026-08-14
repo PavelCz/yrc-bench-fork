@@ -246,16 +246,28 @@ class Evaluator:
             if close_envs:
                 envs[split].close()
 
-            # Process and log videos if logger is available
-            logging.debug(
-                f"eval: logger is {'not None' if logger is not None else 'None'}, will process videos: {logger is not None}"
+            # Folder logging does not require a WandB logger. Previously this
+            # guard silently disabled ``video_logging_mode=folder`` whenever
+            # WandB was disabled, even though the video writer accepts a null
+            # logger in that mode.
+            video_logging_mode = getattr(args, "video_logging_mode", "none")
+            should_process_videos = logger is not None or video_logging_mode in (
+                "folder",
+                "both",
             )
-            if logger is not None:
+            logging.debug(
+                "eval: logger is %s, video_logging_mode=%s, will process videos: %s",
+                "not None" if logger is not None else "None",
+                video_logging_mode,
+                should_process_videos,
+            )
+            if should_process_videos:
                 logging.debug(
                     f"eval: Calling _process_and_log_videos for split={split}"
                 )
                 self._process_and_log_videos(split, threshold, afhp, logger)
 
+            if logger is not None:
                 wandb_metrics = {
                     "num_finished_episodes": summary[split]["num_finished_episodes"],
                 }
@@ -1143,7 +1155,7 @@ class Evaluator:
         split: str,
         threshold: Optional[float],
         afhp: float,
-        logger: WandbLogger,
+        logger: Optional[WandbLogger],
     ) -> None:
         """Process collected episode states and log them as videos.
 
@@ -1151,7 +1163,7 @@ class Evaluator:
             split: The evaluation split (e.g., "val", "test")
             threshold: The OOD threshold value
             afhp: The AFHP (Agent-Friendly Help Probability) value
-            logger: WandB logger for logging videos
+            logger: Optional WandB logger. Folder-only logging does not need one.
         """
         args = self.args
 

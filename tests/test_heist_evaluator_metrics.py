@@ -143,6 +143,44 @@ def test_evaluator_collects_heist_metrics_using_raw_env_reward(tmp_path):
     assert summary["ood_timeout_fraction"] == 1.0
 
 
+@pytest.mark.parametrize(
+    ("logging_mode", "expected_calls"),
+    [("folder", 1), ("none", 0)],
+)
+def test_folder_videos_are_processed_without_wandb_logger(
+    tmp_path, monkeypatch, logging_mode, expected_calls
+):
+    info = terminal_info(
+        env_reward=2.0,
+        is_ood=False,
+        level_seed=10,
+        keys_collected=2,
+        num_keys=2,
+        total_chests=4,
+        chests_opened=2,
+        level_complete=True,
+    )
+    config = make_config(tmp_path, "heist_afh")
+    config.evaluation.video_logging_mode = logging_mode
+    evaluator = Evaluator(config, config.environment)
+    process_calls = []
+    monkeypatch.setattr(
+        evaluator,
+        "_process_and_log_videos",
+        lambda *args: process_calls.append(args),
+    )
+
+    evaluator.eval(
+        FakePolicy(),
+        {"test": FakeHeistEnv([info])},
+        ["test"],
+        num_episodes=1,
+        logger=None,
+    )
+
+    assert len(process_calls) == expected_calls
+
+
 def test_evaluator_rejects_incomplete_heist_terminal_info(tmp_path):
     info = terminal_info(
         env_reward=1.0,
