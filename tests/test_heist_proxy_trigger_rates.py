@@ -10,6 +10,7 @@ from analyzing.heist_proxy_trigger_rates import (
     experiment_means,
     load_endpoint_rates,
     median_iqr,
+    print_report,
 )
 
 
@@ -95,3 +96,22 @@ def test_experiment_aggregation_averages_methods_before_median():
         pytest.approx(0.75),
         pytest.approx(0.85),
     )
+
+
+def test_report_uses_markdown_tables(capsys):
+    rows = [
+        EndpointTriggerRates(0, "max-prob", "novice", 10, 0.8, 0.6, Path("a")),
+        EndpointTriggerRates(0, "max-prob", "expert", 10, 0.2, 0.1, Path("a")),
+    ]
+
+    print_report(rows, show_runs=True)
+
+    output = capsys.readouterr().out
+    assert "### Per-artifact OOD endpoint rates" in output
+    assert "| Experiment | Method | Role | OOD episodes |" in output
+    assert "| 0 | max-prob | novice | 10 | 80.000% | 60.000% |" in output
+    assert "### Per-experiment OOD trigger rates" in output
+    assert "| Experiment | Role | Methods |" in output
+    assert "### Aggregate OOD trigger rates" in output
+    assert "| Role | Redundant-key trigger | All-keys trigger |" in output
+    assert "| novice | 80.000% [80.000%, 80.000%] |" in output

@@ -221,31 +221,39 @@ def median_iqr(values: Sequence[float]) -> Tuple[float, float, float]:
 
 
 def print_report(rows: Sequence[EndpointTriggerRates], show_runs: bool = False) -> None:
-    """Print per-experiment and aggregate novice/expert trigger rates."""
+    """Print Markdown tables of endpoint and aggregate trigger rates."""
     if show_runs:
-        print("Per-artifact OOD endpoint rates:")
-        print("exp  method           role     OOD N  redundant  all-keys")
+        print("### Per-artifact OOD endpoint rates\n")
+        print(
+            "| Experiment | Method | Role | OOD episodes | "
+            "Redundant-key trigger | All-keys trigger |"
+        )
+        print("|---:|:---|:---|---:|---:|---:|")
         for row in rows:
             print(
-                f"{row.exp_id:>3}  {row.method:<15}  {row.role:<6}  "
-                f"{row.ood_episodes:>5}  {row.redundant_key_rate:>9.3%}  "
-                f"{row.all_keys_rate:>8.3%}"
+                f"| {row.exp_id} | {row.method} | {row.role} | "
+                f"{row.ood_episodes} | {row.redundant_key_rate:.3%} | "
+                f"{row.all_keys_rate:.3%} |"
             )
         print()
 
     means = experiment_means(rows)
-    print("Per-experiment OOD rates (mean across method endpoint evaluations):")
-    print("exp  role     methods  redundant  all-keys")
+    print("### Per-experiment OOD trigger rates\n")
+    print("Mean across method endpoint evaluations.\n")
+    print("| Experiment | Role | Methods | Redundant-key trigger | All-keys trigger |")
+    print("|---:|:---|---:|---:|---:|")
     for (exp_id, role), (method_count, redundant_rate, all_keys_rate) in sorted(
         means.items()
     ):
         print(
-            f"{exp_id:>3}  {role:<6}  {method_count:>7}  "
-            f"{redundant_rate:>9.3%}  {all_keys_rate:>8.3%}"
+            f"| {exp_id} | {role} | {method_count} | "
+            f"{redundant_rate:.3%} | {all_keys_rate:.3%} |"
         )
 
-    print("\nMedian [IQR] across experiments:")
-    print("role     redundant                 all-keys")
+    print("\n### Aggregate OOD trigger rates\n")
+    print("Median [IQR] across experiments.\n")
+    print("| Role | Redundant-key trigger | All-keys trigger |")
+    print("|:---|---:|---:|")
     for role in ("novice", "expert"):
         role_values = [
             values for (_, row_role), values in means.items() if row_role == role
@@ -255,9 +263,9 @@ def print_report(rows: Sequence[EndpointTriggerRates], show_runs: bool = False) 
         redundant = median_iqr([values[1] for values in role_values])
         all_keys = median_iqr([values[2] for values in role_values])
         print(
-            f"{role:<6}  {redundant[0]:>7.3%} "
-            f"[{redundant[1]:.3%}, {redundant[2]:.3%}]  "
-            f"{all_keys[0]:>7.3%} [{all_keys[1]:.3%}, {all_keys[2]:.3%}]"
+            f"| {role} | {redundant[0]:.3%} "
+            f"[{redundant[1]:.3%}, {redundant[2]:.3%}] | "
+            f"{all_keys[0]:.3%} [{all_keys[1]:.3%}, {all_keys[2]:.3%}] |"
         )
 
 
