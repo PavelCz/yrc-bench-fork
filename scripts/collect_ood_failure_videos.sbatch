@@ -1,10 +1,11 @@
 #!/bin/bash
 #
-# Collect weak-policy Heist videos of ground-truth OOD timeouts.
+# Collect Heist videos of ground-truth OOD timeouts for a chosen acting policy.
 #
 # Usage on rnn:
 #   mkdir -p /nas/ucb/czempin/data/goal-misgen/slurm-logs/default/tmlr-heist02-ood-timeout-videos
 #   sbatch scripts/collect_ood_failure_videos.sbatch
+#   AGENT=strong sbatch scripts/collect_ood_failure_videos.sbatch
 #   EXP_ID=1 VIDEO_EPISODES=8 sbatch scripts/collect_ood_failure_videos.sbatch
 #
 # SLURM spools a copy of this file, so BASH_SOURCE cannot locate the repo.
@@ -35,10 +36,19 @@ EVAL_SPLIT="${EVAL_SPLIT:-test}"
 NUM_ROLLOUTS="${NUM_ROLLOUTS:-256}"
 VIDEO_EPISODES="${VIDEO_EPISODES:-16}"
 GREEDY="${GREEDY:-false}"
+AGENT="${AGENT:-weak}"
 MODEL_FILE="${MODEL_FILE:-}"
 
-JOB_NAME="heist_ood_timeout_videos_exp${EXP_ID}"
-EXPERIMENT_GROUP="${PREFIX}_heist_weak_exp${EXP_ID}"
+case "${AGENT}" in
+    weak | strong | sim) ;;
+    *)
+        echo "ERROR: AGENT must be weak, strong, or sim, got ${AGENT}" >&2
+        exit 1
+        ;;
+esac
+
+JOB_NAME="heist_ood_timeout_videos_${AGENT}_exp${EXP_ID}"
+EXPERIMENT_GROUP="${PREFIX}_heist_${AGENT}_exp${EXP_ID}"
 SEEDS_FILE="${SEEDS_FILE:-${SEEDS_BASE}/${EXP_ID}.json}"
 
 if [[ ! -f "${PROJECT_ROOT}/collect_ood_failure_videos.py" ]]; then
@@ -63,17 +73,17 @@ if [[ -z "${MODEL_FILE}" ]]; then
 import sys
 sys.path.insert(0, 'scripts')
 from common import get_checkpoints
-print(get_checkpoints('heist', ${EXP_ID}, '${CHECKPOINT_BASE}')['weak'])
+print(get_checkpoints('heist', ${EXP_ID}, '${CHECKPOINT_BASE}')['${AGENT}'])
 "
     )"
 fi
 if [[ ! -f "${MODEL_FILE}" ]]; then
-    echo "ERROR: weak checkpoint not found: ${MODEL_FILE}" >&2
+    echo "ERROR: ${AGENT} checkpoint not found: ${MODEL_FILE}" >&2
     exit 1
 fi
 
 echo "job=${SLURM_JOB_ID:-unset} node=${SLURMD_NODENAME:-unset}"
-echo "exp_id=${EXP_ID} prefix=${PREFIX}"
+echo "exp_id=${EXP_ID} agent=${AGENT} prefix=${PREFIX}"
 echo "model_file=${MODEL_FILE}"
 echo "seeds_file=${SEEDS_FILE}"
 echo "video_episodes=${VIDEO_EPISODES} num_rollouts=${NUM_ROLLOUTS} greedy=${GREEDY}"
