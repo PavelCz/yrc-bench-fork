@@ -26,6 +26,7 @@ SUPPORTED_ENVS = [
     "maze_afh",
     "maze_proxy_fail",
     "heist_afh",
+    "heist_proxy_fail",
 ]
 ENV_CHOICES = [*SUPPORTED_ENVS, "maze", "all"]
 LOCAL_PACKAGES = {
@@ -144,8 +145,7 @@ def parse_args() -> argparse.Namespace:
         choices=ENV_CHOICES,
         default="coinrun_proxy_fail",
         help=(
-            "Procgen environment to instantiate, or 'all' "
-            "(default: coinrun_proxy_fail)"
+            "Procgen environment to instantiate, or 'all' (default: coinrun_proxy_fail)"
         ),
     )
     parser.add_argument(

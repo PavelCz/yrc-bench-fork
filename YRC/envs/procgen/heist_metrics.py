@@ -1,4 +1,4 @@
-"""Episode outcome metrics for the Procgen ``heist_afh`` environment."""
+"""Episode outcome metrics for Procgen Heist environments."""
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence
@@ -7,6 +7,13 @@ import numpy as np
 
 
 HEIST_ENV_NAME = "heist_afh"
+HEIST_ENV_NAMES = frozenset({HEIST_ENV_NAME, "heist_proxy_fail"})
+
+
+def is_heist_env(env_name: Optional[str]) -> bool:
+    """Return whether ``env_name`` records Heist episode outcome counters."""
+    return env_name in HEIST_ENV_NAMES
+
 
 HEIST_TERMINAL_INFO_FIELDS = {
     "keys_collected": "prev_level/keys_collected",
@@ -39,7 +46,7 @@ def extract_heist_episode_data(info: Mapping[str, Any]) -> Dict[str, Any]:
     if missing:
         missing_fields = ", ".join(sorted(missing))
         raise KeyError(
-            "heist_afh terminal info is missing required episode field(s): "
+            "Heist terminal info is missing required episode field(s): "
             f"{missing_fields}"
         )
 

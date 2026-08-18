@@ -60,6 +60,7 @@ add_library(env
   src/games/fruitbot.cpp
   src/games/heist.cpp
   src/games/heist_afh.cpp
+  src/games/heist_proxy_fail.cpp
   src/games/heist_aisc_many_chests.cpp
   src/games/heist_aisc_many_keys.cpp
   src/games/jumper.cpp

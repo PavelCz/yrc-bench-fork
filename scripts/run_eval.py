@@ -56,17 +56,19 @@ EVAL_DEFAULTS = {
 # Default number of ensemble members (excluding weak agent which is added automatically)
 DEFAULT_NUM_ENSEMBLE_MEMBERS = 4
 
-EVAL_ENVS = [*ENVS, "coinrun_proxy_fail", "maze_proxy_fail"]
+EVAL_ENVS = [*ENVS, "coinrun_proxy_fail", "maze_proxy_fail", "heist_proxy_fail"]
 
 # Some evaluation environments intentionally reuse training artifacts from a
-# base environment. `coinrun_proxy_fail` and `maze_proxy_fail` change the
-# Procgen reward/termination behavior at evaluation time, but their
-# weak/strong checkpoints, SVDD models, ensemble members, and YAML configs are
-# still the normal coinrun/maze artifacts. Keep `args.env` for the environment
-# passed to eval_afhp.py; use this alias only for filesystem lookup paths.
+# base environment. `coinrun_proxy_fail`, `maze_proxy_fail`, and
+# `heist_proxy_fail` change the Procgen reward/termination behavior at
+# evaluation time, but their weak/strong checkpoints, SVDD models, ensemble
+# members, and YAML configs are still the normal coinrun/maze/heist artifacts.
+# Keep `args.env` for the environment passed to eval_afhp.py; use this alias
+# only for filesystem lookup paths.
 ARTIFACT_ENVS = {
     "coinrun_proxy_fail": "coinrun",
     "maze_proxy_fail": "maze",
+    "heist_proxy_fail": "heist",
 }
 
 DEFAULT_CONTAINER_BINDS = {
@@ -910,8 +912,8 @@ def main():
         else args.prefix
     )
 
-    # Configs are artifact-scoped: proxy-fail evaluation reuses coinrun configs
-    # and overrides the actual env through -en below.
+    # Configs are artifact-scoped: proxy-fail evaluation reuses the base env
+    # configs and overrides the actual env through -en below.
     config_file = METHOD_CONFIGS[args.method]
     config_path = f"configs/eval/{artifact_env}/{config_file}"
 

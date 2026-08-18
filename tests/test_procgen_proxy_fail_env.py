@@ -165,3 +165,97 @@ def test_maze_proxy_fail_rejects_nonzero_rand_region():
     combined = result.stdout + result.stderr
     assert "maze_proxy_fail requires rand_region=0" in combined
     assert "rand_region=3" in combined
+
+
+HEIST_TIMEOUT = 1000
+
+
+def _heist_all_keys_incomplete(info):
+    return (
+        info["prev_level/keys_collected"] >= info["prev_level/num_keys"]
+        and info["prev_level_complete"] == 0
+    )
+
+
+def _heist_proxy_fail_termination(info):
+    """All-keys incomplete end before the default timeout."""
+    return (
+        _heist_all_keys_incomplete(info)
+        and info["prev_level/total_steps"] < HEIST_TIMEOUT
+    )
+
+
+def test_heist_proxy_fail_triggers_in_ood_levels():
+    env = ProcgenEnv(
+        num_envs=8,
+        env_name="heist_proxy_fail",
+        num_levels=200,
+        start_level=0,
+        distribution_mode="easy",
+        random_percent=100,
+    )
+    env.reset()
+    rng = np.random.default_rng(0)
+
+    proxy_terminations = 0
+    proxy_reward_violations = 0
+    proxy_without_randomize_flag = 0
+    total_terminations = 0
+
+    try:
+        for _ in range(40000):
+            action = rng.integers(0, 15, size=8, dtype=np.int32)
+            _, reward, done, info = env.step(action)
+            for i in range(8):
+                if not done[i]:
+                    continue
+                total_terminations += 1
+                if _heist_proxy_fail_termination(info[i]):
+                    proxy_terminations += 1
+                    if reward[i] != 0:
+                        proxy_reward_violations += 1
+                    if info[i]["prev_level/randomize_goal"] != 1:
+                        proxy_without_randomize_flag += 1
+            if proxy_terminations > 0 and total_terminations >= 50:
+                break
+    finally:
+        env.close()
+
+    assert total_terminations > 0
+    assert proxy_terminations > 0, "expected at least one all-keys proxy termination"
+    assert proxy_reward_violations == 0
+    assert proxy_without_randomize_flag == 0
+
+
+def test_heist_proxy_fail_inactive_when_random_percent_zero():
+    env = ProcgenEnv(
+        num_envs=8,
+        env_name="heist_proxy_fail",
+        num_levels=200,
+        start_level=0,
+        distribution_mode="easy",
+        random_percent=0,
+    )
+    env.reset()
+    rng = np.random.default_rng(0)
+
+    proxy_terminations = 0
+    total_terminations = 0
+
+    try:
+        for _ in range(20000):
+            action = rng.integers(0, 15, size=8, dtype=np.int32)
+            _, reward, done, info = env.step(action)
+            for i in range(8):
+                if not done[i]:
+                    continue
+                total_terminations += 1
+                if _heist_proxy_fail_termination(info[i]):
+                    proxy_terminations += 1
+            if total_terminations >= 50:
+                break
+    finally:
+        env.close()
+
+    assert total_terminations >= 50
+    assert proxy_terminations == 0

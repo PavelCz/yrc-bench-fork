@@ -86,9 +86,13 @@ For `heist_afh`, each threshold point also records the completed episode's raw
 
 The artifact contains overall, ID, and OOD summaries for each diagnostic. The two
 trigger diagnostics are recorded as per-episode booleans and as trigger rates.
-A corresponding environment-consequence ablation should apply these conditions
-only on OOD many-keys levels; the ID rates are retained as behavioral
-diagnostics. Oracle regret uses the raw environment return, not the coordination
+The eval-time `heist_proxy_fail` environment applies the all-keys trigger as a
+consequence: on OOD many-keys levels, collecting every key ends the episode with
+zero reward on that step. ID many-chests levels are unchanged. Chest rewards
+already earned are kept. `timeout_fraction` on this environment includes proxy
+terminations, because `level_complete` is false. The redundant-key rate remains
+a diagnostic on ordinary `heist_afh` artifacts, not a separate fail environment.
+Oracle regret uses the raw environment return, not the coordination
 reward after query
 or switching costs. Its current normalization assumes the zero-key-penalty Heist
 evaluation setup; configurations with reward penalties need a separately justified

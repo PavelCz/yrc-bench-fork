@@ -42,12 +42,14 @@ DEFAULT_CONFIGS = {
     "coinrun_proxy_fail": "configs/eval/coinrun/max_prob.yaml",
     "maze": "configs/eval/maze/max_prob.yaml",
     "heist": "configs/eval/heist/max_prob.yaml",
+    "heist_proxy_fail": "configs/eval/heist/max_prob.yaml",
 }
 
-EVAL_ENVS = [*ENVS, "coinrun_proxy_fail"]
+EVAL_ENVS = [*ENVS, "coinrun_proxy_fail", "heist_proxy_fail"]
 
 CHECKPOINT_ENVS = {
     "coinrun_proxy_fail": "coinrun",
+    "heist_proxy_fail": "heist",
 }
 
 EVAL_DEFAULTS = {
@@ -292,15 +294,15 @@ def main():
         robust_checkpoint_key = "robust400"
 
     if robust_checkpoint_key is not None and checkpoint_env != "maze":
-        print(
-            f"Error: --{robust_checkpoint_key} is currently supported only for maze."
-        )
+        print(f"Error: --{robust_checkpoint_key} is currently supported only for maze.")
         return 1
     if robust_checkpoint_key is not None and args.strong:
         print(f"Error: pass either --strong or --{robust_checkpoint_key}, not both.")
         return 1
     if robust_checkpoint_key is not None and args.agents != ["strong"]:
-        print(f"Error: --{robust_checkpoint_key} can only be used with --agents strong.")
+        print(
+            f"Error: --{robust_checkpoint_key} can only be used with --agents strong."
+        )
         return 1
     output_prefix = (
         f"{args.prefix}_{robust_checkpoint_key}"

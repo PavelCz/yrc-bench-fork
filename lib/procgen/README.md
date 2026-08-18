@@ -24,6 +24,8 @@ A new maze variant with `random_percent` support for OOD detection experiments (
 * `coinrun`: Added a flag `--random_percent`, which places the coin randomly in a given percentage of environments. Default 0.
 * `heist_aisc_many_chests`: A heavily modified `heist`. Doors are now 'chests' (they do not prevent the agent from passing). Every key can open every chest. The agent is rewarded for opening chests. This version generates twice as many chests as keys. 
 * `heist_aisc_many_keys`: Same as `heist_aisc_many_chests`, but instead has twice as many keys as chests.
+* `heist_afh`: Like the keys-and-chests Heist variants, with `--random_percent` switching between many-chests (ID) and many-keys (OOD) layouts.
+* `heist_proxy_fail`: Like `heist_afh`, but collecting every key on an OOD many-keys level ends the episode without reward on that step. ID many-chests levels are unchanged.
 * `maze_aisc`: Like maze, but the cheese is always to be found in the top right corner.
 * `maze_afh`: Like maze, but with `--random_percent` support (similar to coinrun). When `random_percent=0`, cheese is placed in the top right corner (like `maze_aisc`). When `random_percent=100`, cheese is placed randomly (like `maze`). Intermediate values give a probabilistic mix. Exposes `info["randomize_goal"]` to indicate placement type for each level.
 * `maze_yellowgem`: like maze, but the goal is a yellow gem.

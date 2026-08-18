@@ -88,10 +88,10 @@ from YRC.core.video_utils import (
     resolve_video_output_folder,
 )
 from YRC.envs.procgen.heist_metrics import (
-    HEIST_ENV_NAME,
     HeistMetricSummary,
     append_heist_episode_data,
     build_heist_metric_summary,
+    is_heist_env,
     new_heist_episode_data,
 )
 
@@ -301,7 +301,7 @@ def main():
 
     # Run evaluation
     env_name = config.environment.common.env_name
-    collect_heist_metrics = env_name == HEIST_ENV_NAME
+    collect_heist_metrics = is_heist_env(env_name)
     returns, level_ood_gt, level_seeds, video_episodes, heist_episode_data = (
         rollout_and_get_returns(
             policy,

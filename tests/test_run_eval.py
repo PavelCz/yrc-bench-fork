@@ -14,6 +14,11 @@ def test_coinrun_proxy_fail_uses_coinrun_artifacts():
     assert "coinrun_proxy_fail" in run_eval.EVAL_ENVS
 
 
+def test_heist_proxy_fail_uses_heist_artifacts():
+    assert run_eval.ARTIFACT_ENVS["heist_proxy_fail"] == "heist"
+    assert "heist_proxy_fail" in run_eval.EVAL_ENVS
+
+
 def test_eval_sbatch_overrides_env_name():
     command = run_eval.build_sbatch_command(
         "job",

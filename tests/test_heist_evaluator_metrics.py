@@ -87,7 +87,8 @@ def terminal_info(
     }
 
 
-def test_evaluator_collects_heist_metrics_using_raw_env_reward(tmp_path):
+@pytest.mark.parametrize("env_name", ["heist_afh", "heist_proxy_fail"])
+def test_evaluator_collects_heist_metrics_using_raw_env_reward(tmp_path, env_name):
     infos = [
         terminal_info(
             env_reward=2.0,
@@ -111,7 +112,7 @@ def test_evaluator_collects_heist_metrics_using_raw_env_reward(tmp_path):
         ),
     ]
     env = FakeHeistEnv(infos)
-    config = make_config(tmp_path, "heist_afh")
+    config = make_config(tmp_path, env_name)
     evaluator = Evaluator(config, config.environment)
 
     summary = evaluator.eval(FakePolicy(), {"test": env}, ["test"], num_episodes=2)[

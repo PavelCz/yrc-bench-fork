@@ -10,10 +10,10 @@ import matplotlib.pyplot as plt
 
 from YRC.core.video_utils import process_and_log_video, resolve_video_output_folder
 from YRC.envs.procgen.heist_metrics import (
-    HEIST_ENV_NAME,
     HEIST_RAW_FIELDS,
     append_heist_episode_data,
     build_heist_metric_summary,
+    is_heist_env,
     new_heist_episode_data,
 )
 
@@ -138,8 +138,8 @@ class Evaluator:
         common_env_config = (
             getattr(env_config, "common", None) if env_config is not None else None
         )
-        self.collect_heist_metrics = (
-            getattr(common_env_config, "env_name", None) == HEIST_ENV_NAME
+        self.collect_heist_metrics = is_heist_env(
+            getattr(common_env_config, "env_name", None)
         )
 
         self.episode_metadata: List[List[Dict]] = []

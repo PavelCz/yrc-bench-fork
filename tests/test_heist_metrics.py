@@ -8,6 +8,7 @@ from YRC.envs.procgen.heist_metrics import (
     build_heist_metric_summary,
     compute_oracle_regret,
     extract_heist_episode_data,
+    is_heist_env,
     new_heist_episode_data,
     redundant_key_triggered,
     summarize_heist_metric_split,
@@ -50,6 +51,13 @@ def test_extract_heist_episode_data_reports_all_missing_fields():
         extract_heist_episode_data({"prev_level/keys_collected": 1})
 
     assert "prev_level_complete" in str(exc_info.value)
+
+
+def test_is_heist_env_includes_proxy_fail():
+    assert is_heist_env("heist_afh")
+    assert is_heist_env("heist_proxy_fail")
+    assert not is_heist_env("coinrun")
+    assert not is_heist_env(None)
 
 
 def test_oracle_regret_uses_achievable_chest_cap():

@@ -59,6 +59,7 @@ SUPPORTED_ENVS = [
     "maze_afh",
     "maze_proxy_fail",
     "heist",
+    "heist_proxy_fail",
 ]
 ENV_PATTERN = "|".join(
     re.escape(env) for env in sorted(SUPPORTED_ENVS, key=len, reverse=True)
