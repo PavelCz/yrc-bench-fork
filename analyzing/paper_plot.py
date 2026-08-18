@@ -74,7 +74,11 @@ ROBUST_PATTERN = "|".join(re.escape(variant) for variant in ROBUST_VARIANTS)
 DATA_KEY_NAMES = {
     "step_afhp": "Ask-For-Help Percentage (AFHP, per timestep)",
     "level_afhp": "Ask-For-Help Percentage (AFHP)",
+    "id_level_afhp": "Ask-For-Help Percentage (AFHP, ID)",
+    "ood_level_afhp": "Ask-For-Help Percentage (AFHP, OOD)",
     "performance": "Mean Return",
+    "id_performance": "Mean Return (ID)",
+    "ood_performance": "Mean Return (OOD)",
     "performance_asked": "Mean Reward (Asked for Help)",
     "performance_not_asked": "Mean Reward (Did Not Ask)",
     "performance_asked_correctly": "Mean Reward (True Positive)",
@@ -199,7 +203,7 @@ _RANDOM_LABEL = r"\textsc{Random}"
 # Any methods present in `results` that aren't listed here are appended at the
 # end in alphabetical order. Robust variants follow their base method.
 DEFAULT_METHOD_ORDER = [
-    "ts-random",       # Heuristic
+    "ts-random",  # Heuristic
     "ensemble-single",  # Ensemble (single weak)
     "max-prob",
     "max-logit",
@@ -357,11 +361,7 @@ def format_plot_label(
     base_method, robust_variant = split_robust_method(method)
     label = method_display_name(base_method)
 
-    if (
-        robust_variant is not None
-        and not hide_robust_suffix
-        and not paper_mode
-    ):
+    if robust_variant is not None and not hide_robust_suffix and not paper_mode:
         label = f"{label} ({ROBUST_LABELS[robust_variant]})"
 
     if not paper_mode and n_experiments is not None:
@@ -417,6 +417,41 @@ def method_is_included(method: str, method_include_filter: List[str]) -> bool:
     """Include robust method variants when either full or base method is included."""
     base_method, _ = split_robust_method(method)
     return method in method_include_filter or base_method in method_include_filter
+
+
+# y_data_key bases that have ID / OOD episode-subset variants.
+LEVEL_SPLIT_Y_BASES = {
+    "performance",
+    "mean_oracle_regret",
+    "mean_surplus_keys",
+    "redundant_key_trigger_rate",
+    "all_keys_trigger_rate",
+    "timeout_fraction",
+}
+
+
+def apply_level_split_to_y_key(y_data_key: str, level_split: str) -> str:
+    """Map a y-axis key onto its ID or OOD episode-subset counterpart.
+
+    Overall AFHP on the x-axis is left unchanged: ``--level-split`` only
+    restricts which episodes contribute to the plotted y metric.
+    """
+    if level_split not in {"id", "ood"}:
+        raise ValueError(f"Unknown level split: {level_split!r}")
+
+    base = y_data_key
+    for prefix in ("id_", "ood_"):
+        if base.startswith(prefix):
+            base = base[len(prefix) :]
+            break
+
+    if base not in LEVEL_SPLIT_Y_BASES:
+        supported = ", ".join(sorted(LEVEL_SPLIT_Y_BASES))
+        raise ValueError(
+            f"--level-split cannot be applied to y_data_key={y_data_key!r}; "
+            f"supported bases: {supported}"
+        )
+    return f"{level_split}_{base}"
 
 
 def parse_method_dir(dir_name: str) -> Optional[Tuple[str, str, int]]:
@@ -570,15 +605,15 @@ def calculate_minmax_bands(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Calculate min-max quantile bands from multiple curves.
-    
+
     For each x value, interpolate all curves to that x, then calculate
     the median and specified quantiles across experiments.
-    
+
     Args:
         x_arrays: List of x-value arrays for each experiment
         y_arrays: List of y-value arrays for each experiment
         quantiles: Tuple of (lower_quantile, upper_quantile), default (0.25, 0.75) for IQR
-        
+
     Returns:
         Tuple of (common_x, y_median, y_lower_quantile, y_upper_quantile)
     """
@@ -587,7 +622,7 @@ def calculate_minmax_bands(
     for x_arr in x_arrays:
         all_x_values.update(x_arr.tolist())
     common_x = np.array(sorted(all_x_values))
-    
+
     # Create interpolation functions for each experiment
     interp_funcs = []
     for x, y in zip(x_arrays, y_arrays):
@@ -595,32 +630,31 @@ def calculate_minmax_bands(
         x_sorted = x[sort_idx]
         y_sorted = y[sort_idx]
         f = interpolate.interp1d(
-            x_sorted, y_sorted, kind="linear", 
-            bounds_error=False, fill_value=np.nan
+            x_sorted, y_sorted, kind="linear", bounds_error=False, fill_value=np.nan
         )
         interp_funcs.append(f)
-    
+
     # Calculate statistics at each x value
     y_medians = []
     y_lower_quantiles = []
     y_upper_quantiles = []
-    
+
     for x_val in common_x:
         # Collect y values from all experiments at this x
         y_values = []
-        
+
         for f in interp_funcs:
             y_val = f(x_val)
             if not np.isnan(y_val):
                 y_values.append(y_val)
-        
+
         if len(y_values) > 0:
             # Calculate median and quantiles
             y_values = np.array(y_values)
             median = np.median(y_values)
             lower_q = np.quantile(y_values, quantiles[0])
             upper_q = np.quantile(y_values, quantiles[1])
-            
+
             y_medians.append(median)
             y_lower_quantiles.append(lower_q)
             y_upper_quantiles.append(upper_q)
@@ -629,25 +663,27 @@ def calculate_minmax_bands(
             y_medians.append(np.nan)
             y_lower_quantiles.append(np.nan)
             y_upper_quantiles.append(np.nan)
-    
-    return common_x, np.array(y_medians), np.array(y_lower_quantiles), np.array(y_upper_quantiles)
+
+    return (
+        common_x,
+        np.array(y_medians),
+        np.array(y_lower_quantiles),
+        np.array(y_upper_quantiles),
+    )
 
 
 def calculate_auc_with_bands(
-    x: np.ndarray, 
-    y_median: np.ndarray, 
-    y_lower: np.ndarray, 
-    y_upper: np.ndarray
+    x: np.ndarray, y_median: np.ndarray, y_lower: np.ndarray, y_upper: np.ndarray
 ) -> Tuple[float, float, float]:
     """
     Calculate area under the curve (AUC) for median and quantile bands.
-    
+
     Args:
         x: Common x values
         y_median: Median y values
-        y_lower: Lower quantile y values  
+        y_lower: Lower quantile y values
         y_upper: Upper quantile y values
-        
+
     Returns:
         Tuple of (auc_median, auc_lower, auc_upper)
     """
@@ -655,17 +691,17 @@ def calculate_auc_with_bands(
     valid_mask = ~(np.isnan(y_median) | np.isnan(y_lower) | np.isnan(y_upper))
     if np.sum(valid_mask) < 2:
         return np.nan, np.nan, np.nan
-    
+
     x_valid = x[valid_mask]
     y_median_valid = y_median[valid_mask]
     y_lower_valid = y_lower[valid_mask]
     y_upper_valid = y_upper[valid_mask]
-    
+
     # Calculate AUC using trapezoidal rule
     auc_median = integrate.trapezoid(y_median_valid, x_valid)
     auc_lower = integrate.trapezoid(y_lower_valid, x_valid)
     auc_upper = integrate.trapezoid(y_upper_valid, x_valid)
-    
+
     return auc_median, auc_lower, auc_upper
 
 
@@ -893,17 +929,18 @@ def _compute_accuracy_at_afhp(
     return out
 
 
-def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]],
-                         x_label: str, y_label: str,
-                         normalize_by_range: bool = True,
-                         x_range: Optional[Tuple[float, float]] = None,
-                         weak_performance: Optional[float] = None,
-                         strong_performance: Optional[float] = None,
-                         hide_robust_suffix: bool = False,
-                         accuracy_data: Optional[
-                             Dict[str, Optional[Tuple[float, float, float]]]
-                         ] = None,
-                         show_iqr: bool = True):
+def print_auc_latex_table(
+    method_auc_data: Dict[str, Tuple[float, float, float]],
+    x_label: str,
+    y_label: str,
+    normalize_by_range: bool = True,
+    x_range: Optional[Tuple[float, float]] = None,
+    weak_performance: Optional[float] = None,
+    strong_performance: Optional[float] = None,
+    hide_robust_suffix: bool = False,
+    accuracy_data: Optional[Dict[str, Optional[Tuple[float, float, float]]]] = None,
+    show_iqr: bool = True,
+):
     """
     Print AUC results as a LaTeX-compatible table.
 
@@ -914,9 +951,9 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
     methods (i.e. beats every non-oracle method on AUC); otherwise it is
     rendered in normal weight.
     """
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("AREA UNDER THE CURVE (AUC) RESULTS")
-    print("="*80)
+    print("=" * 80)
 
     # ---- Per-row normalization (applied once, used by both tables) -----------
     def _normalize_triplet(
@@ -946,10 +983,7 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
 
     # ---- Row ordering --------------------------------------------------------
     all_keys = list(method_auc_data.keys())
-    po_keys = [
-        m for m in all_keys
-        if split_robust_method(m)[0] == "oracle-lb-random"
-    ]
+    po_keys = [m for m in all_keys if split_robust_method(m)[0] == "oracle-lb-random"]
     non_po_keys_set = [m for m in all_keys if m not in po_keys]
 
     # Apply DEFAULT_METHOD_ORDER (with robust expansion) + alphabetical leftover.
@@ -957,7 +991,8 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
     # so an empty value-dict is sufficient as a presence map.
     non_po_lookup = {m: {} for m in non_po_keys_set}
     ordered_non_po = expand_method_order_for_robust_variants(
-        DEFAULT_METHOD_ORDER, non_po_lookup  # type: ignore[arg-type]
+        DEFAULT_METHOD_ORDER,
+        non_po_lookup,  # type: ignore[arg-type]
     )
     leftover = sorted(m for m in non_po_keys_set if m not in ordered_non_po)
     ordered_non_po.extend(leftover)
@@ -1060,7 +1095,9 @@ def print_auc_latex_table(method_auc_data: Dict[str, Tuple[float, float, float]]
     print("\\end{tabular}")
     print(f"\\caption{{Area Under the Curve (AUC) for {y_label} vs {x_label}.")
     if weak_performance is not None and strong_performance is not None:
-        print(" Values are normalized such that 0 = novice performance and 1 = expert performance.")
+        print(
+            " Values are normalized such that 0 = novice performance and 1 = expert performance."
+        )
     if normalize_by_range:
         print(" Values are also normalized by the x-axis range.")
     print(" IQR shows 25th-75th percentile range.}")
@@ -1212,9 +1249,7 @@ def plot_icml_results(
 
     if method_include_filter is not None:
         method_order = [
-            m
-            for m in method_order
-            if method_is_included(m, method_include_filter)
+            m for m in method_order if method_is_included(m, method_include_filter)
         ]
 
     if method_filter is not None:
@@ -1232,13 +1267,9 @@ def plot_icml_results(
     # If filtering to robust-only and a single robust variant survives, move
     # the "(Robust ...)" qualifier from per-method labels into the title.
     robust_variants_in_plot: set[str] = {
-        v
-        for v in (split_robust_method(m)[1] for m in valid_methods)
-        if v is not None
+        v for v in (split_robust_method(m)[1] for m in valid_methods) if v is not None
     }
-    hide_robust_label = (
-        robust_filter == "robust" and len(robust_variants_in_plot) == 1
-    )
+    hide_robust_label = robust_filter == "robust" and len(robust_variants_in_plot) == 1
 
     # Optional y-axis normalization: rescale every curve so that the median
     # weak-agent return (curve y[0] across all method × exp) maps to 0 and the
@@ -1274,9 +1305,7 @@ def plot_icml_results(
                         _weak_y.append(float(_y_unf[0]))
         if _first_y and _last_y:
             unfiltered_weak = (
-                _weak_y
-                if y_data_key in FILTERED_PERFORMANCE_KEYS and _weak_y
-                else None
+                _weak_y if y_data_key in FILTERED_PERFORMANCE_KEYS and _weak_y else None
             )
             weak_for_norm, _strong_for_norm = _median_reference_anchors(
                 _first_y,
@@ -1294,13 +1323,13 @@ def plot_icml_results(
 
     # Set up plot style
     setup_plot_style(paper_mode=paper_mode, use_latex=True)
-    
+
     # `--paper-app` swaps to a taller-than-default aspect ratio so the plot
     # sits well as an appendix figure alongside its (longer) legend.
     figsize = (8, 6) if paper_app else (8, 4.5)
     plt.figure(figsize=figsize)
     colors = sns.color_palette("husl", len(valid_methods))
-    
+
     # Get line styles for paper mode
     line_styles = get_line_styles(len(valid_methods), paper_mode, valid_methods)
 
@@ -1312,11 +1341,11 @@ def plot_icml_results(
     # Track x range for random baseline line
     all_x_min = []
     all_x_max = []
-    
+
     # Store AUC data for each method
     method_auc_data = {}
-    overall_x_min = float('inf')
-    overall_x_max = float('-inf')
+    overall_x_min = float("inf")
+    overall_x_max = float("-inf")
 
     for method_idx, method in enumerate(valid_methods):
         exp_data = results[method]
@@ -1354,8 +1383,8 @@ def plot_icml_results(
                     y_arrays.append(y)
 
                     # Store meta data if available
-                    if 'meta' in eval_data:
-                        meta_arrays.append(eval_data['meta'])
+                    if "meta" in eval_data:
+                        meta_arrays.append(eval_data["meta"])
                     else:
                         meta_arrays.append([])
 
@@ -1388,7 +1417,7 @@ def plot_icml_results(
         if len(x_arrays) == 0:
             print(f"Warning: No valid data for {method}, skipping...")
             continue
-        
+
         # Print AFHP values for wait policy
         if method == "wait" and x_data_key in ["step_afhp", "level_afhp"]:
             print("\n=== Wait Policy AFHP Values ===")
@@ -1397,7 +1426,9 @@ def plot_icml_results(
             all_afhp_values = set()
             for x in x_arrays:
                 all_afhp_values.update(x)
-            print(f"All unique AFHP values across experiments: {sorted(all_afhp_values)}")
+            print(
+                f"All unique AFHP values across experiments: {sorted(all_afhp_values)}"
+            )
             print(f"Total unique values: {len(all_afhp_values)}")
 
         if len(x_arrays) == 1 or no_aggregate:
@@ -1416,7 +1447,7 @@ def plot_icml_results(
                         hide_robust_suffix=hide_robust_label,
                     )
                     exp_label = f"{base_label} exp{exp_id}"
-                    
+
                     # Add markers for wait policy
                     if method == "wait":
                         plt.plot(
@@ -1446,7 +1477,7 @@ def plot_icml_results(
                 sort_idx = np.argsort(x)
                 x_sorted = x[sort_idx]
                 y_sorted = y[sort_idx]
-                
+
                 # Format label using shared function
                 plot_label = format_plot_label(
                     method,
@@ -1463,13 +1494,13 @@ def plot_icml_results(
                     markersize=4,
                     linestyle=line_styles[method_idx],
                 )
-                
+
                 # Calculate AUC for single experiment
                 if calculate_auc:
                     # For single experiment, use the same value for all bands
                     auc = integrate.trapezoid(y_sorted, x_sorted)
                     method_auc_data[method] = (auc, auc, auc)
-                    
+
                     # Update overall x-range
                     if len(x_sorted) > 0:
                         overall_x_min = min(overall_x_min, x_sorted.min())
@@ -1480,16 +1511,16 @@ def plot_icml_results(
             common_x, y_median, y_lower_q, y_upper_q = calculate_minmax_bands(
                 x_arrays, y_arrays, quantiles=(0.25, 0.75)
             )
-            
+
             # Filter out NaN values
             valid_mask = ~np.isnan(y_median)
             common_x = common_x[valid_mask]
             y_median = y_median[valid_mask]
             y_lower_q = y_lower_q[valid_mask]
             y_upper_q = y_upper_q[valid_mask]
-            
+
             n_exps = len(x_arrays)
-            
+
             # Format label using shared function
             plot_label = format_plot_label(
                 method,
@@ -1497,7 +1528,7 @@ def plot_icml_results(
                 n_experiments=n_exps,
                 hide_robust_suffix=hide_robust_label,
             )
-            
+
             # Plot median line
             plt.plot(
                 common_x,
@@ -1516,14 +1547,14 @@ def plot_icml_results(
                 color=method_color,
                 alpha=0.2,
             )
-            
+
             # Calculate AUC if requested
             if calculate_auc:
                 auc_median, auc_lower, auc_upper = calculate_auc_with_bands(
                     common_x, y_median, y_lower_q, y_upper_q
                 )
                 method_auc_data[method] = (auc_median, auc_lower, auc_upper)
-                
+
                 # Update overall x-range
                 if len(common_x) > 0:
                     overall_x_min = min(overall_x_min, common_x.min())
@@ -1533,8 +1564,7 @@ def plot_icml_results(
     if all_first_performances and all_last_performances:
         unfiltered_weak = (
             all_weak_performances
-            if y_data_key in FILTERED_PERFORMANCE_KEYS
-            and all_weak_performances
+            if y_data_key in FILTERED_PERFORMANCE_KEYS and all_weak_performances
             else None
         )
         reference_anchors = _median_reference_anchors(
@@ -1570,13 +1600,16 @@ def plot_icml_results(
 
         # Use a unique line style for random that's different from all methods
         # Since methods get assigned styles starting from index 0, we'll use a later style
-        random_linestyle = (0, (2, 2, 10, 2))  # Custom pattern: short dash, short dash, long gap, short dash
+        random_linestyle = (
+            0,
+            (2, 2, 10, 2),
+        )  # Custom pattern: short dash, short dash, long gap, short dash
         if paper_mode:
             # In paper mode, ensure random gets a distinct style
             random_linestyle = (0, (2, 2, 10, 2))
         else:
             random_linestyle = ":"  # Keep dotted in non-paper mode
-            
+
         plt.plot(
             [x_min, x_max],
             [novice_anchor, expert_anchor],
@@ -1595,8 +1628,7 @@ def plot_icml_results(
     if paper_app:
         if do_normalize_y:
             print(
-                "Warning: --paper-app y-axis zoom ignored because "
-                "--normalize_y is set."
+                "Warning: --paper-app y-axis zoom ignored because --normalize_y is set."
             )
         else:
             plt.ylim(6, 10)
@@ -1643,14 +1675,12 @@ def plot_icml_results(
 
     # Build the legend explicitly so that PartialOracle entries sit just before
     # the Novice reference line, preceded by a thin visual separator.
-    legend_handles, legend_labels, separator_indices = _build_legend_entries(
-        plt.gca()
-    )
+    legend_handles, legend_labels, separator_indices = _build_legend_entries(plt.gca())
 
     # Apply publication styling
     style_plot_for_publication(
         legend_outside=True,
-        legend_location='center left',
+        legend_location="center left",
         legend_bbox_to_anchor=(1.05, 0.5),
         handles=legend_handles,
         labels=legend_labels,
@@ -1681,7 +1711,9 @@ def plot_icml_results(
 
     # Print AUC table if requested
     if calculate_auc and method_auc_data:
-        x_range = (overall_x_min, overall_x_max) if overall_x_min != float('inf') else None
+        x_range = (
+            (overall_x_min, overall_x_max) if overall_x_min != float("inf") else None
+        )
 
         # When the curves were normalized at plot time, AUC is already in
         # the (novice=0, expert=1) frame; skip the table's redundant
@@ -1709,13 +1741,18 @@ def plot_icml_results(
             else None
         )
 
-        print_auc_latex_table(method_auc_data, x_label, y_label,
-                            normalize_by_range=True, x_range=x_range,
-                            weak_performance=weak_perf,
-                            strong_performance=strong_perf,
-                            hide_robust_suffix=hide_robust_label,
-                            accuracy_data=accuracy_data,
-                            show_iqr=show_iqr)
+        print_auc_latex_table(
+            method_auc_data,
+            x_label,
+            y_label,
+            normalize_by_range=True,
+            x_range=x_range,
+            weak_performance=weak_perf,
+            strong_performance=strong_perf,
+            hide_robust_suffix=hide_robust_label,
+            accuracy_data=accuracy_data,
+            show_iqr=show_iqr,
+        )
 
 
 def list_available_methods(
@@ -1779,6 +1816,19 @@ def main():
         type=str,
         default="performance",
         help="Key for the y data (default: performance)",
+    )
+    parser.add_argument(
+        "--level-split",
+        "--level_split",
+        dest="level_split",
+        choices=["id", "ood"],
+        default=None,
+        help=(
+            "Restrict the y-axis metric to in-distribution (id) or "
+            "out-of-distribution (ood) episodes. The x-axis stays overall "
+            "AFHP. For the default y_data_key=performance this plots mean "
+            "return among ID or OOD episodes."
+        ),
     )
     parser.add_argument(
         "--method_order",
@@ -1929,12 +1979,24 @@ def main():
     if args.method_order:
         method_order = [m.strip() for m in args.method_order.split(",")]
 
+    y_data_key = args.y_data_key
+    if args.level_split is not None:
+        try:
+            y_data_key = apply_level_split_to_y_key(y_data_key, args.level_split)
+        except ValueError as exc:
+            parser.error(str(exc))
+        if y_data_key != args.y_data_key:
+            print(
+                f"level-split={args.level_split}: using y_data_key={y_data_key} "
+                f"(was {args.y_data_key})"
+            )
+
     plot_icml_results(
         eval_dir=eval_dir,
         prefix_filter=args.prefix,
         env_filter=args.env,
         x_data_key=args.x_data_key,
-        y_data_key=args.y_data_key,
+        y_data_key=y_data_key,
         method_order=method_order,
         method_include_filter=args.method_include_filter,
         method_filter=args.method_filter,

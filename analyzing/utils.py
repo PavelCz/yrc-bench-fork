@@ -195,6 +195,48 @@ def get_episode_level_metric(
     return values
 
 
+def _ood_gt_mask(test_summary: dict) -> np.ndarray:
+    """Boolean mask of OOD episodes in one evaluation-point summary."""
+    return np.asarray(test_summary["level_ood_gt"], dtype=bool)
+
+
+def _split_episode_mask(test_summary: dict, split: str) -> np.ndarray:
+    """Return the ID or OOD episode mask for one evaluation-point summary."""
+    ood_mask = _ood_gt_mask(test_summary)
+    if split == "id":
+        return ~ood_mask
+    if split == "ood":
+        return ood_mask
+    raise ValueError(f"Unknown level split: {split!r}")
+
+
+def _masked_mean_return(test_summary: dict, mask: np.ndarray) -> float:
+    """Mean episode return on ``mask``, or NaN when the mask is empty."""
+    raw_returns = np.asarray(test_summary["raw_returns"], dtype=float)
+    if raw_returns.shape != mask.shape:
+        raise ValueError(
+            "raw_returns and level_ood_gt must have equal lengths, got "
+            f"{raw_returns.shape[0]} and {mask.shape[0]}"
+        )
+    if not np.any(mask):
+        return float("nan")
+    return float(raw_returns[mask].mean())
+
+
+def _split_level_afhp(test_summary: dict, split: str) -> float:
+    """Fraction of ID or OOD episodes in which the coordinator asked for help."""
+    preds = np.asarray(test_summary["level_ood_pred"])
+    mask = _split_episode_mask(test_summary, split)
+    if preds.shape != mask.shape:
+        raise ValueError(
+            "level_ood_pred and level_ood_gt must have equal lengths, got "
+            f"{preds.shape[0]} and {mask.shape[0]}"
+        )
+    if not np.any(mask):
+        return float("nan")
+    return float(np.mean(preds[mask]))
+
+
 def extract_from_data(data, key: str) -> np.ndarray:
     # Canonicalize these values by turning them into integers.
     level_ood_gt = [
@@ -210,6 +252,14 @@ def extract_from_data(data, key: str) -> np.ndarray:
             percentage = sum(preds) / len(preds)
             pred_percentages.append(percentage)
         return np.array(pred_percentages)
+    elif key in {"id_level_afhp", "ood_level_afhp"}:
+        split = "id" if key.startswith("id_") else "ood"
+        return np.array(
+            [
+                _split_level_afhp(element["summary"]["test"], split)
+                for element in data["meta"]
+            ]
+        )
     elif key == "ood_accuracy":
         accs = []
         for preds, gts in zip(level_ood_pred, level_ood_gt):
@@ -262,6 +312,14 @@ def extract_from_data(data, key: str) -> np.ndarray:
             print(f"  Difference: {stored_performances - calculated_performances}")
 
         return data["performances"]
+    elif key in {"id_performance", "ood_performance"}:
+        split = "id" if key.startswith("id_") else "ood"
+        performances = []
+        for element in data["meta"]:
+            test_summary = element["summary"]["test"]
+            mask = _split_episode_mask(test_summary, split)
+            performances.append(_masked_mean_return(test_summary, mask))
+        return np.array(performances)
     elif key == "performance_asked":
         # Performance only for episodes where the agent asked for help
         performances = []
