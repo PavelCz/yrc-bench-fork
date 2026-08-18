@@ -4,7 +4,60 @@ from pathlib import Path
 import argparse
 
 
-def plot_training_curves(csv_path, output_path="training_curves.png", show_plot=True):
+def _smooth_series(values: pd.Series, window: int) -> pd.Series:
+    """Return a centered rolling mean, or the original series if window <= 1."""
+    if window <= 1 or len(values) < window:
+        return values
+    return values.rolling(window=window, min_periods=1, center=True).mean()
+
+
+def _plot_reward_curve(
+    ax,
+    timesteps,
+    rewards,
+    *,
+    color: str,
+    label: str,
+    marker: str,
+    smooth_window: int,
+):
+    rewards = rewards.astype(float)
+    if smooth_window > 1:
+        ax.plot(
+            timesteps,
+            rewards,
+            color=color,
+            linewidth=1,
+            alpha=0.25,
+            marker=marker,
+            markersize=3,
+        )
+        ax.plot(
+            timesteps,
+            _smooth_series(rewards, smooth_window),
+            label=label,
+            color=color,
+            linewidth=2.5,
+        )
+    else:
+        ax.plot(
+            timesteps,
+            rewards,
+            label=label,
+            linewidth=2,
+            marker=marker,
+            markersize=4,
+            alpha=0.8,
+            color=color,
+        )
+
+
+def plot_training_curves(
+    csv_path,
+    output_path="training_curves.png",
+    show_plot=True,
+    smooth_window: int = 0,
+):
     """
     Plot training and validation mean episode rewards over timesteps.
 
@@ -12,6 +65,7 @@ def plot_training_curves(csv_path, output_path="training_curves.png", show_plot=
         csv_path: Path to the CSV file containing training logs
         output_path: Path to save the output plot
         show_plot: Whether to display the plot interactively
+        smooth_window: Rolling-average window in log points (0 or 1 = no smoothing)
     """
     # Read the CSV file
     try:
@@ -38,15 +92,14 @@ def plot_training_curves(csv_path, output_path="training_curves.png", show_plot=
     if train_mask.any():
         train_timesteps = df.loc[train_mask, "timesteps"]
         train_rewards = df.loc[train_mask, "mean_episode_rewards"]
-        ax.plot(
+        _plot_reward_curve(
+            ax,
             train_timesteps,
             train_rewards,
-            label="Training Mean Episode Rewards",
-            linewidth=2,
-            marker="o",
-            markersize=4,
-            alpha=0.8,
             color="blue",
+            label="Training Mean Episode Rewards",
+            marker="o",
+            smooth_window=smooth_window,
         )
         print(f"Training curve: {len(train_rewards)} valid points")
     else:
@@ -57,15 +110,14 @@ def plot_training_curves(csv_path, output_path="training_curves.png", show_plot=
     if val_mask.any():
         val_timesteps = df.loc[val_mask, "timesteps"]
         val_rewards = df.loc[val_mask, "val_mean_episode_rewards"]
-        ax.plot(
+        _plot_reward_curve(
+            ax,
             val_timesteps,
             val_rewards,
-            label="Validation Mean Episode Rewards",
-            linewidth=2,
-            marker="s",
-            markersize=4,
-            alpha=0.8,
             color="red",
+            label="Validation Mean Episode Rewards",
+            marker="s",
+            smooth_window=smooth_window,
         )
         print(f"Validation curve: {len(val_rewards)} valid points")
     else:
@@ -122,6 +174,12 @@ def main():
     parser.add_argument(
         "--no-show", action="store_true", help="Do not display the plot interactively"
     )
+    parser.add_argument(
+        "--smooth",
+        type=int,
+        default=0,
+        help="Rolling-average window in log points (default: 0, no smoothing)",
+    )
 
     args = parser.parse_args()
 
@@ -131,7 +189,12 @@ def main():
         return
 
     # Create the plot
-    fig, ax = plot_training_curves(args.csv_path, args.output, not args.no_show)
+    fig, ax = plot_training_curves(
+        args.csv_path,
+        args.output,
+        not args.no_show,
+        smooth_window=args.smooth,
+    )
 
     if fig is None:
         print("Failed to create plot")
