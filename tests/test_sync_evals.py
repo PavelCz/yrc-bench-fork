@@ -1,80 +1,124 @@
+import os
 from pathlib import Path
 import subprocess
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SYNC_SCRIPT = REPO_ROOT / "scripts" / "sync_evals.sh"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "sync_evals.sh"
+PROXY_PENALTY_SOURCE = (
+    "rnn:/nas/ucb/czempin/code/goal-misgen/yrc-bench-fork/experiments/evals"
+)
 
 
-def _write_executable(path: Path, content: str) -> None:
-    path.write_text(content)
+def _write_executable(path: Path, contents: str) -> None:
+    path.write_text(contents)
     path.chmod(0o755)
 
 
-def test_sync_evals_accepts_custom_source_base(tmp_path: Path) -> None:
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    command_log = tmp_path / "commands.log"
+def _run_sync(tmp_path: Path, remote_dirs, *args: str):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    rsync_log = tmp_path / "rsync.log"
+    quoted_dirs = " ".join(f'"{name}"' for name in remote_dirs)
 
     _write_executable(
-        fake_bin / "ssh",
-        """#!/usr/bin/env bash
-printf 'ssh %s\n' "$*" >> "$SYNC_TEST_LOG"
-printf '%s\n' \
-  campaign_heist_exp0 \
-  campaign_heist_exp1 \
-  campaign_heist_exp2 \
-  campaign_heist_exp3
+        bin_dir / "ssh",
+        f"""#!/usr/bin/env bash
+printf '%s\\n' {quoted_dirs}
 """,
     )
     _write_executable(
-        fake_bin / "rsync",
+        bin_dir / "rsync",
         """#!/usr/bin/env bash
-printf 'rsync %s\n' "$*" >> "$SYNC_TEST_LOG"
+printf '%s\\n' "$*" >> "${SYNC_TEST_RSYNC_LOG}"
 """,
     )
 
+    env = dict(os.environ)
+    env.update(
+        {
+            "PATH": f"{bin_dir}:{env['PATH']}",
+            "SYNC_TEST_RSYNC_LOG": str(rsync_log),
+        }
+    )
     result = subprocess.run(
-        [
-            "bash",
-            str(SYNC_SCRIPT),
-            "--source-base",
-            "rnn:/custom/repo/experiments/evals",
-            "campaign",
-        ],
-        cwd=REPO_ROOT,
-        env={
-            "PATH": f"{fake_bin}:/usr/bin:/bin",
-            "SYNC_TEST_LOG": str(command_log),
-        },
-        check=False,
-        capture_output=True,
+        ["bash", str(SCRIPT), *args],
+        env=env,
         text=True,
+        capture_output=True,
+        check=False,
+    )
+    return result, rsync_log.read_text() if rsync_log.exists() else ""
+
+
+def test_sync_accepts_custom_source_base(tmp_path):
+    source_base = PROXY_PENALTY_SOURCE
+    result, rsync_args = _run_sync(
+        tmp_path,
+        ["video-test_heist_exp0"],
+        "--with-videos",
+        "--source-base",
+        source_base,
+        "video-test",
     )
 
     assert result.returncode == 0, result.stderr
-    commands = command_log.read_text()
-    assert "ls -1 /custom/repo/experiments/evals" in commands
-    assert (
-        "rnn:/custom/repo/experiments/evals/campaign_heist_exp0" in commands
+    assert f"{source_base}/video-test_heist_exp0" in rsync_args
+
+
+def test_sync_accepts_equals_form_for_custom_source_base(tmp_path):
+    source_base = "other-host:/custom/evals"
+    result, rsync_args = _run_sync(
+        tmp_path,
+        ["video-test_heist_exp0"],
+        "--with-videos",
+        f"--source-base={source_base}",
+        "video-test",
     )
-    assert commands.count("rsync ") == 4
+
+    assert result.returncode == 0, result.stderr
+    assert f"{source_base}/video-test_heist_exp0" in rsync_args
+
+
+def test_sync_uses_canonical_data_root_by_default(tmp_path):
+    result, rsync_args = _run_sync(
+        tmp_path,
+        ["video-test_heist_exp0"],
+        "--with-videos",
+        "video-test",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        "rnn:/nas/ucb/czempin/data/goal-misgen/experiments/evals/video-test_heist_exp0"
+    ) in rsync_args
 
 
 def test_sync_evals_rejects_source_base_without_host(tmp_path: Path) -> None:
-    result = subprocess.run(
-        [
-            "bash",
-            str(SYNC_SCRIPT),
-            "--source-base",
-            "/custom/repo/experiments/evals",
-            "campaign",
-        ],
-        cwd=REPO_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
+    result, _ = _run_sync(
+        tmp_path,
+        ["campaign_heist_exp0"],
+        "--source-base",
+        "/custom/repo/experiments/evals",
+        "campaign",
     )
 
     assert result.returncode == 1
     assert "expected HOST:PATH" in result.stderr
+
+
+def test_sync_proxy_penalty_campaign_dirs(tmp_path):
+    remote_dirs = [
+        "proxy-penalty_coinrun_proxy_penalty_exp0",
+        "proxy-penalty_robust400_maze_proxy_penalty_exp0",
+    ]
+    result, rsync_args = _run_sync(
+        tmp_path,
+        remote_dirs,
+        "--source-base",
+        PROXY_PENALTY_SOURCE,
+        "proxy-penalty",
+    )
+
+    assert result.returncode == 0, result.stderr
+    for name in remote_dirs:
+        assert f"{PROXY_PENALTY_SOURCE}/{name}" in rsync_args

@@ -16,6 +16,9 @@ usage() {
   echo "Videos and images in the videos folder are excluded by default."
   echo
   echo "Use --source-base when evals were written outside the default data directory."
+  echo
+  echo "Example (evals written under the RNN checkout):"
+  echo "  $0 --source-base rnn:/nas/ucb/czempin/code/goal-misgen/yrc-bench-fork/experiments/evals proxy-penalty"
 }
 
 SYNC_VIDEOS=0

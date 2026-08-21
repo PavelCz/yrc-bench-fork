@@ -1792,7 +1792,7 @@ def main():
         type=str,
         nargs="+",
         default=None,
-        help="Prefix filter(s) for experiment directories (e.g., 'icml04' or 'icml04 icml05')",
+        help="Prefix filter(s) for experiment directories (e.g., 'icml04' or 'proxy-penalty')",
     )
     parser.add_argument(
         "--env",
