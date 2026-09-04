@@ -3,12 +3,37 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Union
+from typing import List, Tuple, Union
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
 REQUIRED_COLS = ["timesteps", "mean_episode_rewards", "val_mean_episode_rewards"]
+
+# Each panel is (ylabel, list of (column, color, label, marker)).
+RETURN_PANEL = (
+    "Mean episode return",
+    [
+        ("mean_episode_rewards", "tab:blue", "Training", "o"),
+        ("val_mean_episode_rewards", "tab:red", "Validation (pooled)", "s"),
+    ],
+)
+ID_OOD_RETURN_PANEL = (
+    "Val mean episode return",
+    [
+        ("val_id_mean_episode_rewards", "tab:green", "Validation ID", "o"),
+        ("val_ood_mean_episode_rewards", "tab:orange", "Validation OOD", "s"),
+    ],
+)
+ORACLE_REGRET_PANEL = (
+    "Oracle regret",
+    [
+        ("val_mean_oracle_regret", "black", "Overall", "^"),
+        ("val_id_mean_oracle_regret", "tab:green", "ID", "o"),
+        ("val_ood_mean_oracle_regret", "tab:orange", "OOD", "s"),
+    ],
+)
+PANELS = (RETURN_PANEL, ID_OOD_RETURN_PANEL, ORACLE_REGRET_PANEL)
 
 
 def _smooth_series(values: pd.Series, window: int) -> pd.Series:
@@ -32,6 +57,8 @@ def aggregate_metric(dfs: Sequence[pd.DataFrame], column: str) -> pd.DataFrame:
     """Align runs on timesteps and return mean / IQR for one reward column."""
     series_list = []
     for i, df in enumerate(dfs):
+        if column not in df.columns:
+            continue
         mask = df[column].notna()
         if not mask.any():
             continue
@@ -99,13 +126,29 @@ def _plot_aggregated_curve(
         )
 
 
+def _curve_label(base: str, n_runs: int, show_iqr: bool) -> str:
+    if show_iqr:
+        return f"{base} (n={n_runs})"
+    return base
+
+
+def _active_panels(
+    dfs: Sequence[pd.DataFrame],
+) -> List[Tuple[str, Sequence[Tuple[str, str, str, str]]]]:
+    active = []
+    for ylabel, curves in PANELS:
+        if any(not aggregate_metric(dfs, column).empty for column, _, _, _ in curves):
+            active.append((ylabel, curves))
+    return active
+
+
 def plot_training_curves(
     csv_paths: Sequence[Union[str, Path]],
     output_path="training_curves.png",
     show_plot=True,
     smooth_window: int = 0,
 ):
-    """Plot training and validation mean episode rewards over timesteps."""
+    """Plot training/validation returns and optional ID/OOD and regret panels."""
     dfs: list[pd.DataFrame] = []
     for csv_path in csv_paths:
         path = Path(csv_path)
@@ -121,63 +164,49 @@ def plot_training_curves(
         print("No valid CSV files loaded")
         return None, None
 
-    train_stats = aggregate_metric(dfs, "mean_episode_rewards")
-    val_stats = aggregate_metric(dfs, "val_mean_episode_rewards")
-    if train_stats.empty and val_stats.empty:
+    panels = _active_panels(dfs)
+    if not panels:
         print("No valid data points found for either curve")
         return None, None
 
     n_runs = len(dfs)
     show_iqr = n_runs > 1
-    train_label = "Training Mean Episode Rewards"
-    val_label = "Validation Mean Episode Rewards"
-    if show_iqr:
-        train_label = f"Training mean (n={n_runs})"
-        val_label = f"Validation mean (n={n_runs})"
-
+    n_panels = len(panels)
     plt.style.use("default")
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, axes = plt.subplots(
+        n_panels,
+        1,
+        sharex=True,
+        figsize=(12, 4.2 * n_panels),
+        squeeze=False,
+    )
+    axes = axes[:, 0]
 
-    if not train_stats.empty:
-        _plot_aggregated_curve(
-            ax,
-            train_stats,
-            color="blue",
-            label=train_label,
-            marker="o",
-            smooth_window=smooth_window,
-            show_iqr=show_iqr,
-        )
-        print(f"Training curve: {len(train_stats)} points")
-    else:
-        print("No valid training data points found")
+    for ax, (ylabel, curves) in zip(axes, panels):
+        for column, color, label, marker in curves:
+            stats = aggregate_metric(dfs, column)
+            if stats.empty:
+                continue
+            _plot_aggregated_curve(
+                ax,
+                stats,
+                color=color,
+                label=_curve_label(label, n_runs, show_iqr),
+                marker=marker,
+                smooth_window=smooth_window,
+                show_iqr=show_iqr,
+            )
+            print(f"{column}: {len(stats)} points")
+        ax.set_ylabel(ylabel, fontsize=12)
+        ax.legend(fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.tick_params(axis="both", which="major", labelsize=11)
 
-    if not val_stats.empty:
-        _plot_aggregated_curve(
-            ax,
-            val_stats,
-            color="red",
-            label=val_label,
-            marker="s",
-            smooth_window=smooth_window,
-            show_iqr=show_iqr,
-        )
-        print(f"Validation curve: {len(val_stats)} points")
-    else:
-        print("No valid validation data points found")
-
-    ax.set_xlabel("Timesteps", fontsize=14)
-    ax.set_ylabel("Mean Episode Rewards", fontsize=14)
-    title = "Training and Validation Mean Episode Rewards Over Time"
+    axes[-1].set_xlabel("Timesteps", fontsize=14)
+    title = "Policy training curves"
     if show_iqr:
-        title = (
-            f"Training and Validation Mean Episode Rewards Over Time "
-            f"(mean + IQR, n={n_runs})"
-        )
-    ax.set_title(title, fontsize=16)
-    ax.legend(fontsize=12)
-    ax.grid(True, alpha=0.3)
-    ax.tick_params(axis="both", which="major", labelsize=12)
+        title = f"Policy training curves (mean + IQR, n={n_runs})"
+    fig.suptitle(title, fontsize=16)
     plt.tight_layout()
 
     try:
@@ -189,7 +218,7 @@ def plot_training_curves(
     if show_plot:
         plt.show()
 
-    return fig, ax
+    return fig, axes
 
 
 def main():
