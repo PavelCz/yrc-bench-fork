@@ -318,7 +318,7 @@ for random_percent in "${RANDOM_PERCENTS[@]}"; do
         --mem="$MEM" \
         --job-name="$exp_name" \
         --output="${LOG_DIR}/${exp_name}_%j.out" \
-        --wrap=". ${CONDA_BASE}/etc/profile.d/conda.sh && cd $TRAIN_DIR && conda run -n $CONDA_ENV python train.py \
+        --wrap="export MPLCONFIGDIR='/nas/ttl=60d/czempin/mpl-config'; export XDG_CACHE_HOME='/nas/ttl=60d/czempin/xdg-cache'; mkdir -p \"\$MPLCONFIGDIR\" \"\$XDG_CACHE_HOME\"; . ${CONDA_BASE}/etc/profile.d/conda.sh && cd $TRAIN_DIR && conda run -n $CONDA_ENV python train.py \
             --level_seeds_file ${LEVEL_SEEDS_FOLDER}/${LEVEL_SEEDS_FILE} \
             --train_mode $TRAIN_MODE \
             --eval_mode sequential \

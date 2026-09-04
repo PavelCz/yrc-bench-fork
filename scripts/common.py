@@ -15,6 +15,32 @@ EXP_ID_TO_SEED = {
     2: 2,
 }
 
+# Node-local $HOME on chai compute nodes has a per-node quota. Point caches
+# at the ttl NAS volume so matplotlib / wandb do not write under /home.
+CHAI_WANDB_DATA_DIR = "/nas/ttl=60d/czempin/wandb-data"
+CHAI_WANDB_CACHE_DIR = "/nas/ttl=60d/czempin/wandb-cache"
+CHAI_MPLCONFIGDIR = "/nas/ttl=60d/czempin/mpl-config"
+CHAI_XDG_CACHE_HOME = "/nas/ttl=60d/czempin/xdg-cache"
+
+
+def build_chai_cache_env_block(server: str) -> str:
+    """Shell lines that point job caches at the chai NAS volume.
+
+    Only emitted on chai, where $HOME lives on each node's root disk and is
+    quota-limited. Other servers have their own dedicated scratch.
+    """
+    if server != "chai":
+        return ""
+    return (
+        f"export WANDB_DATA_DIR='{CHAI_WANDB_DATA_DIR}'\n"
+        f"export WANDB_CACHE_DIR='{CHAI_WANDB_CACHE_DIR}'\n"
+        f"export MPLCONFIGDIR='{CHAI_MPLCONFIGDIR}'\n"
+        f"export XDG_CACHE_HOME='{CHAI_XDG_CACHE_HOME}'\n"
+        'mkdir -p "$WANDB_DATA_DIR" "$WANDB_CACHE_DIR" '
+        '"$MPLCONFIGDIR" "$XDG_CACHE_HOME"'
+    )
+
+
 SERVER_PATHS = {
     "chai": {
         "checkpoint_base": "/nas/ucb/czempin/data/goal-misgen/policy/icml",

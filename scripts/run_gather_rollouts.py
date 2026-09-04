@@ -11,6 +11,7 @@ from common import (
     ENVS,
     EXP_ID_TO_SEED,
     SERVER_PATHS,
+    build_chai_cache_env_block,
     get_checkpoints,
     get_eval_env_name,
 )
@@ -121,6 +122,8 @@ def build_sbatch_command(job_name: str, gather_args: dict) -> str:
 #SBATCH --output=logs/slurm/%x_%j.out
 #SBATCH --error=logs/slurm/%x_%j.err
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in SLURM_CONFIG.items())}
+
+{build_chai_cache_env_block("chai")}
 
 eval "$(conda shell.bash hook)"
 conda activate {CONDA_ENV}

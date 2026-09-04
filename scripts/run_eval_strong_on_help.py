@@ -19,6 +19,7 @@ from common import (
     METHOD_CONFIGS,
     ROBUST_MAZE_CHECKPOINT_STEPS,
     SERVER_PATHS,
+    build_chai_cache_env_block,
     find_newest_timestamp_dir,
     get_robust_maze_strong_checkpoint,
     get_strong_checkpoint,
@@ -34,24 +35,6 @@ ROBUST_SUFFIX_RE = re.compile(r"_(robust\d+)$")
 # ==============================================================================
 
 DEFAULT_CONDA_ENV = "ood-stable"
-
-# Redirect wandb staging + artifact cache off the (often-full) root volume.
-WANDB_DATA_DIR_PATH = "/nas/ttl=60d/czempin/wandb-data"
-WANDB_CACHE_DIR_PATH = "/nas/ttl=60d/czempin/wandb-cache"
-
-
-def build_wandb_env_block(server: str) -> str:
-    """Shell lines that point wandb staging/cache at the NAS volume.
-
-    Only emitted on chai; other servers have their own dedicated scratch.
-    """
-    if server != "chai":
-        return ""
-    return (
-        f"export WANDB_DATA_DIR='{WANDB_DATA_DIR_PATH}'\n"
-        f"export WANDB_CACHE_DIR='{WANDB_CACHE_DIR_PATH}'\n"
-        'mkdir -p "$WANDB_DATA_DIR" "$WANDB_CACHE_DIR"'
-    )
 
 SLURM_CONFIG = {
     "qos": "default",
@@ -765,7 +748,7 @@ def build_sbatch_script(
 #SBATCH --error={log_dir}/%x_%j.err
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
 
-{build_wandb_env_block(server)}
+{build_chai_cache_env_block(server)}
 
 eval "$(conda shell.bash hook)"
 conda activate {conda_env}

@@ -18,6 +18,7 @@ from common import (
     ENVS,
     ROBUST_MAZE_CHECKPOINT_STEPS,
     SERVER_PATHS,
+    build_chai_cache_env_block,
     get_checkpoints,
     get_eval_env_name,
     get_robust_maze_strong_checkpoint,
@@ -67,6 +68,8 @@ def build_sbatch_command(
     conda_env: str,
     log_dir: Path,
     qos: str = "default",
+    *,
+    server: str = "chai",
 ) -> str:
     """Build the sbatch submission script."""
     require_non_plain_maze_eval_env(str(eval_args["env_name"]))
@@ -109,6 +112,8 @@ def build_sbatch_command(
 #SBATCH --error={log_dir}/%x_%j.err
 {chr(10).join(f"#SBATCH --{k}={v}" for k, v in slurm_config.items())}
 
+{build_chai_cache_env_block(server)}
+
 echo "Using conda env: {conda_env}"
 eval "$(conda shell.bash hook)"
 conda activate {conda_env}
@@ -123,9 +128,13 @@ def submit_job(
     log_dir: Path,
     qos: str = "default",
     dry_run: bool = False,
+    *,
+    server: str = "chai",
 ) -> None:
     """Submit or print a single job."""
-    sbatch_script = build_sbatch_command(job_name, eval_args, conda_env, log_dir, qos)
+    sbatch_script = build_sbatch_command(
+        job_name, eval_args, conda_env, log_dir, qos, server=server
+    )
 
     if dry_run:
         print(f"=== Job: {job_name} ===")
@@ -419,6 +428,7 @@ def main():
                 log_dir,
                 args.qos,
                 dry_run=False,
+                server=args.server,
             )
 
     return 0

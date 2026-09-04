@@ -19,6 +19,14 @@ def test_heist_proxy_fail_uses_heist_artifacts():
     assert "heist_proxy_fail" in run_eval.EVAL_ENVS
 
 
+def test_chai_cache_env_block_is_chai_only():
+    chai = run_eval.build_chai_cache_env_block("chai")
+    assert "export MPLCONFIGDIR=" in chai
+    assert "export XDG_CACHE_HOME=" in chai
+    assert run_eval.build_chai_cache_env_block("snoopy") == ""
+    assert run_eval.build_chai_cache_env_block("carc") == ""
+
+
 def test_eval_sbatch_overrides_env_name():
     command = run_eval.build_sbatch_command(
         "job",
@@ -45,6 +53,33 @@ def test_eval_sbatch_overrides_env_name():
 
     assert "-en coinrun_proxy_fail" in command
     assert "-weak weak.pth" in command
+    assert "export MPLCONFIGDIR='/nas/ttl=60d/czempin/mpl-config'" in command
+    assert "export XDG_CACHE_HOME='/nas/ttl=60d/czempin/xdg-cache'" in command
+
+    snoopy = run_eval.build_sbatch_command(
+        "job",
+        {
+            "config": "configs/eval/coinrun/max_prob.yaml",
+            "name": "name",
+            "env_name": "coinrun_proxy_fail",
+            "experiment_group": "group",
+            "video_episodes_to_collect": 0,
+            "num_levels": 16,
+            "video_filter": "all",
+            "cp_rolling_average": "none",
+            "video_logging_mode": "none",
+            "video_filter_mode": "any",
+            "sim": "sim.pth",
+            "weak": "weak.pth",
+            "strong": "strong.pth",
+            "level_seeds_file": "seeds.json",
+            "coverage_fraction": 0.05,
+        },
+        "ood-stable",
+        Path("/tmp/logs"),
+        server="snoopy",
+    )
+    assert "MPLCONFIGDIR" not in snoopy
 
 
 def make_eval_args(name="name"):
@@ -97,6 +132,7 @@ def test_packed_sbatch_runs_multiple_eval_steps_on_one_gpu():
     assert command.count("--gres=gpu:1") == 5
     assert command.count("python eval_afhp.py") == 4
     assert 'pids+=("$!")' in command
+    assert "export MPLCONFIGDIR='/nas/ttl=60d/czempin/mpl-config'" in command
     assert "-n coinrun_max-prob_exp0" in command
     assert "-n coinrun_max-prob_exp3" in command
 

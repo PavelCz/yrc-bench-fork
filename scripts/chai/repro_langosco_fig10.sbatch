@@ -119,6 +119,10 @@ echo "logdir=${CHECKPOINT_BASE}/${ENV_NAME}/${EXP_NAME}/<run_name>"
 echo "start_time=$(date +%F_%T)"
 echo
 
+export MPLCONFIGDIR="${MPLCONFIGDIR:-/nas/ttl=60d/czempin/mpl-config}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/nas/ttl=60d/czempin/xdg-cache}"
+mkdir -p "$MPLCONFIGDIR" "$XDG_CACHE_HOME"
+
 # shellcheck disable=SC1091
 . "${CONDA_BASE}/etc/profile.d/conda.sh"
 cd "${TRAIN_DIR}"

@@ -62,6 +62,10 @@ fi
 
 mkdir -p /nas/ucb/czempin/data/goal-misgen/slurm-logs/default/tmlr-heist02-ood-timeout-videos
 
+export MPLCONFIGDIR="${MPLCONFIGDIR:-/nas/ttl=60d/czempin/mpl-config}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/nas/ttl=60d/czempin/xdg-cache}"
+mkdir -p "$MPLCONFIGDIR" "$XDG_CACHE_HOME"
+
 # shellcheck disable=SC1091
 . "${CONDA_BASE}/etc/profile.d/conda.sh"
 conda activate "${CONDA_ENV}"
