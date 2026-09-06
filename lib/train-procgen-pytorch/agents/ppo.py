@@ -1,5 +1,9 @@
 from .base_agent import BaseAgent
-from common.misc_util import adjust_lr
+from common.misc_util import (
+    adjust_lr,
+    episode_randomize_goal,
+    heist_oracle_regret_from_info,
+)
 import torch
 import torch.optim as optim
 import numpy as np
@@ -113,6 +117,9 @@ class PPO(BaseAgent):
         episode_returns = []
         episode_lengths = []
         episode_timeouts = []
+        episode_ood = []
+        episode_regret = []
+        current_level_ood_gt = [False] * self.n_envs
         current_returns, current_lengths = self._get_validation_accumulators(
             random_start=random_start
         )
@@ -130,18 +137,41 @@ class PPO(BaseAgent):
                 episode_returns.append(float(current_returns[env_idx]))
                 episode_lengths.append(int(current_lengths[env_idx]))
                 episode_timeouts.append(int(self._episode_timeout(info[env_idx])))
+                episode_ood.append(
+                    episode_randomize_goal(
+                        info[env_idx], True, current_level_ood_gt[env_idx]
+                    )
+                )
+                episode_regret.append(
+                    heist_oracle_regret_from_info(
+                        float(current_returns[env_idx]), info[env_idx]
+                    )
+                )
                 current_returns[env_idx] = 0.0
                 current_lengths[env_idx] = 0
             num_episodes += len(done_indices)
 
+            for env_idx in range(self.n_envs):
+                if "randomize_goal" in info[env_idx]:
+                    current_level_ood_gt[env_idx] = bool(
+                        info[env_idx]["randomize_goal"]
+                    )
+
             obs = next_obs
             hidden_state = next_hidden_state
 
-        return obs, hidden_state, done, {
-            "episode_returns": episode_returns,
-            "episode_lengths": episode_lengths,
-            "episode_timeouts": episode_timeouts,
-        }
+        return (
+            obs,
+            hidden_state,
+            done,
+            {
+                "episode_returns": episode_returns,
+                "episode_lengths": episode_lengths,
+                "episode_timeouts": episode_timeouts,
+                "episode_ood": episode_ood,
+                "episode_regret": episode_regret,
+            },
+        )
 
     def predict(self, obs, hidden_state, done):
         with torch.no_grad():
@@ -323,6 +353,8 @@ class PPO(BaseAgent):
                     validation_stats["episode_lengths"],
                     validation_stats["episode_timeouts"],
                     random_start=False,
+                    episode_ood=validation_stats["episode_ood"],
+                    episode_regret=validation_stats["episode_regret"],
                 )
 
             if self.env_valid_random_start is not None and should_validate:

@@ -69,7 +69,22 @@ class Logger(object):
         columns = time_metrics + episode_metrics + ["val_" + m for m in episode_metrics]
         if self.use_random_start_validation:
             columns += ["val_random_start_" + m for m in episode_metrics]
+        columns += [
+            "val_id_mean_episode_rewards",
+            "val_ood_mean_episode_rewards",
+            "val_id_num_episodes",
+            "val_ood_num_episodes",
+            "val_mean_oracle_regret",
+            "val_id_mean_oracle_regret",
+            "val_ood_mean_oracle_regret",
+        ]
         self.log = pd.DataFrame(columns=columns)
+
+        self.val_id_returns = []
+        self.val_ood_returns = []
+        self.val_oracle_regret = []
+        self.val_id_oracle_regret = []
+        self.val_ood_oracle_regret = []
 
         self.timesteps = 0
         self.num_episodes = 0
@@ -148,13 +163,13 @@ class Logger(object):
         episode_lengths,
         episode_timeouts=None,
         random_start=False,
+        episode_ood=None,
+        episode_regret=None,
     ):
         if episode_timeouts is None:
             episode_timeouts = [0] * len(episode_returns)
 
-        if not (
-            len(episode_returns) == len(episode_lengths) == len(episode_timeouts)
-        ):
+        if not (len(episode_returns) == len(episode_lengths) == len(episode_timeouts)):
             raise ValueError(
                 "Validation returns, lengths, and timeouts must have matching lengths."
             )
@@ -174,6 +189,41 @@ class Logger(object):
             reward_buffer.append(float(episode_return))
             len_buffer.append(int(episode_length))
             timeout_buffer.append(int(episode_timeout))
+
+        if random_start:
+            return
+
+        if episode_ood is not None:
+            if len(episode_ood) != len(episode_returns):
+                raise ValueError(
+                    "Validation OOD flags must have the same length as episode returns."
+                )
+
+            for episode_return, is_ood in zip(episode_returns, episode_ood):
+                if is_ood:
+                    self.val_ood_returns.append(float(episode_return))
+                else:
+                    self.val_id_returns.append(float(episode_return))
+
+        if episode_regret is None:
+            return
+
+        if len(episode_regret) != len(episode_returns):
+            raise ValueError(
+                "Validation regret values must have the same length as episode returns."
+            )
+
+        for idx, regret in enumerate(episode_regret):
+            if regret is None:
+                continue
+            regret_value = float(regret)
+            self.val_oracle_regret.append(regret_value)
+            if episode_ood is None:
+                continue
+            if episode_ood[idx]:
+                self.val_ood_oracle_regret.append(regret_value)
+            else:
+                self.val_id_oracle_regret.append(regret_value)
 
     def dump(self):
         if self.timesteps < self.next_log_timestep:
@@ -212,6 +262,11 @@ class Logger(object):
         self.episode_timeout_buffer_v_random_start.clear()
         self.episode_len_buffer_v_random_start.clear()
         self.episode_reward_buffer_v_random_start.clear()
+        self.val_id_returns = []
+        self.val_ood_returns = []
+        self.val_oracle_regret = []
+        self.val_id_oracle_regret = []
+        self.val_ood_oracle_regret = []
 
     def _get_episode_statistics(self):
         episode_statistics = {}
@@ -227,9 +282,7 @@ class Logger(object):
         episode_statistics["Len/max_episodes"] = np.max(
             self.episode_len_buffer, initial=0
         )
-        episode_statistics["Len/mean_episodes"] = _mean_or_nan(
-            self.episode_len_buffer
-        )
+        episode_statistics["Len/mean_episodes"] = _mean_or_nan(self.episode_len_buffer)
         episode_statistics["Len/min_episodes"] = np.min(
             self.episode_len_buffer, initial=0
         )
@@ -272,13 +325,32 @@ class Logger(object):
             episode_statistics["[Valid Random Start] Len/max_episodes"] = np.max(
                 self.episode_len_buffer_v_random_start, initial=0
             )
-            episode_statistics["[Valid Random Start] Len/mean_episodes"] = (
-                _mean_or_nan(self.episode_len_buffer_v_random_start)
+            episode_statistics["[Valid Random Start] Len/mean_episodes"] = _mean_or_nan(
+                self.episode_len_buffer_v_random_start
             )
             episode_statistics["[Valid Random Start] Len/min_episodes"] = np.min(
                 self.episode_len_buffer_v_random_start, initial=0
             )
-            episode_statistics["[Valid Random Start] Len/mean_timeout"] = (
-                _mean_or_nan(self.episode_timeout_buffer_v_random_start)
+            episode_statistics["[Valid Random Start] Len/mean_timeout"] = _mean_or_nan(
+                self.episode_timeout_buffer_v_random_start
             )
+        episode_statistics["[Valid] Rewards/id_mean_episodes"] = _mean_or_nan(
+            self.val_id_returns
+        )
+        episode_statistics["[Valid] Rewards/ood_mean_episodes"] = _mean_or_nan(
+            self.val_ood_returns
+        )
+        episode_statistics["[Valid] Rewards/id_num_episodes"] = len(self.val_id_returns)
+        episode_statistics["[Valid] Rewards/ood_num_episodes"] = len(
+            self.val_ood_returns
+        )
+        episode_statistics["[Valid] Rewards/mean_oracle_regret"] = _mean_or_nan(
+            self.val_oracle_regret
+        )
+        episode_statistics["[Valid] Rewards/id_mean_oracle_regret"] = _mean_or_nan(
+            self.val_id_oracle_regret
+        )
+        episode_statistics["[Valid] Rewards/ood_mean_oracle_regret"] = _mean_or_nan(
+            self.val_ood_oracle_regret
+        )
         return episode_statistics
