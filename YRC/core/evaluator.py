@@ -101,6 +101,15 @@ def _step_invisible_coin_collected(info: Dict[str, Any], done: bool) -> bool:
     return bool(info.get("invisible_coin_collected", False))
 
 
+def _info_level_seed(info: Dict[str, Any]) -> int:
+    """Return the current Procgen level seed from a step info dict."""
+    if "level_seed" in info:
+        return int(info["level_seed"])
+    if "prev_level_seed" in info:
+        return int(info["prev_level_seed"])
+    return -1
+
+
 class Evaluator:
     LOGGED_ACTION = 1
 
@@ -323,6 +332,8 @@ class Evaluator:
         current_level_ood_pred = [False] * env.num_envs
         # For every env, whether the current level is actually ood.
         current_level_ood_gt = [False] * env.num_envs
+        # For every env, the current Procgen level seed once info exposes it.
+        current_level_seed = [-1] * env.num_envs
         # For every env, whether the coin was collected in the current episode.
         current_invisible_coin_collected = [False] * env.num_envs
         # For every env, the first timestep when OOD was predicted (None if never predicted)
@@ -364,6 +375,8 @@ class Evaluator:
             # Some level-based baselines need the current episode's OOD ground truth
             # once it becomes available from the first info dict.
             obs["level_ood_gt"] = np.array(current_level_ood_gt, dtype=bool)
+            # Improvement-ranked oracle looks up the precomputed seed table.
+            obs["level_seed"] = np.array(current_level_seed, dtype=np.int64)
             # For most policies I have seen, the greedy flag is ignored. These include
             # random and ood.
             action, scores, recons = policy.act(
@@ -615,6 +628,7 @@ class Evaluator:
                 # episode, so the info dict might be of the next episode.
                 # OOD GT is determined by randomize_goal (coinrun, maze_afh, etc.)
                 current_level_ood_gt[i] = bool(info[i]["randomize_goal"])
+                current_level_seed[i] = _info_level_seed(info[i])
 
                 # Check if all filters have enough episodes
                 if self._all_video_filters_satisfied():

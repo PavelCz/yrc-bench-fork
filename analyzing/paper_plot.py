@@ -38,7 +38,9 @@ from scipy import interpolate, integrate
 # Expert reference line. Keyed by canonical base method (no robust suffix).
 SPECIAL_METHOD_COLORS = {
     "oracle-lb-random": "blue",
+    "oracle-improvement": "tab:purple",
 }
+ORACLE_METHODS = {"oracle-lb-random", "oracle-improvement"}
 EXPERT_REFERENCE_COLOR = "blue"
 NOVICE_REFERENCE_COLOR = "red"
 
@@ -194,7 +196,13 @@ def method_has_robust_variant(method: str) -> bool:
     return robust_variant is not None
 
 
-_PARTIAL_ORACLE_LABEL_MARKER = "PartialOracle"
+_ORACLE_LABEL_MARKERS = ("PartialOracle", "ImprovementOracle")
+
+
+def is_oracle_method(method: str) -> bool:
+    return split_robust_method(method)[0] in ORACLE_METHODS
+
+
 _NOVICE_LABEL = r"\textsc{Novice}"
 _EXPERT_LABEL = r"\textsc{Expert}"
 _RANDOM_LABEL = r"\textsc{Random}"
@@ -229,7 +237,7 @@ def _build_legend_entries(ax):
     reference_entries: Dict[str, Tuple[object, str]] = {}
 
     for handle, label in zip(raw_handles, raw_labels):
-        if _PARTIAL_ORACLE_LABEL_MARKER in label:
+        if any(marker in label for marker in _ORACLE_LABEL_MARKERS):
             partial_oracle_entries.append((handle, label))
         elif label == _NOVICE_LABEL:
             reference_entries["novice"] = (handle, label)
@@ -984,7 +992,7 @@ def print_auc_latex_table(
 
     # ---- Row ordering --------------------------------------------------------
     all_keys = list(method_auc_data.keys())
-    po_keys = [m for m in all_keys if split_robust_method(m)[0] == "oracle-lb-random"]
+    po_keys = [m for m in all_keys if is_oracle_method(m)]
     non_po_keys_set = [m for m in all_keys if m not in po_keys]
 
     # Apply DEFAULT_METHOD_ORDER (with robust expansion) + alphabetical leftover.
@@ -1030,10 +1038,7 @@ def print_auc_latex_table(
         best_overall_k = _best_key(all_keys, data)
         if best_non_po_k is not None:
             winners.add(best_non_po_k)
-        if (
-            best_overall_k is not None
-            and split_robust_method(best_overall_k)[0] == "oracle-lb-random"
-        ):
+        if best_overall_k is not None and is_oracle_method(best_overall_k):
             winners.add(best_overall_k)
         return winners
 

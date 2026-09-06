@@ -17,6 +17,7 @@ from YRC.policies.base import (
     OracleLevelBasedRandomPolicy,
     TimestepRandomPolicy,
 )
+from YRC.policies.improvement_oracle import ImprovementRankedOraclePolicy
 from YRC.policies.threshold import ThresholdPolicy
 from YRC.policies.heuristic import ExponentialHeuristicPolicy, WaitPolicy
 from YRC.core import Evaluator
@@ -999,6 +1000,7 @@ def update_policy_params(policy, threshold):
         isinstance(policy, TimestepRandomPolicy)
         or isinstance(policy, LevelBasedRandomPolicy)
         or isinstance(policy, OracleLevelBasedRandomPolicy)
+        or isinstance(policy, ImprovementRankedOraclePolicy)
         or isinstance(policy, ExponentialHeuristicPolicy)
     ):
         if threshold == float("inf"):

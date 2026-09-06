@@ -334,6 +334,8 @@ def build_python_command(eval_args: dict) -> str:
         f"-level_seeds_file {eval_args['level_seeds_file']}",
         f"-coverage_fraction {eval_args['coverage_fraction']}",
     ]
+    if eval_args.get("improvement_table"):
+        python_args.append(f"-cp_improvement_table {eval_args['improvement_table']}")
 
     if eval_args.get("calibration_levels") is not None:
         python_args.append(f"-calibration_levels {eval_args['calibration_levels']}")
@@ -824,6 +826,14 @@ def main():
         ),
     )
     # Override checkpoints if needed
+    parser.add_argument(
+        "--improvement-table",
+        default=None,
+        help=(
+            "JSON table of per-seed strong-minus-weak returns. Required for "
+            "--method oracle-improvement."
+        ),
+    )
     parser.add_argument("--sim", help="Override sim weak checkpoint path")
     parser.add_argument("--weak", help="Override weak checkpoint path")
     parser.add_argument("--strong", help="Override strong checkpoint path")
@@ -859,6 +869,8 @@ def main():
         args.execution = "apptainer"
     if args.runs_per_gpu <= 0:
         parser.error("--runs-per-gpu must be a positive integer.")
+    if args.method == "oracle-improvement" and not args.improvement_table:
+        parser.error("--improvement-table is required for --method oracle-improvement")
 
     # Get server-specific paths
     paths = SERVER_PATHS[args.server]
@@ -1074,6 +1086,7 @@ def main():
             "svdd_model_path": svdd_model_path,
             "cp_feature": cp_feature,
             "ensemble_members": ensemble_members,
+            "improvement_table": args.improvement_table,
             **checkpoints,
         }
 

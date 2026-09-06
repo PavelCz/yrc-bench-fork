@@ -221,6 +221,15 @@ def make():
         action="store_true",
         help="use original single weak agent for actions instead of ensemble (ensemble_variance metric)",
     )
+    parser.add_argument(
+        "-cp_improvement_table",
+        "--coord_policy.improvement_table",
+        type=str,
+        help=(
+            "JSON table of per-seed strong-minus-weak returns for "
+            "ImprovementRankedOraclePolicy"
+        ),
+    )
 
     parser.add_argument(
         "-model_config_path",

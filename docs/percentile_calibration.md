@@ -27,6 +27,8 @@ Not all policies support both. Unsupported variants raise `NotImplementedError`.
 | `ThresholdPolicy` | per-step score percentiles | per-episode max score percentiles |
 | `TimestepRandomPolicy` | linear mapping | `1 - p^(1/L)` formula using mean episode length |
 | `LevelBasedRandomPolicy` | `NotImplementedError` | linear mapping |
+| `OracleLevelBasedRandomPolicy` | `NotImplementedError` | linear map onto the `[0, 2]` OOD-then-ID control |
+| `ImprovementRankedOraclePolicy` | `NotImplementedError` | linear help-fraction map |
 | `ExponentialHeuristicPolicy` | `NotImplementedError` | `1 - p^(2/(L(L-1)))` formula using mean episode length |
 | `WaitPolicy` | timestep threshold from episode length | empirical episode length percentiles |
 | `OODPolicy` | per-step scores (rollout or training) | per-episode max scores |
@@ -67,9 +69,15 @@ WaitPolicy asks for help at every timestep `t >= n`, so an episode has help iff 
 
 `train_percentile_step` still uses `max_episode_length` from config (not from data).
 
-### No calibration needed (LevelBasedRandomPolicy)
+### No calibration needed (LevelBasedRandomPolicy, OracleLevelBasedRandomPolicy, ImprovementRankedOraclePolicy)
 
-**LevelBasedRandomPolicy** decides once per episode, so level_afhp equals the probability directly — no calibration needed.
+These policies decide once per episode, so level_afhp equals the control parameter directly — no calibration rollouts are needed.
+
+**LevelBasedRandomPolicy** maps percentile `p` to help probability `(100-p)/100`.
+
+**OracleLevelBasedRandomPolicy** maps onto a `[0, 2]` control that spends the first half of the budget randomly on OOD levels and the second half on ID levels.
+
+**ImprovementRankedOraclePolicy** maps percentile `p` to help fraction `(100-p)/100`, then asks on the top that fraction of evaluation seeds ranked by `strong_return - weak_return`. The ranking comes from a precomputed JSON table (`-cp_improvement_table`).
 
 ## How Each Policy Works
 

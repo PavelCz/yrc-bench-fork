@@ -3,6 +3,7 @@ import logging
 from YRC.core import Algorithm
 from YRC.core.configs.global_configs import get_global_variable
 from YRC.policies.base import OracleLevelBasedRandomPolicy
+from YRC.policies.improvement_oracle import ImprovementRankedOraclePolicy
 from typing import List, Optional
 import torch
 
@@ -29,6 +30,8 @@ class RandomAlgorithm(Algorithm):
         best_prob = {}
         if isinstance(policy, OracleLevelBasedRandomPolicy):
             cand_probs = list(np.arange(0.0, 2.1, 0.1))
+        elif isinstance(policy, ImprovementRankedOraclePolicy):
+            cand_probs = list(np.arange(0.0, 1.1, 0.1))
         else:
             cand_probs = list(np.arange(0.0, 1.1, 0.1))
 

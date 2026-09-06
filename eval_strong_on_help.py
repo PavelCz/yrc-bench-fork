@@ -334,6 +334,7 @@ def load_coordination_model_if_needed(policy, config):
         "timestep_random",
         "level_based_random",
         "oracle_level_based_random",
+        "improvement_ranked_oracle",
         "threshold",
         "heuristic",
         "wait",

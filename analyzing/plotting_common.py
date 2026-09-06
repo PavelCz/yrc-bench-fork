@@ -21,6 +21,7 @@ METHOD_NAMES = {
     # "random": "Timestep Random",
     "oc-random": r"\textsc{Level-Based Random}",
     "oracle_lb_random": r"\textsc{PartialOracle}",
+    "oracle_improvement": r"\textsc{ImprovementOracle}",
     "wait": r"\textsc{Wait}",
 }
 

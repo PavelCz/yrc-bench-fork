@@ -111,9 +111,17 @@ def calibrate_percentile_mapping(policy, config, evaluator, envs, make_envs, cal
         OracleLevelBasedRandomPolicy,
         TimestepRandomPolicy,
     )
+    from YRC.policies.improvement_oracle import ImprovementRankedOraclePolicy
     from YRC.policies.heuristic import ExponentialHeuristicPolicy, WaitPolicy
 
-    if isinstance(policy, (LevelBasedRandomPolicy, OracleLevelBasedRandomPolicy)):
+    if isinstance(
+        policy,
+        (
+            LevelBasedRandomPolicy,
+            OracleLevelBasedRandomPolicy,
+            ImprovementRankedOraclePolicy,
+        ),
+    ):
         message = (
             f"Skipping calibration for {type(policy).__name__}; "
             "using the policy's built-in level AFHP mapping."
@@ -239,6 +247,15 @@ def main():
     policy_start = time.time()
     policy = policy_factory.make(config, envs["train"])
     logging.info(f"Coordination policy created in {time.time() - policy_start:.2f}s")
+    from YRC.policies.improvement_oracle import ImprovementRankedOraclePolicy
+
+    if isinstance(policy, ImprovementRankedOraclePolicy) and not policy.improvement:
+        raise ValueError(
+            "ImprovementRankedOraclePolicy requires -cp_improvement_table "
+            "pointing at a JSON table of per-seed strong-minus-weak returns. "
+            "Build one with scripts/build_improvement_table.py from two "
+            "policy_eval_results.json files."
+        )
     if config.general.algorithm != "always" and not config.coord_policy.baseline:
         # The following algorithms do not need to load a model, because they do not
         # need the training step:
@@ -246,6 +263,7 @@ def main():
             "timestep_random",
             "level_based_random",
             "oracle_level_based_random",
+            "improvement_ranked_oracle",
             "threshold",
             "heuristic",
             "wait",

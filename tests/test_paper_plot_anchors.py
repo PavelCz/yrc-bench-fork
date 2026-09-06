@@ -32,3 +32,10 @@ def test_filtered_metric_uses_unfiltered_novice_median():
 
     assert novice == 3.0
     assert expert == 50.0
+
+
+def test_improvement_oracle_is_grouped_with_partial_oracle():
+    assert paper_plot.is_oracle_method("oracle-improvement")
+    assert paper_plot.is_oracle_method("oracle-lb-random")
+    assert paper_plot.is_oracle_method("oracle-improvement_robust400")
+    assert not paper_plot.is_oracle_method("max-prob")

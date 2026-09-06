@@ -73,6 +73,7 @@ METHOD_CONFIGS = {
     "max-logit": "max_logit.yaml",
     "lb-random": "level_based_random.yaml",
     "oracle-lb-random": "oracle_level_based_random.yaml",
+    "oracle-improvement": "improvement_ranked_oracle.yaml",
     "ts-random": "timestep_random.yaml",
     "svdd-image": "image_svdd.yaml",
     "svdd-latent": "latent_svdd.yaml",

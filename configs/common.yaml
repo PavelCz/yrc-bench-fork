@@ -16,6 +16,10 @@ coord_policy:
     oracle_level_based_random:
         cls: OracleLevelBasedRandomPolicy
         baseline: False
+    improvement_ranked_oracle:
+        cls: ImprovementRankedOraclePolicy
+        baseline: False
+        improvement_table: null
     heuristic:
         cls: ExponentialHeuristicPolicy
         baseline: False
@@ -149,6 +153,8 @@ algorithm:
     level_based_random:
         cls: RandomAlgorithm
     oracle_level_based_random:
+        cls: RandomAlgorithm
+    improvement_ranked_oracle:
         cls: RandomAlgorithm
     heuristic:
         cls: RandomAlgorithm

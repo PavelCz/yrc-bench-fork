@@ -409,3 +409,33 @@ def test_main_packs_valid_exp_ids_into_gpu_chunks(monkeypatch, tmp_path):
         ("coinrun_max-prob_exp0-1-2-3", [0, 1, 2, 3], False),
         ("coinrun_max-prob_exp4", [4], False),
     ]
+
+
+def test_oracle_improvement_is_a_run_eval_method():
+    assert run_eval.METHOD_CONFIGS["oracle-improvement"] == (
+        "improvement_ranked_oracle.yaml"
+    )
+
+
+def test_eval_command_forwards_improvement_table():
+    command = run_eval.build_python_command(
+        {
+            "config": "configs/eval/heist/improvement_ranked_oracle.yaml",
+            "name": "heist_oracle-improvement_exp0",
+            "env_name": "heist_afh",
+            "experiment_group": "group",
+            "video_episodes_to_collect": 0,
+            "num_levels": 16,
+            "video_filter": "all",
+            "cp_rolling_average": "none",
+            "video_logging_mode": "none",
+            "video_filter_mode": "any",
+            "sim": "sim.pth",
+            "weak": "weak.pth",
+            "strong": "strong.pth",
+            "level_seeds_file": "seeds.json",
+            "coverage_fraction": 0.05,
+            "improvement_table": "/tmp/improvements.json",
+        }
+    )
+    assert "-cp_improvement_table /tmp/improvements.json" in command
