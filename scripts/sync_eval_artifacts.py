@@ -28,6 +28,7 @@ ARTIFACT_ENVS = {
     "maze_proxy_fail": "maze",
     "maze_proxy_penalty": "maze",
     "heist_proxy_fail": "heist",
+    "heist_proxy_penalty": "heist",
 }
 EVAL_ENVS = [
     "maze",
@@ -37,6 +38,7 @@ EVAL_ENVS = [
     "maze_proxy_fail",
     "maze_proxy_penalty",
     "heist_proxy_fail",
+    "heist_proxy_penalty",
 ]
 DEFAULT_SVDD_PREFIX = "neurips04"
 DEFAULT_NUM_ENSEMBLE_MEMBERS = 4

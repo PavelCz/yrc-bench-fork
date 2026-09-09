@@ -56,6 +56,7 @@ def test_extract_heist_episode_data_reports_all_missing_fields():
 def test_is_heist_env_includes_proxy_fail():
     assert is_heist_env("heist_afh")
     assert is_heist_env("heist_proxy_fail")
+    assert is_heist_env("heist_proxy_penalty")
     assert not is_heist_env("coinrun")
     assert not is_heist_env(None)
 

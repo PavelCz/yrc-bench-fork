@@ -7,7 +7,7 @@ import numpy as np
 
 
 HEIST_ENV_NAME = "heist_afh"
-HEIST_ENV_NAMES = frozenset({HEIST_ENV_NAME, "heist_proxy_fail"})
+HEIST_ENV_NAMES = frozenset({HEIST_ENV_NAME, "heist_proxy_fail", "heist_proxy_penalty"})
 
 
 def is_heist_env(env_name: Optional[str]) -> bool:

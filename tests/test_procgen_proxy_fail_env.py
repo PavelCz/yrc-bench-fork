@@ -466,3 +466,120 @@ def test_heist_proxy_fail_inactive_when_random_percent_zero():
 
     assert total_terminations >= 50
     assert proxy_terminations == 0
+
+
+def test_heist_proxy_penalty_applies_once_and_allows_later_success():
+    env = ProcgenEnv(
+        num_envs=8,
+        env_name="heist_proxy_penalty",
+        num_levels=200,
+        start_level=0,
+        distribution_mode="easy",
+        random_percent=100,
+    )
+    env.reset()
+    rng = np.random.default_rng(0)
+    penalty_seen = np.zeros(8, dtype=bool)
+
+    penalty_events = 0
+    repeated_penalties = 0
+    continued_after_penalty = 0
+
+    try:
+        for _ in range(40000):
+            action = rng.integers(0, 15, size=8, dtype=np.int32)
+            _, reward, done, info = env.step(action)
+            for i in range(8):
+                if reward[i] == -5:
+                    repeated_penalties += int(penalty_seen[i])
+                    penalty_seen[i] = True
+                    penalty_events += 1
+                    assert not done[i]
+                    assert info[i]["randomize_goal"] == 1
+                elif reward[i] < 0:
+                    repeated_penalties += 1
+                elif penalty_seen[i] and not done[i]:
+                    continued_after_penalty += 1
+
+                if done[i]:
+                    penalty_seen[i] = False
+
+            if penalty_events >= 3 and continued_after_penalty > 0:
+                break
+    finally:
+        env.close()
+
+    assert penalty_events >= 3
+    assert repeated_penalties == 0
+    assert continued_after_penalty > 0
+
+
+def test_heist_proxy_penalty_survives_state_restore():
+    env_kwargs = {
+        "num": 8,
+        "env_name": "heist_proxy_penalty",
+        "num_levels": 200,
+        "start_level": 0,
+        "distribution_mode": "easy",
+        "random_percent": 100,
+    }
+    source_env = ProcgenGym3Env(**env_kwargs)
+    restored_env = ProcgenGym3Env(**env_kwargs)
+    rng = np.random.default_rng(0)
+    state = None
+    penalized_env = None
+
+    try:
+        for _ in range(40000):
+            source_env.act(rng.integers(0, 15, size=8, dtype=np.int32))
+            reward, _, _ = source_env.observe()
+            penalized = np.flatnonzero(reward == -5)
+            if len(penalized) > 0:
+                penalized_env = int(penalized[0])
+                state = source_env.callmethod("get_state")
+                break
+
+        assert state is not None
+        assert penalized_env is not None
+        restored_env.callmethod("set_state", state)
+        restored_env.act(np.full(8, 4, dtype=np.int32))
+        restored_reward, _, _ = restored_env.observe()
+        restored_info = restored_env.get_info()[penalized_env]
+    finally:
+        source_env.close()
+        restored_env.close()
+
+    assert restored_reward[penalized_env] != -5
+    assert restored_info["randomize_goal"] == 1
+
+
+def test_heist_proxy_penalty_inactive_when_random_percent_zero():
+    env = ProcgenEnv(
+        num_envs=8,
+        env_name="heist_proxy_penalty",
+        num_levels=200,
+        start_level=0,
+        distribution_mode="easy",
+        random_percent=0,
+    )
+    env.reset()
+    rng = np.random.default_rng(0)
+
+    penalty_events = 0
+    successful_episodes = 0
+
+    try:
+        for _ in range(20000):
+            action = rng.integers(0, 15, size=8, dtype=np.int32)
+            _, reward, done, info = env.step(action)
+            penalty_events += int(np.count_nonzero(reward == -5))
+            for i in range(8):
+                if done[i] and info[i]["prev_level_complete"] == 1:
+                    successful_episodes += 1
+            if successful_episodes > 0:
+                break
+    finally:
+        env.close()
+
+    assert penalty_events == 0
+    assert successful_episodes > 0

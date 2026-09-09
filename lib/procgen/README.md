@@ -28,6 +28,7 @@ A new maze variant with `random_percent` support for OOD detection experiments (
 * `heist_aisc_many_keys`: Same as `heist_aisc_many_chests`, but instead has twice as many keys as chests.
 * `heist_afh`: Like the keys-and-chests Heist variants, with `--random_percent` switching between many-chests (ID) and many-keys (OOD) layouts.
 * `heist_proxy_fail`: Like `heist_afh`, but collecting every key on an OOD many-keys level ends the episode without reward on that step. ID many-chests levels are unchanged.
+* `heist_proxy_penalty`: Like `heist_proxy_fail`, but collecting every key on an OOD many-keys level gives -5 reward and the episode continues. ID many-chests levels are unchanged.
 * `maze_aisc`: Like maze, but the cheese is always to be found in the top right corner.
 * `maze_afh`: Like maze, but with `--random_percent` support (similar to coinrun). When `random_percent=0`, cheese is placed in the top right corner (like `maze_aisc`). When `random_percent=100`, cheese is placed randomly (like `maze`). Intermediate values give a probabilistic mix. Exposes `info["randomize_goal"]` to indicate placement type for each level.
 * `maze_proxy_fail`: Like `maze_afh`, but visiting the top-right training-time proxy cell on an OOD level ends the episode without reward.

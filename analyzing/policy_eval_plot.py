@@ -43,6 +43,7 @@ SUPPORTED_ENVS = [
     "maze_proxy_penalty",
     "heist",
     "heist_proxy_fail",
+    "heist_proxy_penalty",
 ]
 SERIES_COLORS = {
     "strong": "#1f77b4",

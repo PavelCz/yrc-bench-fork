@@ -87,7 +87,9 @@ def terminal_info(
     }
 
 
-@pytest.mark.parametrize("env_name", ["heist_afh", "heist_proxy_fail"])
+@pytest.mark.parametrize(
+    "env_name", ["heist_afh", "heist_proxy_fail", "heist_proxy_penalty"]
+)
 def test_evaluator_collects_heist_metrics_using_raw_env_reward(tmp_path, env_name):
     infos = [
         terminal_info(

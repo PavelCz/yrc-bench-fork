@@ -33,6 +33,7 @@ def test_proxy_penalty_envs_use_base_artifacts_and_pass_preflight():
     expected_artifacts = {
         "coinrun_proxy_penalty": "coinrun",
         "maze_proxy_penalty": "maze",
+        "heist_proxy_penalty": "heist",
     }
 
     for env_name, artifact_env in expected_artifacts.items():

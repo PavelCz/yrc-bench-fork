@@ -110,6 +110,7 @@ def test_sync_proxy_penalty_campaign_dirs(tmp_path):
     remote_dirs = [
         "proxy-penalty_coinrun_proxy_penalty_exp0",
         "proxy-penalty_robust400_maze_proxy_penalty_exp0",
+        "proxy-penalty_heist_proxy_penalty_exp0",
     ]
     result, rsync_args = _run_sync(
         tmp_path,

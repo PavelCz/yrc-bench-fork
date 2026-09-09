@@ -64,7 +64,7 @@ if [[ "${SRC_BASE}" != *:* ]]; then
   exit 1
 fi
 
-ENVS=("maze" "coinrun" "coinrun_proxy_fail" "coinrun_proxy_penalty" "maze_proxy_fail" "maze_proxy_penalty" "heist" "heist_proxy_fail")
+ENVS=("maze" "coinrun" "coinrun_proxy_fail" "coinrun_proxy_penalty" "maze_proxy_fail" "maze_proxy_penalty" "heist" "heist_proxy_fail" "heist_proxy_penalty")
 ROBUST_ENVS=("maze" "maze_proxy_fail" "maze_proxy_penalty")
 ROBUST_VARIANTS=("robust200" "robust400")
 EXPS=("exp0" "exp1" "exp2" "exp3")

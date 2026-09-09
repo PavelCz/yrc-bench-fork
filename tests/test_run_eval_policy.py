@@ -36,6 +36,10 @@ def test_proxy_penalty_uses_base_configs_and_checkpoints():
             "maze",
             "configs/eval/maze/max_prob.yaml",
         ),
+        "heist_proxy_penalty": (
+            "heist",
+            "configs/eval/heist/max_prob.yaml",
+        ),
     }
 
     for env_name, (checkpoint_env, config) in expected.items():

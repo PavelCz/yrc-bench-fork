@@ -29,6 +29,7 @@ SUPPORTED_ENVS = [
     "maze_proxy_penalty",
     "heist_afh",
     "heist_proxy_fail",
+    "heist_proxy_penalty",
 ]
 ENV_CHOICES = [*SUPPORTED_ENVS, "maze", "all"]
 LOCAL_PACKAGES = {

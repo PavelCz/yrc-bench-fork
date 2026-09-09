@@ -23,6 +23,10 @@ paper_plot = importlib.import_module("analyzing.paper_plot")
             "proxy-penalty_maze_proxy_penalty_exp0",
             ("proxy-penalty", "maze_proxy_penalty", 0),
         ),
+        (
+            "proxy-penalty_heist_proxy_penalty_exp0",
+            ("proxy-penalty", "heist_proxy_penalty", 0),
+        ),
     ],
 )
 def test_parse_experiment_dir_supports_proxy_penalty(dir_name, expected):
@@ -47,6 +51,10 @@ def test_parse_robust_experiment_dir_supports_maze_proxy_penalty():
         (
             "maze_proxy_penalty_max-prob_robust400_exp0",
             ("maze_proxy_penalty", "max-prob_robust400", 0),
+        ),
+        (
+            "heist_proxy_penalty_max-prob_exp0",
+            ("heist_proxy_penalty", "max-prob", 0),
         ),
     ],
 )

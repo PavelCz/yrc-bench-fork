@@ -64,6 +64,7 @@ EVAL_ENVS = [
     "maze_proxy_fail",
     "maze_proxy_penalty",
     "heist_proxy_fail",
+    "heist_proxy_penalty",
 ]
 
 # Some evaluation environments intentionally reuse training artifacts from a
@@ -79,6 +80,7 @@ ARTIFACT_ENVS = {
     "maze_proxy_fail": "maze",
     "maze_proxy_penalty": "maze",
     "heist_proxy_fail": "heist",
+    "heist_proxy_penalty": "heist",
 }
 
 DEFAULT_CONTAINER_BINDS = {

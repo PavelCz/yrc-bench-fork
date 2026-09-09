@@ -46,6 +46,7 @@ DEFAULT_CONFIGS = {
     "maze_proxy_penalty": "configs/eval/maze/max_prob.yaml",
     "heist": "configs/eval/heist/max_prob.yaml",
     "heist_proxy_fail": "configs/eval/heist/max_prob.yaml",
+    "heist_proxy_penalty": "configs/eval/heist/max_prob.yaml",
 }
 
 EVAL_ENVS = [
@@ -54,6 +55,7 @@ EVAL_ENVS = [
     "coinrun_proxy_penalty",
     "maze_proxy_penalty",
     "heist_proxy_fail",
+    "heist_proxy_penalty",
 ]
 
 CHECKPOINT_ENVS = {
@@ -61,6 +63,7 @@ CHECKPOINT_ENVS = {
     "coinrun_proxy_penalty": "coinrun",
     "maze_proxy_penalty": "maze",
     "heist_proxy_fail": "heist",
+    "heist_proxy_penalty": "heist",
 }
 
 EVAL_DEFAULTS = {
