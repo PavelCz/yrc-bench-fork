@@ -37,8 +37,10 @@ METRIC_LABELS = {
 SUPPORTED_ENVS = [
     "coinrun",
     "coinrun_proxy_fail",
+    "coinrun_proxy_penalty",
     "maze",
     "maze_afh",
+    "maze_proxy_penalty",
     "heist",
     "heist_proxy_fail",
 ]

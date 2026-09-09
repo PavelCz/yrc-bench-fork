@@ -23,8 +23,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SUPPORTED_ENVS = [
     "coinrun",
     "coinrun_proxy_fail",
+    "coinrun_proxy_penalty",
     "maze_afh",
     "maze_proxy_fail",
+    "maze_proxy_penalty",
     "heist_afh",
     "heist_proxy_fail",
 ]
@@ -115,7 +117,7 @@ def check_procgen_env(env_name: str) -> None:
         num_levels=1,
         start_level=0,
         distribution_mode="hard",
-        random_percent=100 if env_name.endswith("_proxy_fail") else 0,
+        random_percent=100 if "_proxy_" in env_name else 0,
     )
     try:
         env.reset()

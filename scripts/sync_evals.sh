@@ -16,6 +16,9 @@ usage() {
   echo "Videos and images in the videos folder are excluded by default."
   echo
   echo "Use --source-base when evals were written outside the default data directory."
+  echo
+  echo "Example (evals written under the RNN checkout):"
+  echo "  $0 --source-base rnn:/nas/ucb/czempin/code/goal-misgen/yrc-bench-fork/experiments/evals proxy-penalty"
 }
 
 SYNC_VIDEOS=0
@@ -61,8 +64,8 @@ if [[ "${SRC_BASE}" != *:* ]]; then
   exit 1
 fi
 
-ENVS=("maze" "coinrun" "coinrun_proxy_fail" "maze_proxy_fail" "heist" "heist_proxy_fail")
-ROBUST_ENVS=("maze" "maze_proxy_fail")
+ENVS=("maze" "coinrun" "coinrun_proxy_fail" "coinrun_proxy_penalty" "maze_proxy_fail" "maze_proxy_penalty" "heist" "heist_proxy_fail")
+ROBUST_ENVS=("maze" "maze_proxy_fail" "maze_proxy_penalty")
 ROBUST_VARIANTS=("robust200" "robust400")
 EXPS=("exp0" "exp1" "exp2" "exp3")
 AGENTS=("sim" "weak" "strong")

@@ -6,9 +6,11 @@
 #include "../cpp-utils.h"
 #include "../qt-utils.h"
 
-const std::string NAME = "coinrun_proxy_fail";
+const std::string PROXY_FAIL_NAME = "coinrun_proxy_fail";
+const std::string PROXY_PENALTY_NAME = "coinrun_proxy_penalty";
 
 const float GOAL_REWARD = 10.0f;
+const float PROXY_PENALTY = -5.0f;
 
 const int INVISIBLE_GOAL = -1;
 
@@ -53,9 +55,12 @@ class CoinRunProxyFail : public BasicAbstractGame {
     bool randomize_goal = false;  // whether to randomize coin position
     bool prev_level_randomize_goal = false;
     int prev_level_total_steps = 0;
+    bool terminate_on_proxy = true;
 
-    CoinRunProxyFail()
-        : BasicAbstractGame(NAME) {
+    CoinRunProxyFail(
+        const std::string &name = PROXY_FAIL_NAME,
+        bool terminate_on_proxy = true)
+        : BasicAbstractGame(name), terminate_on_proxy(terminate_on_proxy) {
         visibility = 13;
         mixrate = 0.2f;
 
@@ -158,11 +163,16 @@ class CoinRunProxyFail : public BasicAbstractGame {
             } else if (is_lava(type)) {
                 step_data.done = true;
             } else if (type == INVISIBLE_GOAL) {
+                bool first_proxy_visit = !invisible_coin_collected;
                 invisible_coin_collected = true;
-                if (randomize_goal) {
-                    step_data.reward = 0.0f;
-                    step_data.done = true;
-                    step_data.level_complete = false;
+                if (randomize_goal && first_proxy_visit) {
+                    if (terminate_on_proxy) {
+                        step_data.reward = 0.0f;
+                        step_data.done = true;
+                        step_data.level_complete = false;
+                    } else {
+                        step_data.reward += PROXY_PENALTY;
+                    }
                 }
             }
         }
@@ -549,6 +559,11 @@ class CoinRunProxyFail : public BasicAbstractGame {
         b->write_bool(is_on_crate);
         b->write_float(gravity);
         b->write_float(air_control);
+        b->write_bool(invisible_coin_collected);
+        b->write_bool(prev_level_invisible_coin_collected);
+        b->write_bool(randomize_goal);
+        b->write_bool(prev_level_randomize_goal);
+        b->write_int(prev_level_total_steps);
     }
 
     void deserialize(ReadBuffer *b) override {
@@ -560,6 +575,11 @@ class CoinRunProxyFail : public BasicAbstractGame {
         is_on_crate = b->read_bool();
         gravity = b->read_float();
         air_control = b->read_float();
+        invisible_coin_collected = b->read_bool();
+        prev_level_invisible_coin_collected = b->read_bool();
+        randomize_goal = b->read_bool();
+        prev_level_randomize_goal = b->read_bool();
+        prev_level_total_steps = b->read_int();
     }
 
     // info dict
@@ -575,4 +595,15 @@ class CoinRunProxyFail : public BasicAbstractGame {
 
 };
 
-REGISTER_GAME(NAME, CoinRunProxyFail);
+class CoinRunProxyPenalty : public CoinRunProxyFail {
+  public:
+    CoinRunProxyPenalty()
+        : CoinRunProxyFail(PROXY_PENALTY_NAME, false) {
+    }
+};
+
+REGISTER_GAME(PROXY_FAIL_NAME, CoinRunProxyFail);
+
+static auto UNUSED_FUNCTION(_proxy_penalty_registration) = registerGame(PROXY_PENALTY_NAME, [] {
+    return std::make_shared<CoinRunProxyPenalty>();
+});

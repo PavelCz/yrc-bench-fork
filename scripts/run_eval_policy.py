@@ -41,15 +41,25 @@ POLICIES = ["sim", "weak", "strong"]
 DEFAULT_CONFIGS = {
     "coinrun": "configs/eval/coinrun/max_prob.yaml",
     "coinrun_proxy_fail": "configs/eval/coinrun/max_prob.yaml",
+    "coinrun_proxy_penalty": "configs/eval/coinrun/max_prob.yaml",
     "maze": "configs/eval/maze/max_prob.yaml",
+    "maze_proxy_penalty": "configs/eval/maze/max_prob.yaml",
     "heist": "configs/eval/heist/max_prob.yaml",
     "heist_proxy_fail": "configs/eval/heist/max_prob.yaml",
 }
 
-EVAL_ENVS = [*ENVS, "coinrun_proxy_fail", "heist_proxy_fail"]
+EVAL_ENVS = [
+    *ENVS,
+    "coinrun_proxy_fail",
+    "coinrun_proxy_penalty",
+    "maze_proxy_penalty",
+    "heist_proxy_fail",
+]
 
 CHECKPOINT_ENVS = {
     "coinrun_proxy_fail": "coinrun",
+    "coinrun_proxy_penalty": "coinrun",
+    "maze_proxy_penalty": "maze",
     "heist_proxy_fail": "heist",
 }
 

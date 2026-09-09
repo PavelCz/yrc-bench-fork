@@ -24,14 +24,18 @@ from common import (
 
 ARTIFACT_ENVS = {
     "coinrun_proxy_fail": "coinrun",
+    "coinrun_proxy_penalty": "coinrun",
     "maze_proxy_fail": "maze",
+    "maze_proxy_penalty": "maze",
     "heist_proxy_fail": "heist",
 }
 EVAL_ENVS = [
     "maze",
     "coinrun",
     "coinrun_proxy_fail",
+    "coinrun_proxy_penalty",
     "maze_proxy_fail",
+    "maze_proxy_penalty",
     "heist_proxy_fail",
 ]
 DEFAULT_SVDD_PREFIX = "neurips04"
