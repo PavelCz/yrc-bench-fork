@@ -25,6 +25,12 @@ def test_chai_cache_env_block_is_chai_only():
     chai = run_eval.build_chai_cache_env_block("chai")
     assert "export MPLCONFIGDIR=" in chai
     assert "export XDG_CACHE_HOME=" in chai
+    assert "export TMPDIR=" in chai
+    assert "export TEMP=" in chai
+    assert "export TMP=" in chai
+    assert "export CUDA_CACHE_PATH=" in chai
+    assert "export CCACHE_DIR=" in chai
+    assert "/nas/ttl=60d/czempin/tmp" in chai
     assert run_eval.build_chai_cache_env_block("snoopy") == ""
     assert run_eval.build_chai_cache_env_block("carc") == ""
 
@@ -72,6 +78,8 @@ def test_eval_sbatch_overrides_env_name():
     assert "-weak weak.pth" in command
     assert "export MPLCONFIGDIR='/nas/ttl=60d/czempin/mpl-config'" in command
     assert "export XDG_CACHE_HOME='/nas/ttl=60d/czempin/xdg-cache'" in command
+    assert 'export TMPDIR="/nas/ttl=60d/czempin/tmp/${SLURM_JOB_ID:-$$}"' in command
+    assert "export CUDA_CACHE_PATH='/nas/ttl=60d/czempin/cuda-cache'" in command
 
     snoopy = run_eval.build_sbatch_command(
         "job",
@@ -150,6 +158,7 @@ def test_packed_sbatch_runs_multiple_eval_steps_on_one_gpu():
     assert command.count("python eval_afhp.py") == 4
     assert 'pids+=("$!")' in command
     assert "export MPLCONFIGDIR='/nas/ttl=60d/czempin/mpl-config'" in command
+    assert 'export TMPDIR="/nas/ttl=60d/czempin/tmp/${SLURM_JOB_ID:-$$}"' in command
     assert "-n coinrun_max-prob_exp0" in command
     assert "-n coinrun_max-prob_exp3" in command
 

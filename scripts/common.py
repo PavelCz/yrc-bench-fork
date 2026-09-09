@@ -15,19 +15,23 @@ EXP_ID_TO_SEED = {
     2: 2,
 }
 
-# Node-local $HOME on chai compute nodes has a per-node quota. Point caches
-# at the ttl NAS volume so matplotlib / wandb do not write under /home.
+# Node-local $HOME and /tmp on chai compute nodes are quota-limited. Point
+# caches and compiler/Python temps at the ttl NAS volume.
 CHAI_WANDB_DATA_DIR = "/nas/ttl=60d/czempin/wandb-data"
 CHAI_WANDB_CACHE_DIR = "/nas/ttl=60d/czempin/wandb-cache"
 CHAI_MPLCONFIGDIR = "/nas/ttl=60d/czempin/mpl-config"
 CHAI_XDG_CACHE_HOME = "/nas/ttl=60d/czempin/xdg-cache"
+CHAI_CUDA_CACHE_PATH = "/nas/ttl=60d/czempin/cuda-cache"
+CHAI_CCACHE_DIR = "/nas/ttl=60d/czempin/ccache"
+CHAI_TMPDIR = "/nas/ttl=60d/czempin/tmp"
 
 
 def build_chai_cache_env_block(server: str) -> str:
-    """Shell lines that point job caches at the chai NAS volume.
+    """Shell lines that point job caches and tmp at the chai NAS volume.
 
-    Only emitted on chai, where $HOME lives on each node's root disk and is
-    quota-limited. Other servers have their own dedicated scratch.
+    Only emitted on chai, where $HOME and /tmp live on each node's root disk
+    and are quota-limited. Other servers have their own dedicated scratch.
+    TMPDIR is per-job so concurrent gcc/cmake temps do not share one folder.
     """
     if server != "chai":
         return ""
@@ -36,8 +40,14 @@ def build_chai_cache_env_block(server: str) -> str:
         f"export WANDB_CACHE_DIR='{CHAI_WANDB_CACHE_DIR}'\n"
         f"export MPLCONFIGDIR='{CHAI_MPLCONFIGDIR}'\n"
         f"export XDG_CACHE_HOME='{CHAI_XDG_CACHE_HOME}'\n"
+        f"export CUDA_CACHE_PATH='{CHAI_CUDA_CACHE_PATH}'\n"
+        f"export CCACHE_DIR='{CHAI_CCACHE_DIR}'\n"
+        f'export TMPDIR="{CHAI_TMPDIR}/${{SLURM_JOB_ID:-$$}}"\n'
+        'export TEMP="$TMPDIR"\n'
+        'export TMP="$TMPDIR"\n'
         'mkdir -p "$WANDB_DATA_DIR" "$WANDB_CACHE_DIR" '
-        '"$MPLCONFIGDIR" "$XDG_CACHE_HOME"'
+        '"$MPLCONFIGDIR" "$XDG_CACHE_HOME" '
+        '"$CUDA_CACHE_PATH" "$CCACHE_DIR" "$TMPDIR"'
     )
 
 
