@@ -95,3 +95,26 @@ def test_extract_icml_results_finds_proxy_penalty_campaign(tmp_path):
 
     assert coin["max-prob"][0] == coin_npz
     assert maze["max-prob_robust400"][0] == maze_npz
+
+
+def test_shared_legend_splits_regular_methods_from_special_block():
+    regular, special = paper_plot.build_shared_legend_entries(paper_mode=True)
+
+    assert [label for _, label in regular] == [
+        r"\textsc{Heuristic}",
+        r"\textsc{Ensemble}",
+        r"\textsc{MaxProb}",
+        r"\textsc{MaxLogit}",
+        r"\textsc{ImageSVDD}",
+        r"\textsc{LatentSVDD}",
+    ]
+    assert [label for _, label in special] == [
+        r"\textsc{PartialOracle}",
+        r"\textsc{Novice}",
+        r"\textsc{Expert}",
+        r"\textsc{Random}",
+    ]
+    assert paper_plot.SHARED_LEGEND_METHODS == [
+        *paper_plot.DEFAULT_METHOD_ORDER,
+        "oracle-lb-random",
+    ]

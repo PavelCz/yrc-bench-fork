@@ -215,6 +215,11 @@ DEFAULT_METHOD_ORDER = [
     "svdd-latent",
 ]
 
+# Method list used by the shared two-line legend: regular methods in
+# DEFAULT_METHOD_ORDER, then PartialOracle (the leftover that sits below the
+# divider on per-plot legends).
+SHARED_LEGEND_METHODS = [*DEFAULT_METHOD_ORDER, "oracle-lb-random"]
+
 
 def _build_legend_entries(ax):
     """Reorder the auto-discovered legend so PartialOracle sits just above the
@@ -260,6 +265,122 @@ def _build_legend_entries(ax):
     handles = [h for h, _ in ordered]
     labels = [l for _, l in ordered]
     return handles, labels, separator_indices
+
+
+def _method_line_handle(
+    method: str, method_idx: int, n_methods: int, paper_mode: bool
+) -> Line2D:
+    """Dummy Line2D matching the color and linestyle `plot_icml_results` would use."""
+    colors = sns.color_palette("husl", n_methods)
+    line_styles = get_line_styles(n_methods, paper_mode, None)
+    base_method, _ = split_robust_method(method)
+    color = SPECIAL_METHOD_COLORS.get(base_method, colors[method_idx])
+    return Line2D(
+        [0],
+        [0],
+        color=color,
+        linewidth=2,
+        linestyle=line_styles[method_idx],
+    )
+
+
+def build_shared_legend_entries(
+    paper_mode: bool = True,
+) -> Tuple[List[Tuple[Line2D, str]], List[Tuple[Line2D, str]]]:
+    """Handles and labels for a two-line shared legend.
+
+    Row 1 is the regular methods (Heuristic through LatentSVDD). Row 2 is
+    PartialOracle plus the Novice / Expert / Random reference lines — the
+    same block that sits below the divider on per-plot legends.
+    """
+    n_methods = len(SHARED_LEGEND_METHODS)
+    regular: List[Tuple[Line2D, str]] = []
+    special: List[Tuple[Line2D, str]] = []
+
+    for method_idx, method in enumerate(SHARED_LEGEND_METHODS):
+        handle = _method_line_handle(method, method_idx, n_methods, paper_mode)
+        label = format_plot_label(method, paper_mode=paper_mode)
+        base_method, _ = split_robust_method(method)
+        if base_method == "oracle-lb-random":
+            special.append((handle, label))
+        else:
+            regular.append((handle, label))
+
+    special.extend(
+        [
+            (
+                Line2D(
+                    [0],
+                    [0],
+                    color=NOVICE_REFERENCE_COLOR,
+                    linestyle="--",
+                    alpha=0.7,
+                ),
+                _NOVICE_LABEL,
+            ),
+            (
+                Line2D(
+                    [0],
+                    [0],
+                    color=EXPERT_REFERENCE_COLOR,
+                    linestyle="--",
+                    alpha=0.7,
+                ),
+                _EXPERT_LABEL,
+            ),
+            (
+                Line2D(
+                    [0],
+                    [0],
+                    color="black",
+                    linestyle=(0, (2, 2, 10, 2)),
+                    alpha=0.9,
+                    linewidth=2,
+                ),
+                _RANDOM_LABEL,
+            ),
+        ]
+    )
+    return regular, special
+
+
+def save_shared_legend(save_path: str, paper_mode: bool = True) -> None:
+    """Write a two-row legend PDF with no axes, for use as a figure-top bar."""
+    setup_plot_style(paper_mode=paper_mode, use_latex=True)
+    regular, special = build_shared_legend_entries(paper_mode=paper_mode)
+
+    fig = plt.figure(figsize=(10.5, 1.05))
+    ax = fig.add_axes((0.0, 0.0, 1.0, 1.0))
+    ax.axis("off")
+
+    legend_kwargs = {
+        "frameon": False,
+        "handlelength": 2.4,
+        "columnspacing": 1.4,
+        "handletextpad": 0.5,
+        "borderaxespad": 0.0,
+    }
+    regular_legend = ax.legend(
+        [handle for handle, _ in regular],
+        [label for _, label in regular],
+        loc="upper center",
+        bbox_to_anchor=(0.5, 1.0),
+        ncol=len(regular),
+        **legend_kwargs,
+    )
+    ax.add_artist(regular_legend)
+    ax.legend(
+        [handle for handle, _ in special],
+        [label for _, label in special],
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.48),
+        ncol=len(special),
+        **legend_kwargs,
+    )
+
+    fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.04)
+    plt.close(fig)
+    print(f"Saved figure to {save_path}")
 
 
 def _draw_legend_separator(legend, indices):
@@ -1199,6 +1320,7 @@ def plot_icml_results(
     paper_app: bool = False,
     show_iqr: bool = True,
     show_accuracy: bool = False,
+    show_legend: bool = True,
 ):
     """
     Plot ICML results with aggregation across experiments.
@@ -1220,6 +1342,8 @@ def plot_icml_results(
         no_aggregate: Plot experiments separately instead of aggregating
         paper_mode: If True, remove title and n=X from labels for paper figures
         calculate_auc: If True, calculate and display AUC for each method
+        show_legend: If False, omit the legend (for multi-panel figures that
+            share a standalone legend PDF).
     """
     results = extract_icml_results(eval_dir, prefix_filter, env_filter)
 
@@ -1679,16 +1803,20 @@ def plot_icml_results(
 
     # Build the legend explicitly so that PartialOracle entries sit just before
     # the Novice reference line, preceded by a thin visual separator.
-    legend_handles, legend_labels, separator_indices = _build_legend_entries(plt.gca())
-
-    # Apply publication styling
-    style_plot_for_publication(
-        legend_outside=True,
-        legend_location="center left",
-        legend_bbox_to_anchor=(1.05, 0.5),
-        handles=legend_handles,
-        labels=legend_labels,
-    )
+    if show_legend:
+        legend_handles, legend_labels, separator_indices = _build_legend_entries(
+            plt.gca()
+        )
+        style_plot_for_publication(
+            legend_outside=True,
+            legend_location="center left",
+            legend_bbox_to_anchor=(1.05, 0.5),
+            handles=legend_handles,
+            labels=legend_labels,
+        )
+    else:
+        separator_indices = []
+        style_plot_for_publication(draw_legend=False)
 
     plt.tight_layout()
 
@@ -1894,6 +2022,13 @@ def main():
         help="Plot experiments separately instead of aggregating",
     )
     parser.add_argument(
+        "--no-legend",
+        "--no_legend",
+        dest="no_legend",
+        action="store_true",
+        help="Omit the legend (use with a shared legend PDF for multi-panel figures).",
+    )
+    parser.add_argument(
         "--paper",
         action="store_true",
         help="Paper mode: remove title and n=X from labels for cleaner figures",
@@ -2017,6 +2152,7 @@ def main():
         paper_app=args.paper_app,
         show_iqr=not args.hide_iqr,
         show_accuracy=args.show_accuracy,
+        show_legend=not args.no_legend,
     )
 
 
