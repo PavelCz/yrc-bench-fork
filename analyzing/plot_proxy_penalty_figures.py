@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write the three main AFHP panels, a shared legend, and AUC table .tex files."""
+"""Write proxy-penalty AFHP panels, a shared legend, and AUC table .tex files."""
 
 from __future__ import annotations
 
@@ -21,116 +21,144 @@ DEFAULT_EVAL_DIR = Path("/home/pavel/data/goal-misgen/icml-evals")
 DEFAULT_TABLE_DIR = Path(
     "/media/linux-data/code/goal-misgen/2025-07-goal-misgeneralization/tables"
 )
+DEFAULT_OUT_DIR = Path(
+    "/media/linux-data/code/goal-misgen/2025-07-goal-misgeneralization/img"
+)
 
 PANELS = (
     {
-        "save_name": "coinrun-main-normalized.pdf",
-        "auc_tex": "auc-coinrun.tex",
-        "prefix": [
-            "tmlr2-svdd",
-            "tmlr3-svdd",
-            "tmlr4-svdd",
-            "imcl04",
-            "icml04",
-            "tmlr-oracle-lb",
-        ],
-        "env": "coinrun",
+        "save_name": "coinrun-proxy-penalty-normalized.pdf",
+        "auc_tex": "auc-coinrun-proxy-penalty.tex",
+        "prefix": ["proxy-penalty01"],
+        "env": "coinrun_proxy_penalty",
         "robust_filter": "all",
         "show_ylabel": True,
+        "placeholder": False,
     },
     {
-        "save_name": "maze-main-normalized.pdf",
-        "auc_tex": "auc-maze.tex",
-        "prefix": [
-            "tmlr-robust-maze-1",
-            "tmlr-robust-maze-3",
-            "tmlr-oracle-lb-robust400",
-            "tmlr-maze-svdd-fix",
-        ],
-        "env": "maze",
+        "save_name": "maze-proxy-penalty-normalized.pdf",
+        "auc_tex": "auc-maze-proxy-penalty.tex",
+        "prefix": ["proxy-penalty01"],
+        "env": "maze_proxy_penalty",
         "robust_filter": "robust",
         "show_ylabel": False,
+        "placeholder": False,
     },
     {
-        "save_name": "heist-main-normalized.pdf",
-        "auc_tex": "auc-kandc.tex",
-        "prefix": ["tmlr-heist03-expert400"],
-        "env": "heist",
+        "save_name": "heist-proxy-penalty-normalized.pdf",
+        "auc_tex": "auc-kandc-proxy-penalty.tex",
+        "prefix": ["proxy-penalty01"],
+        "env": "heist_proxy_penalty",
         "robust_filter": "all",
         "show_ylabel": False,
+        "placeholder": True,
     },
 )
 
 SHARED_METHOD_FILTER = ["ensemble", "wait"]
 PANEL_FIGSIZE = (8, 5.5)
-# Large enough that 0.33\linewidth inclusion still reads as paper-size text.
 PANEL_AXIS_LABEL_SIZE = 28
 PANEL_TICK_LABEL_SIZE = 22
-LEGEND_NAME = "main-legend.pdf"
+LEGEND_NAME = "proxy-penalty-legend.pdf"
+
+PLACEHOLDER_AUC_TABULAR = """\
+\\begin{tabular}{ll}
+\\toprule
+Method & AUC (Median [IQR]) \\\\
+\\midrule
+\\textsc{PartialOracle} & -- \\\\
+\\cmidrule(lr){1-2}
+\\textsc{Heuristic} & -- \\\\
+\\textsc{Ensemble} & -- \\\\
+\\textsc{MaxProb} & -- \\\\
+\\textsc{MaxLogit} & -- \\\\
+\\textsc{ImageSVDD} & -- \\\\
+\\textsc{LatentSVDD} & -- \\\\
+\\bottomrule
+\\end{tabular}
+"""
 
 LATEX_SNIPPET = r"""
 \begin{figure}[t]
     \centering
-    \includegraphics[width=\linewidth]{img/main-legend.pdf}
+    \includegraphics[width=\linewidth]{img/proxy-penalty-legend.pdf}
     \vspace{-1.0em}
     \begin{subfigure}{0.33\linewidth}
-        \includegraphics[width=\linewidth]{img/coinrun-main-normalized.pdf}
+        \includegraphics[width=\linewidth]{img/coinrun-proxy-penalty-normalized.pdf}
         \caption{\texttt{Coinrun}.}
-        \label{fig:results:coinrun}
+        \label{fig:app:coinrun-proxy-penalty}
     \end{subfigure}%
     \begin{subfigure}{0.33\linewidth}
-        \includegraphics[width=\linewidth]{img/maze-main-normalized.pdf}
+        \includegraphics[width=\linewidth]{img/maze-proxy-penalty-normalized.pdf}
         \caption{\texttt{Maze}.}
-        \label{fig:results:maze}
+        \label{fig:app:maze-proxy-penalty}
     \end{subfigure}%
     \begin{subfigure}{0.33\linewidth}
-        \includegraphics[width=\linewidth]{img/heist-main-normalized.pdf}
-        \caption{\texttt{K\&C}.}
-        \label{fig:results:kandc}
+        \includegraphics[width=\linewidth]{img/heist-proxy-penalty-normalized.pdf}
+        \caption{\texttt{K\&C} (forthcoming).}
+        \label{fig:app:kandc-proxy-penalty}
     \end{subfigure}
-    \caption{Return versus ask-for-help percentage (AFHP), normalized so the
+    \caption{Return versus ask-for-help percentage (AFHP) when proxy pursuit
+    incurs a penalty of $-5$ and the episode continues, normalized so the
     novice is 0 and the expert is 1. Shaded bands are the interquartile range
     across seeds. The legend applies to all three panels.}
-    \label{fig:results}
+    \label{fig:app:proxy-penalty}
 \end{figure}
 """.strip()
 
 LATEX_TABLE_SNIPPET = r"""
-\begin{wraptable}{r}{0.48\linewidth}
+\begin{table}[t]
     \centering
-    \caption{Area Under the Curve (AUC) for Average Return across Ask-For-Help Percentage (AFHP).
+    \caption{Area Under the Curve (AUC) for Average Return across Ask-For-Help Percentage (AFHP) when proxy pursuit incurs a penalty.
     IQR shows 25th--75th percentile range among four independent seeds.}
-    \label{tab:auc_results}
-    \begin{subtable}{\linewidth}
+    \label{tab:auc-proxy-penalty}
+    \begin{subtable}{0.48\linewidth}
         \centering
         \caption{\coin\ AUC results.}
-        \label{tab:auc_coinrun}
-        \input{tables/auc-coinrun}
+        \label{tab:auc-coinrun-proxy-penalty}
+        \input{tables/auc-coinrun-proxy-penalty}
     \end{subtable}
-
-    \vspace{0.6em}
-
-    \begin{subtable}{\linewidth}
+    \hfill
+    \begin{subtable}{0.48\linewidth}
         \centering
         \caption{\maze\ AUC results.}
-        \label{tab:auc_maze}
-        \input{tables/auc-maze}
+        \label{tab:auc-maze-proxy-penalty}
+        \input{tables/auc-maze-proxy-penalty}
     \end{subtable}
 
-    \vspace{0.6em}
+    \vspace{0.8em}
 
-    \begin{subtable}{\linewidth}
+    \begin{subtable}{0.48\linewidth}
         \centering
-        \caption{\kandc\ AUC results.}
-        \label{tab:auc_kandc}
-        \input{tables/auc-kandc}
+        \caption{\kandc\ AUC results (forthcoming).}
+        \label{tab:auc-kandc-proxy-penalty}
+        \input{tables/auc-kandc-proxy-penalty}
     \end{subtable}
-\end{wraptable}
+\end{table}
 """.strip()
+
+
+def _write_placeholder_panel(save_path: Path) -> None:
+    fig, ax = plt.subplots(figsize=PANEL_FIGSIZE)
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    ax.set_xlabel("Ask-For-Help Percentage (AFHP)", fontsize=PANEL_AXIS_LABEL_SIZE)
+    ax.tick_params(labelsize=PANEL_TICK_LABEL_SIZE)
+    ax.text(0.5, 0.5, "forthcoming", ha="center", va="center", fontsize=22)
+    fig.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
 
 
 def _plot_panel(eval_dir: Path, out_dir: Path, table_dir: Path, panel: dict) -> None:
     save_path = out_dir / panel["save_name"]
+    table_path = table_dir / panel["auc_tex"]
+    if panel["placeholder"]:
+        _write_placeholder_panel(save_path)
+        table_path.write_text(PLACEHOLDER_AUC_TABULAR)
+        print(f"Wrote placeholder panel to {save_path}")
+        print(f"Wrote placeholder AUC table to {table_path}")
+        return
+
     plot_icml_results(
         eval_dir=eval_dir,
         prefix_filter=panel["prefix"],
@@ -149,7 +177,7 @@ def _plot_panel(eval_dir: Path, out_dir: Path, table_dir: Path, panel: dict) -> 
         axis_label_size=PANEL_AXIS_LABEL_SIZE,
         tick_label_size=PANEL_TICK_LABEL_SIZE,
         print_auc=False,
-        auc_table_path=str(table_dir / panel["auc_tex"]),
+        auc_table_path=str(table_path),
     )
     plt.close("all")
 
@@ -157,8 +185,9 @@ def _plot_panel(eval_dir: Path, out_dir: Path, table_dir: Path, panel: dict) -> 
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Write coinrun/maze/heist main AFHP panels without legends, "
-            "a two-line shared legend PDF, and standalone AUC tabular .tex files."
+            "Write coinrun/maze proxy-penalty AFHP panels without legends, "
+            "a two-line shared legend PDF, a K&C placeholder panel, "
+            "and standalone AUC tabular .tex files."
         )
     )
     parser.add_argument(
@@ -172,8 +201,8 @@ def main() -> int:
         "--out_dir",
         dest="out_dir",
         type=Path,
-        default=Path("img"),
-        help="Directory for the four PDFs (default: img)",
+        default=DEFAULT_OUT_DIR,
+        help=f"Directory for the PDFs (default: {DEFAULT_OUT_DIR})",
     )
     parser.add_argument(
         "--table-dir",

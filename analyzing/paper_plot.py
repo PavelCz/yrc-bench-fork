@@ -349,9 +349,20 @@ def save_shared_legend(save_path: str, paper_mode: bool = True) -> None:
     setup_plot_style(paper_mode=paper_mode, use_latex=True)
     regular, special = build_shared_legend_entries(paper_mode=paper_mode)
 
-    fig = plt.figure(figsize=(10.5, 1.05))
-    ax = fig.add_axes((0.0, 0.0, 1.0, 1.0))
-    ax.axis("off")
+    fig, axes = plt.subplots(
+        2,
+        1,
+        figsize=(10.5, 0.42),
+        gridspec_kw={
+            "hspace": 0.0,
+            "top": 1.0,
+            "bottom": 0.0,
+            "left": 0.0,
+            "right": 1.0,
+        },
+    )
+    for ax in axes:
+        ax.axis("off")
 
     legend_kwargs = {
         "frameon": False,
@@ -359,26 +370,25 @@ def save_shared_legend(save_path: str, paper_mode: bool = True) -> None:
         "columnspacing": 1.4,
         "handletextpad": 0.5,
         "borderaxespad": 0.0,
+        "labelspacing": 0.0,
+        "borderpad": 0.0,
     }
-    regular_legend = ax.legend(
+    axes[0].legend(
         [handle for handle, _ in regular],
         [label for _, label in regular],
-        loc="upper center",
-        bbox_to_anchor=(0.5, 1.0),
+        loc="center",
         ncol=len(regular),
         **legend_kwargs,
     )
-    ax.add_artist(regular_legend)
-    ax.legend(
+    axes[1].legend(
         [handle for handle, _ in special],
         [label for _, label in special],
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.48),
+        loc="center",
         ncol=len(special),
         **legend_kwargs,
     )
 
-    fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.04)
+    fig.savefig(save_path, dpi=300, bbox_inches="tight", pad_inches=0.0)
     plt.close(fig)
     print(f"Saved figure to {save_path}")
 
@@ -1054,10 +1064,8 @@ def _compute_accuracy_at_afhp(
     return out
 
 
-def print_auc_latex_table(
+def _prepare_auc_table(
     method_auc_data: Dict[str, Tuple[float, float, float]],
-    x_label: str,
-    y_label: str,
     normalize_by_range: bool = True,
     x_range: Optional[Tuple[float, float]] = None,
     weak_performance: Optional[float] = None,
@@ -1065,22 +1073,9 @@ def print_auc_latex_table(
     hide_robust_suffix: bool = False,
     accuracy_data: Optional[Dict[str, Optional[Tuple[float, float, float]]]] = None,
     show_iqr: bool = True,
-):
-    """
-    Print AUC results as a LaTeX-compatible table.
+) -> dict:
+    """Normalize, order, and choose bold winners for an AUC table."""
 
-    Method ordering: PartialOracle row(s) first, then a separator, then the
-    figure's default ordering (`DEFAULT_METHOD_ORDER` + alphabetical leftover).
-    Bolding: always bolds the method with the highest AUC among non-oracle
-    methods. PartialOracle is bolded only when it is the best of *all*
-    methods (i.e. beats every non-oracle method on AUC); otherwise it is
-    rendered in normal weight.
-    """
-    print("\n" + "=" * 80)
-    print("AREA UNDER THE CURVE (AUC) RESULTS")
-    print("=" * 80)
-
-    # ---- Per-row normalization (applied once, used by both tables) -----------
     def _normalize_triplet(
         triplet: Tuple[float, float, float],
     ) -> Optional[Tuple[float, float, float]]:
@@ -1106,14 +1101,10 @@ def print_auc_latex_table(
         m: _normalize_triplet(v) for m, v in method_auc_data.items()
     }
 
-    # ---- Row ordering --------------------------------------------------------
     all_keys = list(method_auc_data.keys())
     po_keys = [m for m in all_keys if split_robust_method(m)[0] == "oracle-lb-random"]
     non_po_keys_set = [m for m in all_keys if m not in po_keys]
 
-    # Apply DEFAULT_METHOD_ORDER (with robust expansion) + alphabetical leftover.
-    # expand_method_order_for_robust_variants only does `in` membership checks,
-    # so an empty value-dict is sufficient as a presence map.
     non_po_lookup = {m: {} for m in non_po_keys_set}
     ordered_non_po = expand_method_order_for_robust_variants(
         DEFAULT_METHOD_ORDER,
@@ -1125,7 +1116,6 @@ def print_auc_latex_table(
     final_order: List[str] = list(po_keys) + ordered_non_po
     separator_after_idx = len(po_keys) - 1 if po_keys else -1
 
-    # ---- Bold sets -----------------------------------------------------------
     def _best_key(
         candidates: List[str],
         data: Dict[str, Optional[Tuple[float, float, float]]],
@@ -1147,8 +1137,6 @@ def print_auc_latex_table(
     def _bold_winners(
         data: Dict[str, Optional[Tuple[float, float, float]]],
     ) -> "set[str]":
-        """Best non-oracle row is always bolded. PartialOracle is bolded only
-        when it tops every non-oracle row on the same metric."""
         winners: set[str] = set()
         best_non_po_k = _best_key(non_po_keys_set, data)
         best_overall_k = _best_key(all_keys, data)
@@ -1161,26 +1149,66 @@ def print_auc_latex_table(
             winners.add(best_overall_k)
         return winners
 
-    auc_bold_keys = _bold_winners(normalized)
-    acc_bold_keys: "set[str]" = (
-        _bold_winners(accuracy_data) if accuracy_data is not None else set()
-    )
+    return {
+        "normalized": normalized,
+        "final_order": final_order,
+        "separator_after_idx": separator_after_idx,
+        "auc_bold_keys": _bold_winners(normalized),
+        "acc_bold_keys": (
+            _bold_winners(accuracy_data) if accuracy_data is not None else set()
+        ),
+        "has_accuracy": accuracy_data is not None,
+        "accuracy_data": accuracy_data,
+        "show_iqr": show_iqr,
+        "hide_robust_suffix": hide_robust_suffix,
+    }
 
-    # ---- LaTeX output --------------------------------------------------------
-    has_accuracy = accuracy_data is not None
+
+def format_auc_tabular(
+    method_auc_data: Dict[str, Tuple[float, float, float]],
+    normalize_by_range: bool = True,
+    x_range: Optional[Tuple[float, float]] = None,
+    weak_performance: Optional[float] = None,
+    strong_performance: Optional[float] = None,
+    hide_robust_suffix: bool = False,
+    accuracy_data: Optional[Dict[str, Optional[Tuple[float, float, float]]]] = None,
+    show_iqr: bool = True,
+) -> str:
+    """Return a standalone booktabs tabular matching the paper's table files.
+
+    PartialOracle is first, then a trimmed cmidrule, then DEFAULT_METHOD_ORDER. The
+    best non-oracle method is bolded; PartialOracle is bolded only when it
+    also has the highest AUC of every method.
+    """
+    prepared = _prepare_auc_table(
+        method_auc_data,
+        normalize_by_range=normalize_by_range,
+        x_range=x_range,
+        weak_performance=weak_performance,
+        strong_performance=strong_performance,
+        hide_robust_suffix=hide_robust_suffix,
+        accuracy_data=accuracy_data,
+        show_iqr=show_iqr,
+    )
+    return _render_auc_tabular(prepared)
+
+
+def _render_auc_tabular(prepared: dict) -> str:
+    show_iqr = prepared["show_iqr"]
+    has_accuracy = prepared["has_accuracy"]
     auc_header = "AUC (Median [IQR])" if show_iqr else "Median AUC"
     acc_header = "Accuracy (Median [IQR])" if show_iqr else "Median Accuracy"
-    print("\n% LaTeX Table")
-    print("\\begin{table}[h]")
-    print("\\centering")
     tab_spec = "lll" if has_accuracy else "ll"
-    print(f"\\begin{{tabular}}{{{tab_spec}}}")
-    print("\\toprule")
-    if has_accuracy:
-        print(f"Method & {auc_header} & {acc_header} \\\\")
-    else:
-        print(f"Method & {auc_header} \\\\")
-    print("\\midrule")
+    lines = [
+        f"\\begin{{tabular}}{{{tab_spec}}}",
+        "\\toprule",
+        (
+            f"Method & {auc_header} & {acc_header} \\\\"
+            if has_accuracy
+            else f"Method & {auc_header} \\\\"
+        ),
+        "\\midrule",
+    ]
 
     def _fmt_triplet(triplet: Optional[Tuple[float, float, float]]) -> str:
         if triplet is None:
@@ -1192,32 +1220,80 @@ def print_auc_latex_table(
             return f"{a:.3f} [{b:.3f}, {c:.3f}]"
         return f"{a:.3f}"
 
+    final_order = prepared["final_order"]
     for i, method in enumerate(final_order):
         display_name = format_plot_label(
-            method, paper_mode=True, hide_robust_suffix=hide_robust_suffix
+            method,
+            paper_mode=True,
+            hide_robust_suffix=prepared["hide_robust_suffix"],
         )
-        value_str = _fmt_triplet(normalized[method])
-        auc_is_bold = method in auc_bold_keys
-        acc_is_bold = method in acc_bold_keys
-        # Method-name bolding follows the AUC-column bolding, so the column
-        # headers ("AUC" / "Accuracy") both highlight winners in their own
-        # column without the method name flipping between rows.
-        if auc_is_bold:
+        value_str = _fmt_triplet(prepared["normalized"][method])
+        if method in prepared["auc_bold_keys"]:
             display_name = f"\\textbf{{{display_name}}}"
             if value_str != "--":
                 value_str = f"\\textbf{{{value_str}}}"
         if has_accuracy:
-            acc_str = _fmt_triplet(accuracy_data.get(method))
-            if acc_is_bold and acc_str != "--":
+            acc_str = _fmt_triplet(prepared["accuracy_data"].get(method))
+            if method in prepared["acc_bold_keys"] and acc_str != "--":
                 acc_str = f"\\textbf{{{acc_str}}}"
-            print(f"{display_name} & {value_str} & {acc_str} \\\\")
+            lines.append(f"{display_name} & {value_str} & {acc_str} \\\\")
         else:
-            print(f"{display_name} & {value_str} \\\\")
-        if i == separator_after_idx and i < len(final_order) - 1:
-            print("\\midrule")
+            lines.append(f"{display_name} & {value_str} \\\\")
+        if i == prepared["separator_after_idx"] and i < len(final_order) - 1:
+            n_cols = 3 if has_accuracy else 2
+            lines.append(f"\\cmidrule(lr){{1-{n_cols}}}")
 
-    print("\\bottomrule")
-    print("\\end{tabular}")
+    lines.extend(["\\bottomrule", "\\end{tabular}"])
+    return "\n".join(lines) + "\n"
+
+
+def print_auc_latex_table(
+    method_auc_data: Dict[str, Tuple[float, float, float]],
+    x_label: str,
+    y_label: str,
+    normalize_by_range: bool = True,
+    x_range: Optional[Tuple[float, float]] = None,
+    weak_performance: Optional[float] = None,
+    strong_performance: Optional[float] = None,
+    hide_robust_suffix: bool = False,
+    accuracy_data: Optional[Dict[str, Optional[Tuple[float, float, float]]]] = None,
+    show_iqr: bool = True,
+):
+    """
+    Print AUC results as a LaTeX-compatible table.
+
+    Method ordering: PartialOracle row(s) first, then a trimmed cmidrule, then the
+    figure's default ordering (`DEFAULT_METHOD_ORDER` + alphabetical leftover).
+    Bolding: always bolds the method with the highest AUC among non-oracle
+    methods. PartialOracle is bolded only when it is the best of *all*
+    methods (i.e. beats every non-oracle method on AUC); otherwise it is
+    rendered in normal weight.
+    """
+    print("\n" + "=" * 80)
+    print("AREA UNDER THE CURVE (AUC) RESULTS")
+    print("=" * 80)
+
+    prepared = _prepare_auc_table(
+        method_auc_data,
+        normalize_by_range=normalize_by_range,
+        x_range=x_range,
+        weak_performance=weak_performance,
+        strong_performance=strong_performance,
+        hide_robust_suffix=hide_robust_suffix,
+        accuracy_data=accuracy_data,
+        show_iqr=show_iqr,
+    )
+    normalized = prepared["normalized"]
+    final_order = prepared["final_order"]
+    separator_after_idx = prepared["separator_after_idx"]
+    auc_bold_keys = prepared["auc_bold_keys"]
+    acc_bold_keys = prepared["acc_bold_keys"]
+    has_accuracy = prepared["has_accuracy"]
+
+    print("\n% LaTeX Table")
+    print("\\begin{table}[h]")
+    print("\\centering")
+    print(_render_auc_tabular(prepared), end="")
     print(f"\\caption{{Area Under the Curve (AUC) for {y_label} vs {x_label}.")
     if weak_performance is not None and strong_performance is not None:
         print(
@@ -1321,7 +1397,13 @@ def plot_icml_results(
     show_iqr: bool = True,
     show_accuracy: bool = False,
     show_legend: bool = True,
-):
+    show_ylabel: bool = True,
+    figsize: Optional[Tuple[float, float]] = None,
+    axis_label_size: Optional[float] = None,
+    tick_label_size: Optional[float] = None,
+    print_auc: bool = True,
+    auc_table_path: Optional[str] = None,
+) -> Optional[str]:
     """
     Plot ICML results with aggregation across experiments.
 
@@ -1344,17 +1426,23 @@ def plot_icml_results(
         calculate_auc: If True, calculate and display AUC for each method
         show_legend: If False, omit the legend (for multi-panel figures that
             share a standalone legend PDF).
+        show_ylabel: If False, omit the y-axis title (tick labels stay).
+        figsize: Optional figure size override, in inches.
+        axis_label_size: Optional axis-title font size in points.
+        tick_label_size: Optional tick-label font size in points.
+        print_auc: If True and AUC is computed, print the CLI table wrapper.
+        auc_table_path: If set, write a standalone booktabs tabular here.
     """
     results = extract_icml_results(eval_dir, prefix_filter, env_filter)
 
     if not results:
         print("No results found matching the filters.")
-        return
+        return None
 
     results = filter_results_by_robust(results, robust_filter)
     if not results:
         print(f"No results left after robust_filter={robust_filter!r}.")
-        return
+        return None
 
     # Canonicalize user-supplied method filters so kebab and snake CLI inputs
     # both match the kebab-canonical keys stored in `results`.
@@ -1390,7 +1478,7 @@ def plot_icml_results(
 
     if not valid_methods:
         print("No valid methods found to plot.")
-        return
+        return None
 
     # If filtering to robust-only and a single robust variant survives, move
     # the "(Robust ...)" qualifier from per-method labels into the title.
@@ -1451,10 +1539,20 @@ def plot_icml_results(
 
     # Set up plot style
     setup_plot_style(paper_mode=paper_mode, use_latex=True)
+    if paper_mode and axis_label_size is None:
+        axis_label_size = 18
+    if paper_mode and tick_label_size is None:
+        tick_label_size = 16
+    if axis_label_size is not None:
+        plt.rcParams["axes.labelsize"] = axis_label_size
+    if tick_label_size is not None:
+        plt.rcParams["xtick.labelsize"] = tick_label_size
+        plt.rcParams["ytick.labelsize"] = tick_label_size
 
     # `--paper-app` swaps to a taller-than-default aspect ratio so the plot
     # sits well as an appendix figure alongside its (longer) legend.
-    figsize = (8, 6) if paper_app else (8, 4.5)
+    if figsize is None:
+        figsize = (8, 6) if paper_app else (8, 4.5)
     plt.figure(figsize=figsize)
     colors = sns.color_palette("husl", len(valid_methods))
 
@@ -1786,7 +1884,15 @@ def plot_icml_results(
         robust_title_prefix = None
 
     plt.xlabel(x_label)
-    plt.ylabel(y_label)
+    if show_ylabel:
+        plt.ylabel(y_label)
+    if axis_label_size is not None or tick_label_size is not None:
+        ax = plt.gca()
+        if axis_label_size is not None:
+            ax.xaxis.label.set_size(axis_label_size)
+            ax.yaxis.label.set_size(axis_label_size)
+        if tick_label_size is not None:
+            ax.tick_params(axis="both", labelsize=tick_label_size)
 
     # Use custom title if provided, otherwise generate one (skip if paper_mode)
     if not paper_mode:
@@ -1873,10 +1979,8 @@ def plot_icml_results(
             else None
         )
 
-        print_auc_latex_table(
+        tabular = format_auc_tabular(
             method_auc_data,
-            x_label,
-            y_label,
             normalize_by_range=True,
             x_range=x_range,
             weak_performance=weak_perf,
@@ -1885,6 +1989,26 @@ def plot_icml_results(
             accuracy_data=accuracy_data,
             show_iqr=show_iqr,
         )
+        if auc_table_path is not None:
+            table_path = Path(auc_table_path)
+            table_path.parent.mkdir(parents=True, exist_ok=True)
+            table_path.write_text(tabular)
+            print(f"Wrote AUC table to {table_path}")
+        if print_auc:
+            print_auc_latex_table(
+                method_auc_data,
+                x_label,
+                y_label,
+                normalize_by_range=True,
+                x_range=x_range,
+                weak_performance=weak_perf,
+                strong_performance=strong_perf,
+                hide_robust_suffix=hide_robust_label,
+                accuracy_data=accuracy_data,
+                show_iqr=show_iqr,
+            )
+        return tabular
+    return None
 
 
 def list_available_methods(

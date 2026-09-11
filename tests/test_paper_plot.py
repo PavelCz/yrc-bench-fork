@@ -118,3 +118,62 @@ def test_shared_legend_splits_regular_methods_from_special_block():
         *paper_plot.DEFAULT_METHOD_ORDER,
         "oracle-lb-random",
     ]
+
+
+def _auc_triplet(median: float, lower: float, upper: float):
+    return (median, lower, upper)
+
+
+def test_format_auc_tabular_matches_paper_coinrun_table():
+    tex = paper_plot.format_auc_tabular(
+        {
+            "oracle-lb-random": _auc_triplet(0.739, 0.722, 0.761),
+            "ts-random": _auc_triplet(0.701, 0.679, 0.727),
+            "ensemble-single": _auc_triplet(0.488, 0.467, 0.511),
+            "max-prob": _auc_triplet(0.612, 0.596, 0.636),
+            "max-logit": _auc_triplet(0.537, 0.487, 0.591),
+            "svdd-image": _auc_triplet(0.526, 0.495, 0.568),
+            "svdd-latent": _auc_triplet(0.513, 0.444, 0.578),
+        },
+        normalize_by_range=False,
+    )
+
+    assert tex == (
+        "\\begin{tabular}{ll}\n"
+        "\\toprule\n"
+        "Method & AUC (Median [IQR]) \\\\\n"
+        "\\midrule\n"
+        "\\textbf{\\textsc{PartialOracle}} & "
+        "\\textbf{0.739 [0.722, 0.761]} \\\\\n"
+        "\\cmidrule(lr){1-2}\n"
+        "\\textbf{\\textsc{Heuristic}} & "
+        "\\textbf{0.701 [0.679, 0.727]} \\\\\n"
+        "\\textsc{Ensemble} & 0.488 [0.467, 0.511] \\\\\n"
+        "\\textsc{MaxProb} & 0.612 [0.596, 0.636] \\\\\n"
+        "\\textsc{MaxLogit} & 0.537 [0.487, 0.591] \\\\\n"
+        "\\textsc{ImageSVDD} & 0.526 [0.495, 0.568] \\\\\n"
+        "\\textsc{LatentSVDD} & 0.513 [0.444, 0.578] \\\\\n"
+        "\\bottomrule\n"
+        "\\end{tabular}\n"
+    )
+    assert "\\begin{table}" not in tex
+
+
+def test_format_auc_tabular_does_not_bold_partial_oracle_when_heuristic_wins():
+    tex = paper_plot.format_auc_tabular(
+        {
+            "oracle-lb-random": _auc_triplet(0.743, 0.739, 0.748),
+            "ts-random": _auc_triplet(0.787, 0.781, 0.791),
+            "ensemble-single": _auc_triplet(0.735, 0.727, 0.744),
+            "max-prob": _auc_triplet(0.627, 0.607, 0.638),
+            "max-logit": _auc_triplet(0.679, 0.658, 0.699),
+            "svdd-image": _auc_triplet(0.532, 0.520, 0.545),
+            "svdd-latent": _auc_triplet(0.566, 0.558, 0.575),
+        },
+        normalize_by_range=False,
+    )
+
+    assert "\\textsc{PartialOracle} & 0.743 [0.739, 0.748] \\\\" in tex
+    assert "\\cmidrule(lr){1-2}" in tex
+    assert "\\textbf{\\textsc{PartialOracle}}" not in tex
+    assert "\\textbf{\\textsc{Heuristic}} & \\textbf{0.787 [0.781, 0.791]} \\\\" in tex
