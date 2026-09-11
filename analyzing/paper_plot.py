@@ -1403,6 +1403,7 @@ def plot_icml_results(
     tick_label_size: Optional[float] = None,
     print_auc: bool = True,
     auc_table_path: Optional[str] = None,
+    ylim: Optional[Tuple[float, float]] = None,
 ) -> Optional[str]:
     """
     Plot ICML results with aggregation across experiments.
@@ -1432,6 +1433,8 @@ def plot_icml_results(
         tick_label_size: Optional tick-label font size in points.
         print_auc: If True and AUC is computed, print the CLI table wrapper.
         auc_table_path: If set, write a standalone booktabs tabular here.
+        ylim: Optional (ymin, ymax) override. When set, it replaces the
+            `--paper-app` [6, 10] window.
     """
     results = extract_icml_results(eval_dir, prefix_filter, env_filter)
 
@@ -1851,7 +1854,9 @@ def plot_icml_results(
     # (paired with the taller aspect ratio set earlier). Applied only when
     # the curves are in raw units; with --normalize_y the plot is already
     # in a [0, 1]-ish frame and a 6-10 window would be empty.
-    if paper_app:
+    if ylim is not None:
+        plt.ylim(*ylim)
+    elif paper_app:
         if do_normalize_y:
             print(
                 "Warning: --paper-app y-axis zoom ignored because --normalize_y is set."
