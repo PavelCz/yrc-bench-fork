@@ -235,6 +235,12 @@ def main():
             f"{chunk_writer.num_chunks} chunks, "
             f"{chunk_writer.num_observations} observations"
         )
+        print(
+            "SVDD training requires a memmap artifact. Convert this manifest "
+            "before `train_svdd.py` / `scripts/run_svdd_train.py`:\n"
+            f"  python scripts/convert_rollouts_to_memmap.py "
+            f"{rollout_paths['manifest']}"
+        )
     else:
         print(f"Saving rollouts to {rollout_paths['data']}")
         with rollout_paths["data"].open("wb") as f:

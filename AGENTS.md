@@ -59,6 +59,10 @@ conda run -n ood ci/format_and_check.sh
 
 ### Training
 ```bash
+# After gather_rollouts, convert chunks to memmap before SVDD training
+python scripts/convert_rollouts_to_memmap.py \
+    /path/to/gather_<env>_exp<N>/rollouts_manifest_1024levels.json
+
 # Train a coordination policy (Procgen)
 python train_svdd.py -c configs/procgen_ood.yaml -n RUN_NAME -en ENV_NAME \
     -sim PATH/TO/SIM_WEAK.pt -weak PATH/TO/WEAK.pt -strong PATH/TO/STRONG.pt \

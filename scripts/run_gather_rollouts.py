@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """
 Script to run gather_rollouts jobs in parallel via SLURM sbatch.
+
+Gather writes chunked `rollouts_manifest_*levels.json` artifacts. Deep SVDD
+training needs a memmap conversion first:
+
+    python scripts/convert_rollouts_to_memmap.py \\
+        /path/to/gather_<env>_exp<N>/rollouts_manifest_*levels.json
+
+See docs/level_seed_splits.md.
 """
 
 import subprocess
@@ -380,6 +388,13 @@ def main():
 
             submit_job(job_name, gather_args, dry_run=args.dry_run)
 
+    print(
+        "Note: SVDD training requires converting each finished gather dir to "
+        "memmap before `scripts/run_svdd_train.py`:\n"
+        "  python scripts/convert_rollouts_to_memmap.py "
+        "<gather_dir>/rollouts_manifest_*levels.json\n"
+        "See docs/level_seed_splits.md."
+    )
     return 0
 
 

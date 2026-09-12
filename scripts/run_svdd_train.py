@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 """
 Script to run DeepSVDD training jobs in parallel via SLURM sbatch.
+
+`train_svdd.py` loads shuffled rollout observations and requires a memmap
+artifact (`rollouts_memmap_*levels.json`). Chunked gather output
+(`rollouts_manifest_*levels.json`) must be converted first:
+
+    python scripts/convert_rollouts_to_memmap.py \\
+        /path/to/gather_<env>_exp<N>/rollouts_manifest_*levels.json
+
+See docs/level_seed_splits.md.
 """
 
 import netrc
@@ -449,6 +458,20 @@ def main():
                 f"{resolved_rollout_path}"
             )
             missing = True
+        elif resolved_rollout_path.is_dir():
+            memmap_meta = sorted(
+                resolved_rollout_path.glob("rollouts_memmap_*levels.json")
+            )
+            manifests = sorted(
+                resolved_rollout_path.glob("rollouts_manifest_*levels.json")
+            )
+            if manifests and not memmap_meta:
+                print(
+                    f"Warning: exp{exp_id} gather dir has chunked rollouts but no "
+                    "memmap artifact. Convert before training or the job will "
+                    "fail:\n"
+                    f"  python scripts/convert_rollouts_to_memmap.py {manifests[0]}"
+                )
         if not level_seeds_file.exists():
             print(
                 f"Warning: exp{exp_id} level seeds file not found: {level_seeds_file}"

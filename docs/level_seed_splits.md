@@ -26,15 +26,26 @@ example, `eval_afhp.py` maps `validation` to the env split `cal`, and maps
 2. Train acting policies on `policy_train`.
 3. Validate acting policies on `validation`.
 4. Gather OOD training rollouts on `ood_train`.
-5. Train Deep SVDD or other OOD detectors from the `ood_train` rollout artifact.
-6. Calibrate AFHP thresholds or percentiles on `validation`.
-7. Evaluate final policies on `ood_eval`.
+5. Convert the chunked gather artifact to a memmap dataset. `train_svdd.py`
+   refuses shuffled training on `rollouts_manifest_*.json` alone.
+6. Train Deep SVDD or other OOD detectors from the memmap `ood_train` artifact.
+7. Calibrate AFHP thresholds or percentiles on `validation`.
+8. Evaluate final policies on `ood_eval`.
 
-`gather_rollouts.py` uses only `ood_train`. When multiple rollout dataset sizes
-are needed, `scripts/run_gather_rollouts.py --num-levels 64 128 all` selects
-prefixes of `ood_train`. SVDD training can also load the largest available
-rollout artifact and restrict it with `--rollout-max-levels`, avoiding duplicate
-collection for smaller dataset-size runs.
+`gather_rollouts.py` uses only `ood_train` and writes chunked
+`rollouts_manifest_*levels.json` files. SVDD training needs the matching
+`rollouts_memmap_*levels.json` / `.dat` pair:
+
+```bash
+python scripts/convert_rollouts_to_memmap.py \
+    /path/to/gather_<env>_exp<N>/rollouts_manifest_1024levels.json
+```
+
+When multiple rollout dataset sizes are needed,
+`scripts/run_gather_rollouts.py --num-levels 64 128 all` selects prefixes of
+`ood_train`. SVDD training can also load the largest available artifact and
+restrict it with `--rollout-max-levels`, avoiding duplicate collection for
+smaller dataset-size runs. That still requires the memmap conversion first.
 
 ## Additional OOD Training Seeds
 
