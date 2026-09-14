@@ -43,7 +43,10 @@ def test_unnormalized_script_bakes_in_main_and_proxy_fail_rows():
         "tmlr-proxy-fail-fix",
     ]
     assert proxy_fail["maze_proxy_fail"]["robust_filter"] == "robust"
-    assert proxy_fail["heist_proxy_fail"]["placeholder"] is True
+    assert proxy_fail["heist_proxy_fail"]["placeholder"] is False
+    assert proxy_fail["heist_proxy_fail"]["prefix"] == [
+        "tmlr-heist03-expert400-proxy-fail"
+    ]
     assert proxy_fail["heist_proxy_fail"]["save_name"] == "heist-proxy-fail.pdf"
 
     assert plot_unnormalized_figures.COINRUN_MAZE_YLIM == (6.0, 10.0)
@@ -63,6 +66,6 @@ def test_unnormalized_script_bakes_in_main_and_proxy_fail_rows():
     assert r"\label{fig:app:kandc-unnormalized}" in (
         plot_unnormalized_figures.LATEX_SNIPPET
     )
-    assert "forthcoming" in plot_unnormalized_figures.LATEX_SNIPPET
+    assert "forthcoming" not in plot_unnormalized_figures.LATEX_SNIPPET
     assert r"$[6, 10]$" in plot_unnormalized_figures.LATEX_SNIPPET
     assert r"$[0, 10]$" not in plot_unnormalized_figures.LATEX_SNIPPET

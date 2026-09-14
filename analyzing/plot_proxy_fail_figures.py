@@ -61,7 +61,7 @@ PANELS = (
         "env": "heist_proxy_fail",
         "robust_filter": "all",
         "show_ylabel": False,
-        "placeholder": True,
+        "placeholder": False,
     },
 )
 
@@ -105,7 +105,7 @@ LATEX_SNIPPET = r"""
     \end{subfigure}%
     \begin{subfigure}{0.33\linewidth}
         \includegraphics[width=\linewidth]{img/heist-proxy-fail-normalized.pdf}
-        \caption{\texttt{K\&C} (forthcoming).}
+        \caption{\texttt{K\&C}.}
         \label{fig:results:kandc-proxy-fail}
     \end{subfigure}
     \caption{\textbf{Results when proxy goals cause failure.}
@@ -140,7 +140,7 @@ LATEX_TABLE_SNIPPET = r"""
 
     \begin{subtable}{0.48\linewidth}
         \centering
-        \caption{\kandc\ AUC results (forthcoming).}
+        \caption{\kandc\ AUC results.}
         \label{tab:auc-kandc-proxy-fail}
         \input{tables/auc-kandc-proxy-fail}
     \end{subtable}
@@ -195,9 +195,8 @@ def _plot_panel(eval_dir: Path, out_dir: Path, table_dir: Path, panel: dict) -> 
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Write coinrun/maze proxy-fail AFHP panels without legends, "
-            "a two-line shared legend PDF, a K&C placeholder panel, "
-            "and standalone AUC tabular .tex files."
+            "Write coinrun/maze/heist proxy-fail AFHP panels without legends, "
+            "a two-line shared legend PDF, and standalone AUC tabular .tex files."
         )
     )
     parser.add_argument(

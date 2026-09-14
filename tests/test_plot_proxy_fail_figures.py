@@ -4,7 +4,7 @@ import importlib
 plot_proxy_fail_figures = importlib.import_module("analyzing.plot_proxy_fail_figures")
 
 
-def test_proxy_fail_script_bakes_in_coinrun_maze_and_kandc_placeholder():
+def test_proxy_fail_script_bakes_in_coinrun_maze_and_kandc():
     panels = {panel["env"]: panel for panel in plot_proxy_fail_figures.PANELS}
 
     assert panels["coinrun_proxy_fail"]["prefix"] == [
@@ -20,7 +20,8 @@ def test_proxy_fail_script_bakes_in_coinrun_maze_and_kandc_placeholder():
         "tmlr-proxy-fail-fix",
     ]
     assert panels["maze_proxy_fail"]["robust_filter"] == "robust"
-    assert panels["heist_proxy_fail"]["placeholder"] is True
+    assert panels["heist_proxy_fail"]["placeholder"] is False
+    assert panels["heist_proxy_fail"]["prefix"] == ["tmlr-heist03-expert400-proxy-fail"]
     assert panels["coinrun_proxy_fail"]["auc_tex"] == "auc-coinrun-proxy-fail.tex"
     assert panels["maze_proxy_fail"]["auc_tex"] == "auc-maze-proxy-fail.tex"
     assert panels["heist_proxy_fail"]["auc_tex"] == "auc-kandc-proxy-fail.tex"
@@ -38,7 +39,7 @@ def test_proxy_fail_script_bakes_in_coinrun_maze_and_kandc_placeholder():
     assert r"\label{fig:results:kandc-proxy-fail}" in (
         plot_proxy_fail_figures.LATEX_SNIPPET
     )
-    assert "forthcoming" in plot_proxy_fail_figures.LATEX_SNIPPET
+    assert "forthcoming" not in plot_proxy_fail_figures.LATEX_SNIPPET
     assert r"\input{tables/auc-kandc-proxy-fail}" in (
         plot_proxy_fail_figures.LATEX_TABLE_SNIPPET
     )

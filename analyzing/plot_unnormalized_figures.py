@@ -104,7 +104,7 @@ PROXY_FAIL_PANELS = (
         "robust_filter": "all",
         "show_ylabel": False,
         "ylim": None,
-        "placeholder": True,
+        "placeholder": False,
     },
 )
 
@@ -149,7 +149,7 @@ LATEX_SNIPPET = r"""
     \end{subfigure}%
     \begin{subfigure}{0.33\linewidth}
         \includegraphics[width=\linewidth]{img/heist-proxy-fail.pdf}
-        \caption{\texttt{K\&C}, proxy fail (forthcoming).}
+        \caption{\texttt{K\&C}, proxy fail.}
         \label{fig:app:kandc-proxy-fail-unnormalized}
     \end{subfigure}
     \caption{\textbf{Unnormalized mean returns.} Top row: recoverable
@@ -211,8 +211,7 @@ def main() -> int:
         description=(
             "Write unnormalized coinrun/maze/heist AFHP panels for the "
             "appendix (recoverable + proxy-fail). Coinrun and Maze share "
-            "a [6, 10] y-axis; K&C autoscales. The K&C proxy-fail panel "
-            "is a placeholder."
+            "a [6, 10] y-axis; K&C autoscales."
         )
     )
     parser.add_argument(
