@@ -79,8 +79,9 @@ import importlib
 import numpy as np
 import json
 import logging
-from typing import List, Dict, Optional
+from typing import Any, List, Dict, Mapping, Optional
 import wandb
+from PIL import Image
 from pytorch_lightning.loggers import WandbLogger
 from YRC.core.video_utils import (
     VideoProcessor,
@@ -185,6 +186,33 @@ def episode_randomize_goal(info: Dict, done: bool, current_value: bool) -> bool:
     if done and "prev_level/randomize_goal" in info:
         return bool(info["prev_level/randomize_goal"])
     return bool(current_value)
+
+
+def _copy_human_frame(info: Mapping[str, Any]) -> Optional[np.ndarray]:
+    """Copy the 512x512 Procgen human-resolution frame from info, if present."""
+    rgb = info.get("rgb")
+    if rgb is None:
+        return None
+    return np.asarray(rgb).copy()
+
+
+def _save_human_stills(
+    human_obs: List[Optional[np.ndarray]], dest_dir: Path, stem: str
+) -> None:
+    """Write start/mid/end human-view PNGs from collected rgb frames."""
+    usable = [frame for frame in human_obs if frame is not None]
+    if not usable:
+        return
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    picks = {
+        "start": usable[0],
+        "mid": usable[len(usable) // 2],
+        "end": usable[-1],
+    }
+    for kind, frame in picks.items():
+        Image.fromarray(np.asarray(frame), mode="RGB").save(
+            dest_dir / f"{stem}_{kind}.png"
+        )
 
 
 def require_non_plain_maze_eval_env(env_name: str) -> None:
@@ -442,6 +470,7 @@ def rollout_and_get_returns(
     video_episodes = []
     current_episodes = [[] for _ in range(env.num_envs)]
     video_episodes_collected = 0
+    prev_info: List[Dict[str, Any]] = [{} for _ in range(env.num_envs)]
 
     # Reset environment
     obs = env.reset()
@@ -469,6 +498,7 @@ def rollout_and_get_returns(
                 current_episodes[i].append(
                     {
                         "obs": obs_float,
+                        "human_obs": _copy_human_frame(prev_info[i]),
                         "action": action[i],
                         "reward": reward[i],
                         "done": done[i],
@@ -483,14 +513,14 @@ def rollout_and_get_returns(
 
             # If episode is done, save the return and reset
             if done[i]:
+                is_ood = episode_randomize_goal(
+                    info[i], bool(done[i]), current_level_ood_gt[i]
+                )
+                level_seed = int(info[i].get("prev_level_seed", -1))
                 if num_completed < target_episodes:
                     returns.append(cumulative_rewards[i])
-                    level_ood_gt.append(
-                        episode_randomize_goal(
-                            info[i], bool(done[i]), current_level_ood_gt[i]
-                        )
-                    )
-                    level_seeds.append(int(info[i].get("prev_level_seed", -1)))
+                    level_ood_gt.append(is_ood)
+                    level_seeds.append(level_seed)
                     if collect_heist_metrics:
                         assert heist_episode_data is not None
                         append_heist_episode_data(heist_episode_data, info[i])
@@ -513,6 +543,8 @@ def rollout_and_get_returns(
                             "frames": current_episodes[i],
                             "return": cumulative_rewards[i],
                             "episode_idx": video_episodes_collected,
+                            "is_ood": bool(is_ood),
+                            "level_seed": level_seed,
                         }
                     )
                     video_episodes_collected += 1
@@ -532,6 +564,11 @@ def rollout_and_get_returns(
             # update the OOD label from the current info dict for the next episode.
             if "randomize_goal" in info[i]:
                 current_level_ood_gt[i] = bool(info[i]["randomize_goal"])
+
+            prev_info[i] = {
+                key: (value.copy() if isinstance(value, np.ndarray) else value)
+                for key, value in info[i].items()
+            }
 
         obs = next_obs
 
@@ -634,14 +671,23 @@ def save_videos(
 
     # Create video processor
     processor = VideoProcessor(VIDEO_CONFIG)
+    include_human_view = (
+        getattr(config.evaluation, "include_human_view", True)
+        if hasattr(config, "evaluation")
+        else True
+    )
 
     for video_data in video_episodes:
         frames = video_data["frames"]
         episode_return = video_data["return"]
         episode_idx = video_data["episode_idx"]
+        is_ood = bool(video_data.get("is_ood", False))
+        level_seed = video_data.get("level_seed", -1)
+        split_label = "ood" if is_ood else "id"
 
         # Extract observations
         observations = [frame["obs"] for frame in frames]
+        human_obs = [frame.get("human_obs") for frame in frames]
 
         # Create video
         video = np.stack(observations, axis=0)
@@ -653,9 +699,20 @@ def save_videos(
         video = video * 255
         video = video.astype(np.uint8)
 
+        if include_human_view and any(frame is not None for frame in human_obs):
+            video = processor.combine_agent_and_human_views(video, human_obs)
+        else:
+            video = processor.upscale_video(video, VIDEO_CONFIG["min_output_size"])
+
         # Generate filename and caption
-        filename = f"episode_{episode_idx:03d}_return_{episode_return:.2f}"
-        caption = f"Episode {episode_idx} - Split: {eval_split} - Return: {episode_return:.2f}"
+        filename = (
+            f"episode_{episode_idx:03d}_{split_label}_seed{level_seed}"
+            f"_return_{episode_return:.2f}"
+        )
+        caption = (
+            f"Episode {episode_idx} - {split_label.upper()} - Seed: {level_seed} "
+            f"- Split: {eval_split} - Return: {episode_return:.2f}"
+        )
 
         # Save to disk if needed
         if video_logging_mode in ["folder", "both"]:
@@ -665,6 +722,11 @@ def save_videos(
                 filename,
                 VIDEO_CONFIG,
                 caption=caption,
+            )
+            _save_human_stills(
+                human_obs,
+                split_folder / "human",
+                f"{split_label}_seed{level_seed}_ep{episode_idx:03d}",
             )
 
         # Log to wandb if needed
