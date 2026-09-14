@@ -25,6 +25,7 @@ from common import (
     EXP_ID_TO_SEED,
     SERVER_PATHS,
     build_chai_cache_env_block,
+    build_conda_setup_block,
     get_checkpoints,
     get_eval_env_name,
 )
@@ -191,8 +192,7 @@ def build_sbatch_command(
 
 {build_chai_cache_env_block("chai")}
 
-eval "$(conda shell.bash hook)"
-conda activate {CONDA_ENV}
+{build_conda_setup_block(CONDA_ENV)}
 {wandb_env_block}export SM_OUTPUT_DIR="{train_args["output_dir"]}"
 srun {slurm_args} {python_cmd}
 """

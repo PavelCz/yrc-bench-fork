@@ -17,11 +17,18 @@ from typing import Optional
 
 from common import (
     ENVS,
+    EXPECTED_TIMESTEPS,
     EXP_ID_TO_SEED,
     SERVER_PATHS,
     build_chai_cache_env_block,
+    build_conda_setup_block,
+    build_sbatch_cli,
+    get_checkpoint_at_steps,
     get_checkpoints,
     get_eval_env_name,
+    get_icml_run_dir,
+    is_runtime_checkpoint_lookup,
+    runtime_checkpoint_lookup_cmd,
 )
 
 
@@ -133,15 +140,19 @@ def build_sbatch_command(job_name: str, gather_args: dict) -> str:
 
 {build_chai_cache_env_block("chai")}
 
-eval "$(conda shell.bash hook)"
-conda activate {CONDA_ENV}
+{build_conda_setup_block(CONDA_ENV)}
 export SM_OUTPUT_DIR="{gather_args["output_dir"]}"
 srun {slurm_args} {python_cmd}
 """
     return sbatch_script
 
 
-def submit_job(job_name: str, gather_args: dict, dry_run: bool = False) -> None:
+def submit_job(
+    job_name: str,
+    gather_args: dict,
+    dry_run: bool = False,
+    sbatch_args: Optional[list] = None,
+) -> None:
     """Submit a single job via sbatch."""
     sbatch_script = build_sbatch_command(job_name, gather_args)
 
@@ -156,7 +167,7 @@ def submit_job(job_name: str, gather_args: dict, dry_run: bool = False) -> None:
 
     # Submit via sbatch
     result = subprocess.run(
-        ["sbatch"],
+        sbatch_args or ["sbatch"],
         input=sbatch_script,
         text=True,
         capture_output=True,
@@ -256,6 +267,33 @@ def main():
     parser.add_argument("--sim", help="Override sim weak checkpoint path")
     parser.add_argument("--weak", help="Override weak checkpoint path")
     parser.add_argument("--strong", help="Override strong checkpoint path")
+    parser.add_argument(
+        "--weak-as-all",
+        action="store_true",
+        help=(
+            "Use the 0p novice checkpoint for sim, weak, and strong. "
+            "Heist SVDD gather uses this; it does not need a 50p expert."
+        ),
+    )
+    parser.add_argument(
+        "--allow-missing-checkpoints",
+        action="store_true",
+        help=(
+            "Queue jobs before acting-policy files exist. Checkpoint paths are "
+            "resolved when the Slurm job starts; use with --dependency afterok."
+        ),
+    )
+    parser.add_argument(
+        "--dependency",
+        default=None,
+        help="Passed to sbatch as --dependency. Example: afterok:1213516",
+    )
+    parser.add_argument(
+        "--sbatch-arg",
+        action="append",
+        default=[],
+        help="Extra argument forwarded to sbatch (repeatable).",
+    )
     args = parser.parse_args()
 
     if args.level_seeds_file is not None and args.level_seeds_dir is not None:
@@ -307,9 +345,44 @@ def main():
     )
 
     # Loop over experiment IDs
+    sbatch_cmd = build_sbatch_cli(
+        dependency=args.dependency, extra_args=args.sbatch_arg
+    )
     for exp_id in args.exp_ids:
         # Get checkpoints for this experiment
-        checkpoints = get_checkpoints(args.env, exp_id, checkpoint_base_path)
+        if args.weak_as_all:
+            if args.allow_missing_checkpoints:
+                novice = runtime_checkpoint_lookup_cmd(
+                    checkpoint_base=checkpoint_base_path,
+                    env=args.env,
+                    exp_id=exp_id,
+                    percent=0,
+                )
+            else:
+                novice = get_checkpoint_at_steps(
+                    get_icml_run_dir(args.env, exp_id, checkpoint_base_path, 0),
+                    EXPECTED_TIMESTEPS,
+                )
+            checkpoints = {"sim": novice, "weak": novice, "strong": novice}
+        elif args.allow_missing_checkpoints:
+            novice = runtime_checkpoint_lookup_cmd(
+                checkpoint_base=checkpoint_base_path,
+                env=args.env,
+                exp_id=exp_id,
+                percent=0,
+            )
+            checkpoints = {
+                "sim": novice,
+                "weak": novice,
+                "strong": runtime_checkpoint_lookup_cmd(
+                    checkpoint_base=checkpoint_base_path,
+                    env=args.env,
+                    exp_id=exp_id,
+                    percent=50,
+                ),
+            }
+        else:
+            checkpoints = get_checkpoints(args.env, exp_id, checkpoint_base_path)
         if args.sim:
             checkpoints["sim"] = args.sim
         if args.weak:
@@ -325,6 +398,8 @@ def main():
         # Validate checkpoints and seeds file exist
         missing = False
         for name, path in checkpoints.items():
+            if is_runtime_checkpoint_lookup(path):
+                continue
             if not Path(path).exists():
                 print(f"Warning: exp{exp_id} {name} checkpoint not found: {path}")
                 missing = True
@@ -386,7 +461,9 @@ def main():
                 print(f"  Seed: {seed}")
                 print()
 
-            submit_job(job_name, gather_args, dry_run=args.dry_run)
+            submit_job(
+                job_name, gather_args, dry_run=args.dry_run, sbatch_args=sbatch_cmd
+            )
 
     print(
         "Note: SVDD training requires converting each finished gather dir to "

@@ -221,6 +221,8 @@ def test_run_svdd_train_command_passes_seed_file_and_validation_levels():
     )
 
     assert "-level_seeds_file seeds/0.json" in command
+    assert 'source "$CONDA_BASE/etc/profile.d/conda.sh"' in command
+    assert "conda activate ood-stable" in command
     assert "-svdd_val_levels 64" in command
     assert "-rollout_max_levels 128" in command
     assert 'export SM_OUTPUT_DIR="/svdd/prefix"' in command
@@ -360,6 +362,8 @@ def test_run_gather_rollouts_exports_prefixed_rollout_output_dir():
     )
 
     assert output_dir == Path("/rollouts/rollouts-neurips/coinrun")
+    assert 'source "$CONDA_BASE/etc/profile.d/conda.sh"' in command
+    assert "conda activate ood-stable" in command
     assert 'export SM_OUTPUT_DIR="/rollouts/rollouts-neurips/coinrun"' in command
     assert "-rollout_chunk_size" not in command
 

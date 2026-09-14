@@ -21,6 +21,43 @@ def test_heist_proxy_fail_uses_heist_artifacts():
     assert "heist_proxy_fail" in run_eval.EVAL_ENVS
 
 
+def test_lookup_eval_checkpoints_heist400_uses_expected_final_files(tmp_path):
+    icml_base = tmp_path / "policy" / "icml"
+    weak_run = icml_base / "heist_afh" / "icml2_heist_exp4_0p"
+    ts_dir = weak_run / "2026-09-14__02-50-05__seed_4"
+    ts_dir.mkdir(parents=True)
+    (ts_dir / "model_40042496.pth").write_text("partial")
+    strong_run = (
+        tmp_path / "policy" / "heist400" / "heist_afh" / "heist400_heist_exp4_50p"
+    )
+    strong_ts = strong_run / "2026-09-13__15-15-24__seed_4"
+    strong_ts.mkdir(parents=True)
+
+    checkpoints = run_eval.lookup_eval_checkpoints(
+        "heist", 4, str(icml_base), heist400=True
+    )
+    assert checkpoints["weak"].endswith(f"model_{run_eval.EXPECTED_TIMESTEPS}.pth")
+    assert checkpoints["strong"].endswith("model_400031744.pth")
+
+
+def test_lookup_eval_checkpoints_allow_missing_emits_runtime_lookup():
+    checkpoints = run_eval.lookup_eval_checkpoints(
+        "heist",
+        4,
+        "/nas/ucb/czempin/data/goal-misgen/policy/icml",
+        heist400=True,
+        allow_missing_checkpoints=True,
+    )
+    assert run_eval.is_runtime_checkpoint_lookup(checkpoints["weak"])
+    assert "--percent 0" in checkpoints["weak"]
+    assert run_eval.is_runtime_checkpoint_lookup(checkpoints["strong"])
+    assert "--heist400" in checkpoints["strong"]
+    block = run_eval.build_conda_setup_block("ood-stable")
+    assert 'source "$CONDA_BASE/etc/profile.d/conda.sh"' in block
+    assert "conda activate ood-stable" in block
+    assert 'echo "Using conda env: ood-stable"' in block
+
+
 def test_chai_cache_env_block_is_chai_only():
     chai = run_eval.build_chai_cache_env_block("chai")
     assert "export MPLCONFIGDIR=" in chai
@@ -76,6 +113,8 @@ def test_eval_sbatch_overrides_env_name():
 
     assert "-en coinrun_proxy_fail" in command
     assert "-weak weak.pth" in command
+    assert 'source "$CONDA_BASE/etc/profile.d/conda.sh"' in command
+    assert "conda activate ood-stable" in command
     assert "export MPLCONFIGDIR='/nas/ttl=60d/czempin/mpl-config'" in command
     assert "export XDG_CACHE_HOME='/nas/ttl=60d/czempin/xdg-cache'" in command
     assert 'export TMPDIR="/nas/ttl=60d/czempin/tmp/${SLURM_JOB_ID:-$$}"' in command
@@ -140,7 +179,23 @@ def make_job_spec(exp_id):
     }
 
 
-def test_packed_sbatch_runs_multiple_eval_steps_on_one_gpu():
+def test_packed_sbatch_with_runtime_lookup_keeps_command_substitution():
+    eval_args = make_eval_args("job")
+    eval_args["sim"] = (
+        '"$(python scripts/resolve_acting_checkpoint.py --env heist --exp-id 4 --percent 0)"'
+    )
+    eval_args["weak"] = eval_args["sim"]
+    eval_args["strong"] = (
+        '"$(python scripts/resolve_acting_checkpoint.py --env heist --exp-id 4 --heist400)"'
+    )
+    command = run_eval.build_sbatch_command(
+        "job",
+        eval_args,
+        "ood-stable",
+        Path("/tmp/logs"),
+    )
+    assert "--heist400" in command
+    assert "resolve_acting_checkpoint.py" in command
     command = run_eval.build_packed_sbatch_command(
         "coinrun_max-prob_exp0-3",
         [make_job_spec(exp_id) for exp_id in range(4)],
@@ -157,6 +212,7 @@ def test_packed_sbatch_runs_multiple_eval_steps_on_one_gpu():
     assert command.count("--gres=gpu:1") == 5
     assert command.count("python eval_afhp.py") == 4
     assert 'pids+=("$!")' in command
+    assert 'source "$CONDA_BASE/etc/profile.d/conda.sh"' in command
     assert "export MPLCONFIGDIR='/nas/ttl=60d/czempin/mpl-config'" in command
     assert 'export TMPDIR="/nas/ttl=60d/czempin/tmp/${SLURM_JOB_ID:-$$}"' in command
     assert "-n coinrun_max-prob_exp0" in command
@@ -435,3 +491,14 @@ def test_main_packs_valid_exp_ids_into_gpu_chunks(monkeypatch, tmp_path):
         ("coinrun_max-prob_exp0-1-2-3", [0, 1, 2, 3], False),
         ("coinrun_max-prob_exp4", [4], False),
     ]
+
+
+def test_train_ensemble_policies_sources_conda_sh():
+    script = (
+        Path(__file__).resolve().parents[1] / "scripts" / "train_ensemble_policies.sh"
+    )
+    text = script.read_text()
+    assert 'CONDA_BASE="/nas/ucb/czempin/anaconda3"' in text
+    assert (
+        ". ${CONDA_BASE}/etc/profile.d/conda.sh && cd $TRAIN_DIR && conda run" in text
+    )

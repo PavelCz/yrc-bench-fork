@@ -70,6 +70,8 @@ def test_eval_policy_sbatch_overrides_env_name():
 
     assert "-en coinrun_proxy_fail" in command
     assert "--model_file model.pth" in command
+    assert 'source "$CONDA_BASE/etc/profile.d/conda.sh"' in command
+    assert "conda activate ood-stable" in command
     assert "export MPLCONFIGDIR='/nas/ttl=60d/czempin/mpl-config'" in command
     assert "export XDG_CACHE_HOME='/nas/ttl=60d/czempin/xdg-cache'" in command
     assert 'export TMPDIR="/nas/ttl=60d/czempin/tmp/${SLURM_JOB_ID:-$$}"' in command

@@ -13,18 +13,26 @@ from typing import List, Optional
 from common import (
     ENSEMBLE_METHODS,
     ENVS,
+    EXPECTED_TIMESTEPS,
     METHOD_CONFIGS,
     ROBUST_MAZE_CHECKPOINT_STEPS,
     SERVER_PATHS,
     SVDD_METHODS,
     build_chai_cache_env_block,
+    build_conda_setup_block,
+    build_sbatch_cli,
     find_best_model_checkpoint,
     find_newest_timestamp_dir,
+    get_checkpoint_at_steps,
     get_checkpoints,
     get_eval_env_name,
     get_env_folder,
+    get_heist400_strong_checkpoint,
+    get_icml_run_dir,
     get_robust_maze_strong_checkpoint,
+    is_runtime_checkpoint_lookup,
     require_non_plain_maze_eval_env,
+    runtime_checkpoint_lookup_cmd,
 )
 
 
@@ -177,6 +185,91 @@ def get_ensemble_member_paths(
     return member_paths
 
 
+def lookup_eval_checkpoints(
+    artifact_env: str,
+    exp_id: int,
+    checkpoint_base_path: str,
+    *,
+    heist400: bool = False,
+    allow_missing_checkpoints: bool = False,
+) -> dict:
+    """Return sim/weak/strong paths, optionally as runtime lookup commands."""
+    if allow_missing_checkpoints:
+        weak = runtime_checkpoint_lookup_cmd(
+            checkpoint_base=checkpoint_base_path,
+            env=artifact_env,
+            exp_id=exp_id,
+            percent=0,
+        )
+        if heist400:
+            strong = runtime_checkpoint_lookup_cmd(
+                checkpoint_base=checkpoint_base_path,
+                env=artifact_env,
+                exp_id=exp_id,
+                heist400=True,
+            )
+        else:
+            strong = runtime_checkpoint_lookup_cmd(
+                checkpoint_base=checkpoint_base_path,
+                env=artifact_env,
+                exp_id=exp_id,
+                percent=50,
+            )
+        return {"sim": weak, "weak": weak, "strong": strong}
+
+    if heist400:
+        weak = get_checkpoint_at_steps(
+            get_icml_run_dir(artifact_env, exp_id, checkpoint_base_path, 0),
+            EXPECTED_TIMESTEPS,
+        )
+        return {
+            "sim": weak,
+            "weak": weak,
+            "strong": get_heist400_strong_checkpoint(exp_id, checkpoint_base_path),
+        }
+
+    return get_checkpoints(artifact_env, exp_id, checkpoint_base_path)
+
+
+def lookup_ensemble_member_paths(
+    artifact_env: str,
+    exp_id: int,
+    checkpoint_base_path: str,
+    num_members: int,
+    *,
+    allow_missing_checkpoints: bool = False,
+    repo_dir: Path = REPO_ROOT,
+) -> List[Optional[str]]:
+    """Return ensemble member paths, optionally as runtime lookup commands."""
+    if not allow_missing_checkpoints:
+        return get_ensemble_member_paths(
+            artifact_env, exp_id, checkpoint_base_path, num_members
+        )
+
+    env_folder = get_env_folder(artifact_env)
+    member_paths = []
+    for member_id in range(num_members):
+        train_run_dir = (
+            repo_dir
+            / "lib"
+            / "train-procgen-pytorch"
+            / "logs"
+            / "train"
+            / env_folder
+            / f"icml2_ensemble_{artifact_env}_exp{exp_id}_m{member_id}"
+        )
+        member_paths.append(
+            runtime_checkpoint_lookup_cmd(
+                checkpoint_base=checkpoint_base_path,
+                env=artifact_env,
+                exp_id=exp_id,
+                ensemble_member=member_id,
+                extra_run_dirs=[str(train_run_dir)],
+            )
+        )
+    return member_paths
+
+
 def scale_slurm_mem(mem: str, factor: int) -> str:
     """Scale a SLURM memory string like 100G by an integer factor."""
     match = re.fullmatch(r"(\d+)([KMGTP]?)", mem)
@@ -304,9 +397,7 @@ def build_runtime_setup(
 ) -> str:
     """Build shell setup lines for a Slurm job."""
     if execution == "conda":
-        return f"""echo "Using conda env: {conda_env}"
-eval "$(conda shell.bash hook)"
-conda activate {conda_env}"""
+        return build_conda_setup_block(conda_env)
     if execution == "apptainer":
         if container_image is None:
             raise ValueError("container_image is required for apptainer execution")
@@ -528,6 +619,7 @@ def submit_job(
     container_image: Optional[Path] = None,
     repo_dir: Path = REPO_ROOT,
     container_binds: Optional[List[str]] = None,
+    sbatch_args: Optional[List[str]] = None,
 ) -> None:
     """Submit a single job via sbatch."""
     sbatch_script = build_sbatch_command(
@@ -554,7 +646,7 @@ def submit_job(
 
     # Submit via sbatch
     result = subprocess.run(
-        ["sbatch"],
+        sbatch_args or ["sbatch"],
         input=sbatch_script,
         text=True,
         capture_output=True,
@@ -579,6 +671,7 @@ def submit_packed_job(
     container_image: Optional[Path] = None,
     repo_dir: Path = REPO_ROOT,
     container_binds: Optional[List[str]] = None,
+    sbatch_args: Optional[List[str]] = None,
 ) -> None:
     """Submit one Slurm job that runs multiple evals on one GPU."""
     sbatch_script = build_packed_sbatch_command(
@@ -602,7 +695,7 @@ def submit_packed_job(
 
     log_dir.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(
-        ["sbatch"],
+        sbatch_args or ["sbatch"],
         input=sbatch_script,
         text=True,
         capture_output=True,
@@ -857,6 +950,37 @@ def main():
             "strong policy at 400M timesteps."
         ),
     )
+    parser.add_argument(
+        "--heist400",
+        action="store_true",
+        help=(
+            "For heist evals, replace the strong agent with the 400M expert "
+            "under policy/heist400 (heist400_heist_exp{id}_50p)."
+        ),
+    )
+    parser.add_argument(
+        "--allow-missing-checkpoints",
+        action="store_true",
+        help=(
+            "Queue jobs before acting-policy files exist. Checkpoint paths are "
+            "resolved when the Slurm job starts, so this is meant to be used "
+            "with --dependency afterok on the training jobs."
+        ),
+    )
+    parser.add_argument(
+        "--dependency",
+        default=None,
+        help=(
+            "Passed to sbatch as --dependency. Example: "
+            "afterok:1213516:1213517:1213518:1213519"
+        ),
+    )
+    parser.add_argument(
+        "--sbatch-arg",
+        action="append",
+        default=[],
+        help="Extra argument forwarded to sbatch (repeatable).",
+    )
     # Ensemble-specific arguments
     parser.add_argument(
         "--num-ensemble-members",
@@ -898,6 +1022,15 @@ def main():
         return 1
     if robust_checkpoint_key is not None and args.strong:
         print(f"Error: pass either --strong or --{robust_checkpoint_key}, not both.")
+        return 1
+    if args.heist400 and artifact_env != "heist":
+        print("Error: --heist400 is currently supported only for heist.")
+        return 1
+    if args.heist400 and args.strong:
+        print("Error: pass either --strong or --heist400, not both.")
+        return 1
+    if args.heist400 and robust_checkpoint_key is not None:
+        print("Error: pass either --heist400 or a maze --robust* flag, not both.")
         return 1
     output_prefix = (
         f"{args.prefix}_{robust_checkpoint_key}"
@@ -957,6 +1090,12 @@ def main():
                 f"{robust_checkpoint_key} "
                 f"({ROBUST_MAZE_CHECKPOINT_STEPS[robust_checkpoint_key]} timesteps)"
             )
+        if args.heist400:
+            print("Heist strong checkpoint: heist400 (400M timesteps)")
+        if args.allow_missing_checkpoints:
+            print("Allow missing checkpoints: yes (resolved at job start)")
+        if args.dependency:
+            print(f"SLURM dependency: {args.dependency}")
         if args.method in SVDD_METHODS:
             print(f"SVDD prefix: {svdd_prefix}")
             print(f"SVDD base: {Path(svdd_base_path) / svdd_prefix}")
@@ -973,7 +1112,13 @@ def main():
         # Checkpoints and method-specific models are artifact-scoped. Job names
         # and experiment groups below stay env-scoped so outputs are labeled by
         # the actual evaluation environment.
-        checkpoints = get_checkpoints(artifact_env, exp_id, checkpoint_base_path)
+        checkpoints = lookup_eval_checkpoints(
+            artifact_env,
+            exp_id,
+            checkpoint_base_path,
+            heist400=args.heist400,
+            allow_missing_checkpoints=args.allow_missing_checkpoints,
+        )
         if args.sim:
             checkpoints["sim"] = args.sim
         if args.weak:
@@ -997,18 +1142,31 @@ def main():
             svdd_model_path = get_svdd_model_path(
                 artifact_env, exp_id, args.method, svdd_base_path, svdd_prefix
             )
+            if svdd_model_path is None and args.allow_missing_checkpoints:
+                svdd_model_path = str(
+                    get_svdd_expected_model_path(
+                        artifact_env, exp_id, args.method, svdd_base_path, svdd_prefix
+                    )
+                )
             cp_feature = "obs" if args.method == "svdd-image" else "hidden"
 
         # Get ensemble-specific settings if needed
         ensemble_members = None
         if args.method in ENSEMBLE_METHODS:
-            ensemble_members = get_ensemble_member_paths(
-                artifact_env, exp_id, checkpoint_base_path, args.num_ensemble_members
+            ensemble_members = lookup_ensemble_member_paths(
+                artifact_env,
+                exp_id,
+                checkpoint_base_path,
+                args.num_ensemble_members,
+                allow_missing_checkpoints=args.allow_missing_checkpoints,
+                repo_dir=repo_dir,
             )
 
         # Validate checkpoints and seeds file exist
         missing = False
         for name, path in checkpoints.items():
+            if is_runtime_checkpoint_lookup(path):
+                continue
             if not Path(path).exists():
                 print(f"Warning: exp{exp_id} {name} checkpoint not found: {path}")
                 missing = True
@@ -1035,6 +1193,8 @@ def main():
                         f"{checkpoint_base_path}/{env_folder}/ensembles/icml2_ensemble_{artifact_env}_exp{exp_id}_m{i}/"
                     )
                     missing = True
+                elif is_runtime_checkpoint_lookup(member_path):
+                    continue
 
         if missing:
             print(f"Skipping exp{exp_id} due to missing files\n")
@@ -1099,6 +1259,10 @@ def main():
             }
         )
 
+    sbatch_cmd = build_sbatch_cli(
+        dependency=args.dependency, extra_args=args.sbatch_arg
+    )
+
     if args.runs_per_gpu == 1:
         for spec in job_specs:
             submit_job(
@@ -1113,6 +1277,7 @@ def main():
                 container_image=container_image,
                 repo_dir=repo_dir,
                 container_binds=container_binds,
+                sbatch_args=sbatch_cmd,
             )
     else:
         for chunk in chunk_job_specs(job_specs, args.runs_per_gpu):
@@ -1129,6 +1294,7 @@ def main():
                 container_image=container_image,
                 repo_dir=repo_dir,
                 container_binds=container_binds,
+                sbatch_args=sbatch_cmd,
             )
 
     return 0

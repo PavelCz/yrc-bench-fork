@@ -19,6 +19,7 @@ from common import (
     ROBUST_MAZE_CHECKPOINT_STEPS,
     SERVER_PATHS,
     build_chai_cache_env_block,
+    build_conda_setup_block,
     get_checkpoints,
     get_eval_env_name,
     get_robust_maze_strong_checkpoint,
@@ -127,9 +128,7 @@ def build_sbatch_command(
 
 {build_chai_cache_env_block(server)}
 
-echo "Using conda env: {conda_env}"
-eval "$(conda shell.bash hook)"
-conda activate {conda_env}
+{build_conda_setup_block(conda_env)}
 srun {slurm_args} {python_cmd}
 """
 

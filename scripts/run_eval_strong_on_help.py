@@ -20,6 +20,7 @@ from common import (
     ROBUST_MAZE_CHECKPOINT_STEPS,
     SERVER_PATHS,
     build_chai_cache_env_block,
+    build_conda_setup_block,
     find_newest_timestamp_dir,
     get_robust_maze_strong_checkpoint,
     get_strong_checkpoint,
@@ -750,8 +751,7 @@ def build_sbatch_script(
 
 {build_chai_cache_env_block(server)}
 
-eval "$(conda shell.bash hook)"
-conda activate {conda_env}
+{build_conda_setup_block(conda_env)}
 srun {slurm_args} {python_cmd}
 """
     return sbatch_script

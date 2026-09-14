@@ -1,9 +1,11 @@
 import re
+import shlex
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Sequence
 
 
 EXPECTED_TIMESTEPS = 200015872
+HEIST400_CHECKPOINT_STEPS = 400031744
 ROBUST_MAZE_CHECKPOINT_STEPS = {
     "robust200": 200015872,
     "robust400": 400031744,
@@ -24,6 +26,7 @@ CHAI_XDG_CACHE_HOME = "/nas/ttl=60d/czempin/xdg-cache"
 CHAI_CUDA_CACHE_PATH = "/nas/ttl=60d/czempin/cuda-cache"
 CHAI_CCACHE_DIR = "/nas/ttl=60d/czempin/ccache"
 CHAI_TMPDIR = "/nas/ttl=60d/czempin/tmp"
+CHAI_CONDA_BASE = "/nas/ucb/czempin/anaconda3"
 
 
 def build_chai_cache_env_block(server: str) -> str:
@@ -49,6 +52,43 @@ def build_chai_cache_env_block(server: str) -> str:
         '"$MPLCONFIGDIR" "$XDG_CACHE_HOME" '
         '"$CUDA_CACHE_PATH" "$CCACHE_DIR" "$TMPDIR"'
     )
+
+
+def build_conda_setup_block(conda_env: str, conda_base: str = CHAI_CONDA_BASE) -> str:
+    """Shell lines that activate conda even when it is not on PATH.
+
+    SLURM compute-node jobs do not source ~/.bashrc, so `conda` is often
+    missing from PATH. `scripts/train_policies.sh` already sources
+    conda.sh from this prefix; keep the other launchers on the same path.
+    """
+    return (
+        f'CONDA_BASE="${{CONDA_BASE:-{conda_base}}}"\n'
+        'if [[ -f "$CONDA_BASE/etc/profile.d/conda.sh" ]]; then\n'
+        '    source "$CONDA_BASE/etc/profile.d/conda.sh"\n'
+        "elif command -v conda >/dev/null 2>&1; then\n"
+        '    eval "$(conda shell.bash hook)"\n'
+        "else\n"
+        '    echo "conda not found (CONDA_BASE=$CONDA_BASE)" >&2\n'
+        "    exit 1\n"
+        "fi\n"
+        f'echo "Using conda env: {conda_env}"\n'
+        f"conda activate {conda_env}"
+    )
+
+
+def build_sbatch_cli(
+    *,
+    dependency: Optional[str] = None,
+    extra_args: Optional[Sequence[str]] = None,
+) -> List[str]:
+    """Build the sbatch argv, including optional afterok-style dependencies."""
+    command = ["sbatch"]
+    if dependency:
+        command.append(f"--dependency={dependency}")
+        command.append("--kill-on-invalid-dep=yes")
+    if extra_args:
+        command.extend(extra_args)
+    return command
 
 
 SERVER_PATHS = {
@@ -183,6 +223,100 @@ def find_best_model_checkpoint(ts_dir: Path) -> Optional[Path]:
         )
 
     return best_model
+
+
+def get_icml_run_dir(
+    env: str,
+    exp_id: int,
+    checkpoint_base_path: str,
+    random_percent: int,
+    *,
+    exp_prefix: str = "icml2",
+) -> Path:
+    """Return the policy run directory for an icml2-style acting-policy job."""
+    env_folder = get_env_folder(env)
+    return (
+        Path(checkpoint_base_path)
+        / env_folder
+        / f"{exp_prefix}_{env}_exp{exp_id}_{random_percent}p"
+    )
+
+
+def get_heist400_run_dir(exp_id: int, checkpoint_base_path: str) -> Path:
+    """Return the 400M Heist expert run directory.
+
+    These experts are trained with `--exp-prefix heist400 --checkpoint-base
+    .../policy/heist400`, so they sit next to the icml checkpoint tree:
+    `{policy}/heist400/heist_afh/heist400_heist_exp{id}_50p`.
+    """
+    policy_base_path = Path(checkpoint_base_path).parent
+    return (
+        policy_base_path / "heist400" / "heist_afh" / f"heist400_heist_exp{exp_id}_50p"
+    )
+
+
+def get_ensemble_run_dir(
+    env: str,
+    exp_id: int,
+    member_id: int,
+    checkpoint_base_path: str,
+) -> Path:
+    """Return the copied ensemble member directory under the eval checkpoint tree."""
+    env_folder = get_env_folder(env)
+    return (
+        Path(checkpoint_base_path)
+        / env_folder
+        / "ensembles"
+        / f"icml2_ensemble_{env}_exp{exp_id}_m{member_id}"
+    )
+
+
+def get_checkpoint_at_steps(run_dir: Path, checkpoint_steps: int) -> str:
+    """Return newest-timestamp `model_{steps}.pth`, even if the file is not there yet."""
+    timestamp_dir = find_newest_timestamp_dir(run_dir)
+    if timestamp_dir is None:
+        return str(run_dir / "NOT_FOUND")
+    return str(timestamp_dir / f"model_{checkpoint_steps}.pth")
+
+
+def get_heist400_strong_checkpoint(exp_id: int, checkpoint_base_path: str) -> str:
+    """Get the 400M Heist expert checkpoint at the standard 400M timestep."""
+    return get_checkpoint_at_steps(
+        get_heist400_run_dir(exp_id, checkpoint_base_path),
+        HEIST400_CHECKPOINT_STEPS,
+    )
+
+
+def runtime_checkpoint_lookup_cmd(
+    *,
+    checkpoint_base: str,
+    env: str,
+    exp_id: int,
+    percent: int = 0,
+    heist400: bool = False,
+    ensemble_member: Optional[int] = None,
+    extra_run_dirs: Optional[Sequence[str]] = None,
+) -> str:
+    """Shell command substitution that resolves a checkpoint when the job starts."""
+    parts = [
+        "python scripts/resolve_acting_checkpoint.py",
+        f"--checkpoint-base {shlex.quote(checkpoint_base)}",
+        f"--env {shlex.quote(env)}",
+        f"--exp-id {exp_id}",
+    ]
+    if heist400:
+        parts.append("--heist400")
+    elif ensemble_member is not None:
+        parts.append(f"--ensemble-member {ensemble_member}")
+    else:
+        parts.append(f"--percent {percent}")
+    for run_dir in extra_run_dirs or []:
+        parts.append(f"--run-dir {shlex.quote(run_dir)}")
+    return '"$(' + " ".join(parts) + ')"'
+
+
+def is_runtime_checkpoint_lookup(path: str) -> bool:
+    return path.startswith('"$(') or path.startswith("$(")
 
 
 def get_checkpoints(env: str, exp_id: int, checkpoint_base_path: str) -> dict:
