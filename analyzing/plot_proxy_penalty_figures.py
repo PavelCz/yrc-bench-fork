@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Write proxy-penalty AFHP panels, a shared legend, and AUC table .tex files."""
+"""Write proxy-penalty AFHP panels, a shared legend, and AUC table .tex files.
+
+Returns are remapped to paper scoring; see ``docs/paper_proxy_rewards.md``.
+"""
 
 from __future__ import annotations
 
@@ -98,10 +101,12 @@ LATEX_SNIPPET = r"""
         \caption{\texttt{K\&C}.}
         \label{fig:app:kandc-proxy-penalty}
     \end{subfigure}
-    \caption{Return versus ask-for-help percentage (AFHP) when proxy pursuit
-    incurs a penalty of $-5$ and the episode continues, normalized so the
-    novice is 0 and the expert is 1. Shaded bands are the interquartile range
-    across seeds. The legend applies to all three panels.}
+    \caption{Return versus ask-for-help percentage (AFHP) when the episode
+    continues after proxy pursuit, scored as in the paper: on Coinrun and Maze,
+    success after the proxy is $5$ and failure after the proxy is $0$; on
+    K\&C, return is chests opened. Normalized so the novice is 0 and the expert
+    is 1. Shaded bands are the interquartile range across seeds. The legend
+    applies to all three panels.}
     \label{fig:app:proxy-penalty}
 \end{figure}
 """.strip()

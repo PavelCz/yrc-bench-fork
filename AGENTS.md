@@ -15,7 +15,8 @@ This fork is the codebase for **"Getting by Goal Misgeneralization with a Little
 Facts that matter when working in this repo:
 - **Environments:** the paper's experiments use **`coinrun` and `maze`** (`maze_afh` at eval). `scripts/common.py:ENVS` is `["maze", "coinrun"]`. Checkpoints/configs for `heist` and other Procgen games exist in the tree but are not part of the paper's results.
 - **Metric:** the paper uses **`level_afhp`** (fraction of episodes with any help). `step_afhp` (per-timestep) is an older definition retained for backward compatibility, not the paper's metric.
-- **Two result families:** the main/recoverable benchmarks (§5.1) and the irrecoverable **"proxy-fail"** variants (§5.5, Procgen envs `coinrun_proxy_fail` / `maze_proxy_fail` / `heist_proxy_fail`), the latter being the paper's central limitation finding. Proxy-fail reuses the same trained policies — it is an eval-time environment change handled by `run_eval.py`, not separate training. `heist_proxy_fail` terminates with no reward when the novice collects every key on an OOD many-keys level.
+- **Two result families:** the main/recoverable benchmarks (§5.1) and the irrecoverable **"proxy-fail"** variants (§5.5, Procgen envs `coinrun_proxy_fail` / `maze_proxy_fail` / `heist_proxy_fail`), the latter being the paper's central limitation finding. Proxy-fail reuses the same trained policies — it is an eval-time environment change handled by `run_eval.py`, not separate training. `heist_proxy_fail` ends the episode when the novice collects every key on an OOD many-keys level; chest rewards already earned are kept (not wiped).
+- **Proxy scoring in paper figures:** eval `.npz` files store Procgen's recorded rewards (additive `-5` then continue for `*_proxy_penalty`). `analyzing/paper_proxy_rewards.py` remaps penalty recordings for plots and AUC: Coinrun/Maze proxy-then-fail is 0 not `-5`; Heist penalty undoes the `-5` so return is chests opened. Proxy-fail recordings already match the paper. See `docs/paper_proxy_rewards.md`.
 - **Maze expert:** maze main-curve results use a **robust expert trained from randomized agent-start positions** (`robust400`, 400M steps); see `scripts/common.py:get_robust_maze_strong_checkpoint` and `run_eval.py --robust400`. The non-robust maze expert appears only in the §5.3 brittleness analysis.
 - **Seeds:** results use 4 independent seeds (experiment ids 0–3), reported as average + interquartile range.
 
@@ -201,6 +202,7 @@ Reference docs live in `docs/`:
 - [level_seed_splits.md](docs/level_seed_splits.md) — how `policy_train`, `ood_train`, `validation`, and `ood_eval` seed splits flow through the pipeline.
 - [percentile_calibration.md](docs/percentile_calibration.md) — percentile→threshold calibration (support matrix, per-policy formulas, data sources).
 - [adaptive_coverage_sampling.md](docs/adaptive_coverage_sampling.md) — the AFHP coverage sampler behavior.
+- [paper_proxy_rewards.md](docs/paper_proxy_rewards.md) — paper vs recorded proxy-fail / proxy-penalty returns.
 - [bisection_boundary_bug.md](docs/bisection_boundary_bug.md), [image_svdd_collapse_bugs.md](docs/image_svdd_collapse_bugs.md) — SVDD bug write-ups.
 - [known_issues.md](docs/known_issues.md) — open issues.
 

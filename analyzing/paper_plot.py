@@ -43,6 +43,7 @@ EXPERT_REFERENCE_COLOR = "blue"
 NOVICE_REFERENCE_COLOR = "red"
 
 from analyzing.utils import extract_x_and_y_values
+from analyzing.paper_proxy_rewards import paper_episode_returns
 from analyzing.plotting_common import (
     METHOD_NAMES,
     setup_plot_style,
@@ -959,8 +960,10 @@ def _print_endpoint_baselines(
             return
         if not _validate_role(s, role, file_label):
             return
-        raw = np.asarray(s.get("raw_returns", []), dtype=float)
-        ood = np.asarray(s.get("level_ood_gt", []), dtype=bool)
+        if s.get("raw_returns") is None or s.get("level_ood_gt") is None:
+            return
+        raw = paper_episode_returns(s)
+        ood = np.asarray(s["level_ood_gt"], dtype=bool)
         if raw.size == 0 or raw.size != ood.size:
             return
         bucket["id"].extend(raw[~ood].tolist())

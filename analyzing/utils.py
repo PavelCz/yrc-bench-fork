@@ -23,6 +23,7 @@ matplotlib.use("TkAgg")
 # Add YRC to path for imports
 # sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 
+from analyzing.paper_proxy_rewards import paper_episode_returns
 from procgen import ProcgenEnv
 from YRC.envs.procgen.wrappers import (
     VecExtractDictObs,
@@ -162,7 +163,7 @@ def get_episode_level_metric(
         Array of values, one per episode (filtered if success_only=True)
     """
     if success_only:
-        raw_returns = np.array(test_summary["raw_returns"])
+        raw_returns = paper_episode_returns(test_summary)
         success_mask = raw_returns > 0
         for key in test_summary.keys():
             if key == "raw_returns":
@@ -174,7 +175,7 @@ def get_episode_level_metric(
     if key == "episode_length" or key == "episode_lengths":
         values = np.array(test_summary["episode_lengths"])
     elif key == "raw_return" or key == "raw_returns":
-        values = np.array(test_summary["raw_returns"])
+        values = paper_episode_returns(test_summary)
     elif key == "level_ood_gt":
         values = np.array(test_summary["level_ood_gt"])
     elif key == "level_ood_pred":
@@ -211,8 +212,8 @@ def _split_episode_mask(test_summary: dict, split: str) -> np.ndarray:
 
 
 def _masked_mean_return(test_summary: dict, mask: np.ndarray) -> float:
-    """Mean episode return on ``mask``, or NaN when the mask is empty."""
-    raw_returns = np.asarray(test_summary["raw_returns"], dtype=float)
+    """Mean paper episode return on ``mask``, or NaN when the mask is empty."""
+    raw_returns = paper_episode_returns(test_summary)
     if raw_returns.shape != mask.shape:
         raise ValueError(
             "raw_returns and level_ood_gt must have equal lengths, got "
@@ -295,23 +296,12 @@ def extract_from_data(data, key: str) -> np.ndarray:
             fns.append(fn_count / pos_count)
         return np.array(fns)
     elif key == "performance":
-        # Validate that stored performances match manually calculated values
-        stored_performances = data["performances"]
-        calculated_performances = []
-        for element in data["meta"]:
-            test_summary = element["summary"]["test"]
-            raw_returns = np.array(test_summary["raw_returns"])
-            calculated_performances.append(raw_returns.mean())
-        calculated_performances = np.array(calculated_performances)
-
-        # Check if they match (within floating point tolerance)
-        if not np.allclose(stored_performances, calculated_performances, rtol=1e-5):
-            print("Warning: Stored performances do not match calculated performances!")
-            print(f"  Stored: {stored_performances}")
-            print(f"  Calculated: {calculated_performances}")
-            print(f"  Difference: {stored_performances - calculated_performances}")
-
-        return data["performances"]
+        return np.array(
+            [
+                float(paper_episode_returns(element["summary"]["test"]).mean())
+                for element in data["meta"]
+            ]
+        )
     elif key in {"id_performance", "ood_performance"}:
         split = "id" if key.startswith("id_") else "ood"
         performances = []
@@ -325,7 +315,7 @@ def extract_from_data(data, key: str) -> np.ndarray:
         performances = []
         for element in data["meta"]:
             test_summary = element["summary"]["test"]
-            raw_returns = np.array(test_summary["raw_returns"])
+            raw_returns = paper_episode_returns(test_summary)
             level_ood_pred = np.array(test_summary["level_ood_pred"])
             # Filter to episodes where agent asked for help
             asked_mask = level_ood_pred == 1
@@ -339,7 +329,7 @@ def extract_from_data(data, key: str) -> np.ndarray:
         performances = []
         for element in data["meta"]:
             test_summary = element["summary"]["test"]
-            raw_returns = np.array(test_summary["raw_returns"])
+            raw_returns = paper_episode_returns(test_summary)
             level_ood_pred = np.array(test_summary["level_ood_pred"])
             # Filter to episodes where agent did not ask for help
             not_asked_mask = level_ood_pred == 0
@@ -353,7 +343,7 @@ def extract_from_data(data, key: str) -> np.ndarray:
         performances = []
         for element in data["meta"]:
             test_summary = element["summary"]["test"]
-            raw_returns = np.array(test_summary["raw_returns"])
+            raw_returns = paper_episode_returns(test_summary)
             level_ood_pred = np.array(test_summary["level_ood_pred"])
             level_ood_gt = np.array(test_summary["level_ood_gt"])
             # Filter to true positives: asked for help and level is actually OOD
@@ -368,7 +358,7 @@ def extract_from_data(data, key: str) -> np.ndarray:
         performances = []
         for element in data["meta"]:
             test_summary = element["summary"]["test"]
-            raw_returns = np.array(test_summary["raw_returns"])
+            raw_returns = paper_episode_returns(test_summary)
             level_ood_pred = np.array(test_summary["level_ood_pred"])
             level_ood_gt = np.array(test_summary["level_ood_gt"])
             # Filter to true negatives: did not ask and level is not OOD
@@ -383,7 +373,7 @@ def extract_from_data(data, key: str) -> np.ndarray:
         performances = []
         for element in data["meta"]:
             test_summary = element["summary"]["test"]
-            raw_returns = np.array(test_summary["raw_returns"])
+            raw_returns = paper_episode_returns(test_summary)
             level_ood_pred = np.array(test_summary["level_ood_pred"])
             level_ood_gt = np.array(test_summary["level_ood_gt"])
             # Filter to false negatives: did not ask but level is OOD

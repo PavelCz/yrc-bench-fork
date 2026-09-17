@@ -92,8 +92,8 @@ LATEX_SNIPPET = r"""
     \centering
     \includegraphics[width=\linewidth]{img/auc-across-settings.pdf}
     \caption{Median AUC as proxy pursuit becomes more costly, from the
-    recoverable setting through a $-5$ penalty with continuation to
-    termination. The dotted line is \textsc{Random} ($0.5$).}
+    recoverable setting through continuation after the proxy to termination.
+    The dotted line is \textsc{Random} ($0.5$).}
     \label{fig:app:auc-across-settings}
 \end{figure}
 """.strip()
