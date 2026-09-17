@@ -21,7 +21,7 @@ from analyzing.plotting_common import (
     style_plot_for_publication,
 )
 
-matplotlib.use("TkAgg")
+matplotlib.use("Agg", force=True)
 
 
 def extract_episode_lengths_by_ood_status(
@@ -265,7 +265,7 @@ def main():
         "--env",
         type=str,
         default=None,
-        choices=["coinrun", "maze", "maze_afh", "heist"],
+        choices=["coinrun", "maze", "maze_afh", "heist", "heist_afh"],
         help="Environment filter",
     )
     parser.add_argument(
