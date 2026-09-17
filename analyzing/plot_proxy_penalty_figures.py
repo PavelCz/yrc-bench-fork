@@ -104,7 +104,8 @@ LATEX_SNIPPET = r"""
     \caption{Return versus ask-for-help percentage (AFHP) when the episode
     continues after proxy pursuit, scored as in the paper: on Coinrun and Maze,
     success after the proxy is $5$ and failure after the proxy is $0$; on
-    K\&C, return is chests opened. Normalized so the novice is 0 and the expert
+    K\&C, return is chests opened minus $2$ after the all-keys trigger.
+    Normalized so the novice is 0 and the expert
     is 1. Shaded bands are the interquartile range across seeds. The legend
     applies to all three panels.}
     \label{fig:app:proxy-penalty}

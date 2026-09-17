@@ -12,6 +12,7 @@ from typing import Mapping
 import numpy as np
 
 RECORDED_PROXY_PENALTY = -5.0
+PAPER_HEIST_PROXY_PENALTY = -2.0
 
 
 def paper_episode_returns(summary: Mapping) -> np.ndarray:
@@ -19,12 +20,13 @@ def paper_episode_returns(summary: Mapping) -> np.ndarray:
 
     Recoverable and proxy-fail recordings already match the paper, so they are
     left unchanged. Proxy-penalty recordings applied an additive -5 on the
-    first OOD proxy event; this undoes that so that:
+    first OOD proxy event; this remaps that so that:
 
     * Coinrun / Maze: proxy-then-fail is 0 (not -5). Proxy-then-success is
       already 5 in the recording (-5 + 10) and is left as 5.
-    * Heist: return is chests opened, including chests after the all-keys
-      trigger. Fail still ends the episode and keeps chests already earned.
+    * Heist: recorded penalty subtracted 5; paper scoring subtracts 2 instead
+      (chests opened minus 2), including chests after the all-keys trigger.
+      Fail still ends the episode and keeps chests already earned.
     """
     recorded = np.asarray(summary["raw_returns"], dtype=float)
     ood = np.asarray(summary["level_ood_gt"], dtype=bool)
@@ -48,7 +50,7 @@ def paper_episode_returns(summary: Mapping) -> np.ndarray:
                 & keys_arr
                 & np.isclose(recorded, chests_arr + RECORDED_PROXY_PENALTY)
             )
-            paper[heist_penalty] = chests_arr[heist_penalty]
+            paper[heist_penalty] = chests_arr[heist_penalty] + PAPER_HEIST_PROXY_PENALTY
             return paper
 
     invisible = summary.get("invisible_coin_collected")

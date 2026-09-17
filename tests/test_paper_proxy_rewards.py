@@ -16,7 +16,7 @@ def test_coinrun_maze_penalty_maps_fail_after_proxy_to_zero():
     )
 
 
-def test_heist_penalty_undoes_minus_five_on_ood_all_keys():
+def test_heist_penalty_maps_recorded_minus_five_to_minus_two():
     summary = {
         "raw_returns": [3.0, -2.0, 2.0, 4.0],
         "level_ood_gt": [False, True, True, True],
@@ -25,7 +25,7 @@ def test_heist_penalty_undoes_minus_five_on_ood_all_keys():
     }
     np.testing.assert_allclose(
         paper_episode_returns(summary),
-        [3.0, 3.0, 2.0, 4.0],
+        [3.0, 1.0, 2.0, 4.0],
     )
 
 
