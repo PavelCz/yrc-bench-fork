@@ -6,13 +6,16 @@ plot_proxy_penalty_figures = importlib.import_module(
 )
 
 
-def test_proxy_penalty_script_bakes_in_coinrun_maze_and_kandc_placeholder():
+def test_proxy_penalty_script_bakes_in_coinrun_maze_and_kandc():
     panels = {panel["env"]: panel for panel in plot_proxy_penalty_figures.PANELS}
 
     assert panels["coinrun_proxy_penalty"]["prefix"] == ["proxy-penalty01"]
     assert panels["maze_proxy_penalty"]["prefix"] == ["proxy-penalty01"]
     assert panels["maze_proxy_penalty"]["robust_filter"] == "robust"
-    assert panels["heist_proxy_penalty"]["placeholder"] is True
+    assert panels["heist_proxy_penalty"]["placeholder"] is False
+    assert panels["heist_proxy_penalty"]["prefix"] == [
+        "tmlr-heist03-expert400-proxy-penalty"
+    ]
     assert panels["coinrun_proxy_penalty"]["placeholder"] is False
     assert panels["maze_proxy_penalty"]["placeholder"] is False
     assert panels["coinrun_proxy_penalty"]["auc_tex"] == (
@@ -36,12 +39,10 @@ def test_proxy_penalty_script_bakes_in_coinrun_maze_and_kandc_placeholder():
     assert r"\label{fig:app:kandc-proxy-penalty}" in (
         plot_proxy_penalty_figures.LATEX_SNIPPET
     )
-    assert "forthcoming" in plot_proxy_penalty_figures.LATEX_SNIPPET
+    assert "forthcoming" not in plot_proxy_penalty_figures.LATEX_SNIPPET
     assert r"\texttt{K\&C}" in plot_proxy_penalty_figures.LATEX_SNIPPET
     assert "proxy-penalty-legend.pdf" in plot_proxy_penalty_figures.LATEX_SNIPPET
     assert r"\input{tables/auc-kandc-proxy-penalty}" in (
         plot_proxy_penalty_figures.LATEX_TABLE_SNIPPET
     )
-    assert r"\textsc{PartialOracle} & -- \\" in (
-        plot_proxy_penalty_figures.PLACEHOLDER_AUC_TABULAR
-    )
+    assert "forthcoming" not in plot_proxy_penalty_figures.LATEX_TABLE_SNIPPET

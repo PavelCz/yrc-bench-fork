@@ -47,11 +47,11 @@ PANELS = (
     {
         "save_name": "heist-proxy-penalty-normalized.pdf",
         "auc_tex": "auc-kandc-proxy-penalty.tex",
-        "prefix": ["proxy-penalty01"],
+        "prefix": ["tmlr-heist03-expert400-proxy-penalty"],
         "env": "heist_proxy_penalty",
         "robust_filter": "all",
         "show_ylabel": False,
-        "placeholder": True,
+        "placeholder": False,
     },
 )
 
@@ -95,7 +95,7 @@ LATEX_SNIPPET = r"""
     \end{subfigure}%
     \begin{subfigure}{0.33\linewidth}
         \includegraphics[width=\linewidth]{img/heist-proxy-penalty-normalized.pdf}
-        \caption{\texttt{K\&C} (forthcoming).}
+        \caption{\texttt{K\&C}.}
         \label{fig:app:kandc-proxy-penalty}
     \end{subfigure}
     \caption{Return versus ask-for-help percentage (AFHP) when proxy pursuit
@@ -130,7 +130,7 @@ LATEX_TABLE_SNIPPET = r"""
 
     \begin{subtable}{0.48\linewidth}
         \centering
-        \caption{\kandc\ AUC results (forthcoming).}
+        \caption{\kandc\ AUC results.}
         \label{tab:auc-kandc-proxy-penalty}
         \input{tables/auc-kandc-proxy-penalty}
     \end{subtable}
@@ -185,9 +185,8 @@ def _plot_panel(eval_dir: Path, out_dir: Path, table_dir: Path, panel: dict) -> 
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Write coinrun/maze proxy-penalty AFHP panels without legends, "
-            "a two-line shared legend PDF, a K&C placeholder panel, "
-            "and standalone AUC tabular .tex files."
+            "Write coinrun/maze/heist proxy-penalty AFHP panels without legends, "
+            "a two-line shared legend PDF, and standalone AUC tabular .tex files."
         )
     )
     parser.add_argument(
