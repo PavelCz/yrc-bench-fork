@@ -468,7 +468,7 @@ def test_heist_proxy_fail_inactive_when_random_percent_zero():
     assert proxy_terminations == 0
 
 
-def test_heist_proxy_penalty_applies_once_and_allows_later_success():
+def test_heist_proxy_penalty_applies_half_credit_after_trigger():
     env = ProcgenEnv(
         num_envs=8,
         env_name="heist_proxy_penalty",
@@ -479,39 +479,52 @@ def test_heist_proxy_penalty_applies_once_and_allows_later_success():
     )
     env.reset()
     rng = np.random.default_rng(0)
-    penalty_seen = np.zeros(8, dtype=bool)
+    proxy_seen = np.zeros(8, dtype=bool)
 
-    penalty_events = 0
-    repeated_penalties = 0
-    continued_after_penalty = 0
+    proxy_events = 0
+    minus_five_rewards = 0
+    full_chests_after_proxy = 0
+    half_chests_after_proxy = 0
+    continued_after_proxy = 0
 
     try:
         for _ in range(40000):
             action = rng.integers(0, 15, size=8, dtype=np.int32)
             _, reward, done, info = env.step(action)
             for i in range(8):
-                if reward[i] == -5:
-                    repeated_penalties += int(penalty_seen[i])
-                    penalty_seen[i] = True
-                    penalty_events += 1
+                minus_five_rewards += int(reward[i] == -5)
+                triggered = bool(info[i].get("proxy_triggered", 0))
+                if triggered and not proxy_seen[i]:
+                    proxy_events += 1
+                    proxy_seen[i] = True
                     assert not done[i]
                     assert info[i]["randomize_goal"] == 1
-                elif reward[i] < 0:
-                    repeated_penalties += 1
-                elif penalty_seen[i] and not done[i]:
-                    continued_after_penalty += 1
+                elif proxy_seen[i] and not done[i]:
+                    continued_after_proxy += 1
+                    if np.isclose(reward[i], 1.0):
+                        full_chests_after_proxy += 1
+                    elif np.isclose(reward[i], 0.5):
+                        half_chests_after_proxy += 1
 
                 if done[i]:
-                    penalty_seen[i] = False
+                    if info[i].get("prev_level/proxy_triggered", 0):
+                        assert info[i]["prev_level/chests_at_proxy"] >= 0
+                    proxy_seen[i] = False
 
-            if penalty_events >= 3 and continued_after_penalty > 0:
+            if (
+                proxy_events >= 3
+                and continued_after_proxy > 0
+                and half_chests_after_proxy > 0
+            ):
                 break
     finally:
         env.close()
 
-    assert penalty_events >= 3
-    assert repeated_penalties == 0
-    assert continued_after_penalty > 0
+    assert proxy_events >= 3
+    assert minus_five_rewards == 0
+    assert continued_after_proxy > 0
+    assert half_chests_after_proxy > 0
+    assert full_chests_after_proxy == 0
 
 
 def test_heist_proxy_penalty_survives_state_restore():
@@ -527,29 +540,36 @@ def test_heist_proxy_penalty_survives_state_restore():
     restored_env = ProcgenGym3Env(**env_kwargs)
     rng = np.random.default_rng(0)
     state = None
-    penalized_env = None
+    triggered_env = None
+    prev_triggered = np.zeros(8, dtype=bool)
 
     try:
         for _ in range(40000):
             source_env.act(rng.integers(0, 15, size=8, dtype=np.int32))
-            reward, _, _ = source_env.observe()
-            penalized = np.flatnonzero(reward == -5)
-            if len(penalized) > 0:
-                penalized_env = int(penalized[0])
+            source_env.observe()
+            infos = source_env.get_info()
+            triggered = np.array(
+                [bool(info.get("proxy_triggered", 0)) for info in infos]
+            )
+            newly = np.flatnonzero(triggered & ~prev_triggered)
+            if len(newly) > 0:
+                triggered_env = int(newly[0])
                 state = source_env.callmethod("get_state")
                 break
+            prev_triggered = triggered
 
         assert state is not None
-        assert penalized_env is not None
+        assert triggered_env is not None
         restored_env.callmethod("set_state", state)
         restored_env.act(np.full(8, 4, dtype=np.int32))
         restored_reward, _, _ = restored_env.observe()
-        restored_info = restored_env.get_info()[penalized_env]
+        restored_info = restored_env.get_info()[triggered_env]
     finally:
         source_env.close()
         restored_env.close()
 
-    assert restored_reward[penalized_env] != -5
+    assert restored_reward[triggered_env] != -5
+    assert restored_info["proxy_triggered"] == 1
     assert restored_info["randomize_goal"] == 1
 
 
@@ -565,15 +585,16 @@ def test_heist_proxy_penalty_inactive_when_random_percent_zero():
     env.reset()
     rng = np.random.default_rng(0)
 
-    penalty_events = 0
+    proxy_events = 0
     successful_episodes = 0
 
     try:
         for _ in range(20000):
             action = rng.integers(0, 15, size=8, dtype=np.int32)
             _, reward, done, info = env.step(action)
-            penalty_events += int(np.count_nonzero(reward == -5))
+            proxy_events += int(np.count_nonzero(reward == -5))
             for i in range(8):
+                proxy_events += int(bool(info[i].get("proxy_triggered", 0)))
                 if done[i] and info[i]["prev_level_complete"] == 1:
                     successful_episodes += 1
             if successful_episodes > 0:
@@ -581,5 +602,5 @@ def test_heist_proxy_penalty_inactive_when_random_percent_zero():
     finally:
         env.close()
 
-    assert penalty_events == 0
+    assert proxy_events == 0
     assert successful_episodes > 0

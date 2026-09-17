@@ -46,6 +46,19 @@ def test_extract_and_append_heist_episode_data():
     assert episode_data == {key: [value] for key, value in extracted.items()}
 
 
+def test_extract_heist_episode_data_includes_optional_proxy_fields():
+    extracted = extract_heist_episode_data(
+        terminal_info(
+            **{
+                "prev_level/proxy_triggered": 1,
+                "prev_level/chests_at_proxy": 2,
+            }
+        )
+    )
+    assert extracted["proxy_triggered"] == 1
+    assert extracted["chests_at_proxy"] == 2
+
+
 def test_extract_heist_episode_data_reports_all_missing_fields():
     with pytest.raises(KeyError, match="prev_level/chests_opened") as exc_info:
         extract_heist_episode_data({"prev_level/keys_collected": 1})

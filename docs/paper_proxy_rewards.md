@@ -34,12 +34,13 @@ every key is the proxy.
 step pays `0`, but chest rewards already earned are **kept**. This is not a
 wipe: opening chests was the intended objective.
 
-**Penalty (paper ≠ recording):** the episode continues, so later chests still
-count. Recorded penalty subtracted `5` from the return (`chests - 5`, which
-can be negative). Analysis replaces that with `-2`, so the paper return is
-`chests - 2` when the all-keys trigger fired, including chests after the
-trigger.
+**Penalty (new evals):** the environment continues after the all-keys trigger.
+Chests opened before the trigger still pay `+1`; chests after it pay `+0.5`.
+There is no additive `-5`. Eval `.npz` files from this env already store that
+return, plus `chests_at_proxy` / `proxy_triggered` when present.
+`paper_episode_returns` leaves those recordings unchanged.
 
-This is a stopgap until evals record `0.5` per chest after the trigger.
-Until then, penalty is a milder fail than the recorded `-5`, but it still
-applies a constant hit instead of half credit on post-proxy chests.
+**Penalty (old evals, paper ≠ recording):** recorded penalty subtracted `5`
+(`chests - 5`). Analysis replaces that with `-2` (`chests - 2`) until those
+runs are replaced. Do not treat `raw_returns` in those penalty `.npz` files as
+a paper number.

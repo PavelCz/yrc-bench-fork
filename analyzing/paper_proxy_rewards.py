@@ -45,6 +45,8 @@ def paper_episode_returns(summary: Mapping) -> np.ndarray:
         chests_arr = np.asarray(chests, dtype=float)
         keys_arr = np.asarray(all_keys, dtype=bool)
         if chests_arr.shape == paper.shape and keys_arr.shape == paper.shape:
+            if summary.get("chests_at_proxy") is not None:
+                return paper
             heist_penalty = (
                 ood
                 & keys_arr

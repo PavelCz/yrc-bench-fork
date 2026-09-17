@@ -29,6 +29,17 @@ def test_heist_penalty_maps_recorded_minus_five_to_minus_two():
     )
 
 
+def test_heist_penalty_with_chests_at_proxy_keeps_recorded_returns():
+    summary = {
+        "raw_returns": [3.0, 2.5],
+        "level_ood_gt": [False, True],
+        "chests_opened": [3, 3],
+        "all_keys_triggered": [True, True],
+        "chests_at_proxy": [3, 2],
+    }
+    np.testing.assert_allclose(paper_episode_returns(summary), [3.0, 2.5])
+
+
 def test_heist_fail_recording_is_unchanged():
     summary = {
         "raw_returns": [3.0, 2.0],

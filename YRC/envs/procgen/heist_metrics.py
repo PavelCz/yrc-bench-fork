@@ -25,6 +25,11 @@ HEIST_TERMINAL_INFO_FIELDS = {
 }
 
 HEIST_RAW_FIELDS = tuple(HEIST_TERMINAL_INFO_FIELDS)
+HEIST_OPTIONAL_TERMINAL_INFO_FIELDS = {
+    "proxy_triggered": "prev_level/proxy_triggered",
+    "chests_at_proxy": "prev_level/chests_at_proxy",
+}
+HEIST_OPTIONAL_RAW_FIELDS = tuple(HEIST_OPTIONAL_TERMINAL_INFO_FIELDS)
 
 
 def new_heist_episode_data() -> Dict[str, List[Any]]:
@@ -56,6 +61,9 @@ def extract_heist_episode_data(info: Mapping[str, Any]) -> Dict[str, Any]:
         else int(info[info_field])
         for field, info_field in HEIST_TERMINAL_INFO_FIELDS.items()
     }
+    for field, info_field in HEIST_OPTIONAL_TERMINAL_INFO_FIELDS.items():
+        if info_field in info:
+            extracted[field] = int(info[info_field])
     return extracted
 
 
@@ -66,6 +74,9 @@ def append_heist_episode_data(
     extracted = extract_heist_episode_data(info)
     for field in HEIST_RAW_FIELDS:
         episode_data[field].append(extracted[field])
+    for field in HEIST_OPTIONAL_RAW_FIELDS:
+        if field in extracted:
+            episode_data.setdefault(field, []).append(extracted[field])
 
 
 def summarize_values(values: Sequence[float]) -> Dict[str, Optional[float]]:
@@ -172,6 +183,9 @@ class HeistMetricSummary:
         result: Dict[str, Any] = {
             field: list(self.episode_data[field]) for field in HEIST_RAW_FIELDS
         }
+        for field in HEIST_OPTIONAL_RAW_FIELDS:
+            if field in self.episode_data:
+                result[field] = list(self.episode_data[field])
         result.update(
             {
                 "oracle_regret": list(self.oracle_regret),
@@ -227,6 +241,15 @@ def build_heist_metric_summary(
     for field in HEIST_RAW_FIELDS:
         if field not in episode_data:
             raise KeyError(f"Heist episode data is missing required field: {field}")
+        normalized_data[field] = list(episode_data[field])
+        if len(normalized_data[field]) != num_episodes:
+            raise ValueError(
+                f"Heist episode field {field} has {len(normalized_data[field])} "
+                f"values for {num_episodes} returns"
+            )
+    for field in HEIST_OPTIONAL_RAW_FIELDS:
+        if field not in episode_data:
+            continue
         normalized_data[field] = list(episode_data[field])
         if len(normalized_data[field]) != num_episodes:
             raise ValueError(
