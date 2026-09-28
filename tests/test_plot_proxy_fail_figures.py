@@ -40,6 +40,9 @@ def test_proxy_fail_script_bakes_in_coinrun_maze_and_kandc():
         plot_proxy_fail_figures.LATEX_SNIPPET
     )
     assert "forthcoming" not in plot_proxy_fail_figures.LATEX_SNIPPET
-    assert r"\input{tables/auc-kandc-proxy-fail}" in (
+    assert plot_proxy_fail_figures.COMBINED_AUC_TEX == "auc-proxy-fail.tex"
+    assert r"\begin{subtable}" not in plot_proxy_fail_figures.LATEX_TABLE_SNIPPET
+    assert r"\input{tables/auc-proxy-fail}" in (
         plot_proxy_fail_figures.LATEX_TABLE_SNIPPET
     )
+    assert "median [IQR]" in plot_proxy_fail_figures.LATEX_TABLE_SNIPPET

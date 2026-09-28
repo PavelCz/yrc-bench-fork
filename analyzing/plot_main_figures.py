@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write the three main AFHP panels, a shared legend, and AUC table .tex files."""
+"""Write the three main AFHP panels, a shared legend, and AUC tables."""
 
 from __future__ import annotations
 
@@ -12,7 +12,12 @@ matplotlib.use("Agg", force=True)
 
 import matplotlib.pyplot as plt
 
-from analyzing.paper_plot import plot_icml_results, save_shared_legend
+from analyzing.paper_plot import (
+    AUC_ENV_COLUMN_HEADERS,
+    plot_icml_results,
+    save_shared_legend,
+    write_auc_env_columns_table,
+)
 
 matplotlib.use("Agg", force=True)
 
@@ -61,6 +66,7 @@ PANELS = (
     },
 )
 
+COMBINED_AUC_TEX = "auc-results.tex"
 SHARED_METHOD_FILTER = ["ensemble", "wait"]
 PANEL_FIGSIZE = (8, 5.5)
 # Large enough that 0.33\linewidth inclusion still reads as paper-size text.
@@ -96,36 +102,12 @@ LATEX_SNIPPET = r"""
 """.strip()
 
 LATEX_TABLE_SNIPPET = r"""
-\begin{wraptable}{r}{0.48\linewidth}
+\begin{table}[t]
     \centering
-    \caption{Area Under the Curve (AUC) for Average Return across Ask-For-Help Percentage (AFHP).
-    IQR shows 25th--75th percentile range among four independent seeds.}
+    \caption{Area under the return--AFHP curve. Cells are median [IQR] across four seeds.}
     \label{tab:auc_results}
-    \begin{subtable}{\linewidth}
-        \centering
-        \caption{\coin\ AUC results.}
-        \label{tab:auc_coinrun}
-        \input{tables/auc-coinrun}
-    \end{subtable}
-
-    \vspace{0.6em}
-
-    \begin{subtable}{\linewidth}
-        \centering
-        \caption{\maze\ AUC results.}
-        \label{tab:auc_maze}
-        \input{tables/auc-maze}
-    \end{subtable}
-
-    \vspace{0.6em}
-
-    \begin{subtable}{\linewidth}
-        \centering
-        \caption{\kandc\ AUC results.}
-        \label{tab:auc_kandc}
-        \input{tables/auc-kandc}
-    \end{subtable}
-\end{wraptable}
+    \input{tables/auc-results}
+\end{table}
 """.strip()
 
 
@@ -158,7 +140,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Write coinrun/maze/heist main AFHP panels without legends, "
-            "a two-line shared legend PDF, and standalone AUC tabular .tex files."
+            "a two-line shared legend PDF, per-env AUC tabulars, and one "
+            "combined Method × environment AUC table."
         )
     )
     parser.add_argument(
@@ -199,6 +182,14 @@ def main() -> int:
 
     for panel in PANELS:
         _plot_panel(eval_dir, out_dir, table_dir, panel)
+
+    write_auc_env_columns_table(
+        table_dir / COMBINED_AUC_TEX,
+        [
+            (header, table_dir / panel["auc_tex"])
+            for header, panel in zip(AUC_ENV_COLUMN_HEADERS, PANELS)
+        ],
+    )
 
     save_shared_legend(str(out_dir / LEGEND_NAME), paper_mode=True)
 

@@ -40,7 +40,9 @@ def test_main_figure_script_bakes_in_the_three_paper_campaigns():
     assert r"\textsc{Keys\&Chests}" not in plot_main_figures.LATEX_SNIPPET
     assert r"\texttt{Heist}" not in plot_main_figures.LATEX_SNIPPET
     assert "main-legend.pdf" in plot_main_figures.LATEX_SNIPPET
-    assert r"\begin{wraptable}" in plot_main_figures.LATEX_TABLE_SNIPPET
-    assert r"\input{tables/auc-kandc}" in plot_main_figures.LATEX_TABLE_SNIPPET
-    assert r"\label{tab:auc_kandc}" in plot_main_figures.LATEX_TABLE_SNIPPET
-    assert r"\kandc" in plot_main_figures.LATEX_TABLE_SNIPPET
+    assert plot_main_figures.COMBINED_AUC_TEX == "auc-results.tex"
+    assert r"\begin{wraptable}" not in plot_main_figures.LATEX_TABLE_SNIPPET
+    assert r"\begin{subtable}" not in plot_main_figures.LATEX_TABLE_SNIPPET
+    assert r"\input{tables/auc-results}" in plot_main_figures.LATEX_TABLE_SNIPPET
+    assert r"\label{tab:auc_results}" in plot_main_figures.LATEX_TABLE_SNIPPET
+    assert "median [IQR]" in plot_main_figures.LATEX_TABLE_SNIPPET

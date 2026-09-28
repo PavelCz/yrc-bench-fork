@@ -21,7 +21,7 @@ import re
 import textwrap
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 # Width at which titles get wrapped onto multiple lines. ~80 characters fits
 # the default 8" figure width at the default title font size.
@@ -1248,6 +1248,114 @@ def _render_auc_tabular(prepared: dict) -> str:
 
     lines.extend(["\\bottomrule", "\\end{tabular}"])
     return "\n".join(lines) + "\n"
+
+
+AUC_ENV_COLUMN_HEADERS: Tuple[str, ...] = (r"\coin", r"\maze", r"\kandc")
+
+_AUC_TABULAR_ROW_RE = re.compile(
+    r"^(?:\\textbf\{)?\\textsc\{(?P<name>[^}]+)\}(?:\})?"
+    r"\s*&\s*(?P<value>(?:\\textbf\{)?(?:--|[0-9]+\.[0-9]+"
+    r"(?: \[[0-9.]+, [0-9.]+\])?)(?:\})?)"
+    r"(?:\s*&.*?)?\s*\\\\"
+)
+
+
+def parse_auc_tabular_rows(tex: str) -> Tuple[List[Tuple[str, str, bool]], int]:
+    """Parse Method / AUC rows from a per-env booktabs tabular.
+
+    Returns ``(rows, separator_after_idx)`` where each row is
+    ``(textsc name, value cell, method name was bold)`` and
+    ``separator_after_idx`` is the last method index before ``\\cmidrule``,
+    or ``-1`` if the table has no rule.
+    """
+    rows: List[Tuple[str, str, bool]] = []
+    separator_after_idx = -1
+    for raw_line in tex.splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith(r"\cmidrule"):
+            separator_after_idx = len(rows) - 1
+            continue
+        match = _AUC_TABULAR_ROW_RE.match(stripped)
+        if match is None:
+            continue
+        name_bold = stripped.startswith(r"\textbf{")
+        rows.append((match.group("name"), match.group("value"), name_bold))
+    return rows, separator_after_idx
+
+
+JOINT_AUC_METHOD_ORDER = (
+    "Heuristic",
+    "LatentSVDD",
+    "Ensemble",
+    "MaxProb",
+    "MaxLogit",
+    "ImageSVDD",
+)
+
+
+def format_auc_env_columns_tabular(
+    columns: Sequence[Tuple[str, str]],
+) -> str:
+    """Merge per-env AUC tabulars into one Method column plus env columns.
+
+    Each ``columns`` entry is ``(header, tabular_tex)``. Winning cells stay
+    bold per environment; method names are never bold. PartialOracle stays
+    first, then ``JOINT_AUC_METHOD_ORDER``, then any leftover methods.
+    Missing methods render as ``--``.
+    """
+    parsed: List[Tuple[str, Dict[str, str], List[str]]] = []
+    for header, tex in columns:
+        rows, _separator_after_idx = parse_auc_tabular_rows(tex)
+        by_name = {name: value for name, value, _name_bold in rows}
+        order = [name for name, _, _ in rows]
+        parsed.append((header, by_name, order))
+
+    seen = set()
+    first_seen: List[str] = []
+    for _, _, order in parsed:
+        for name in order:
+            if name not in seen:
+                seen.add(name)
+                first_seen.append(name)
+
+    po_names = [name for name in first_seen if name == "PartialOracle"]
+    non_po = [name for name in first_seen if name not in po_names]
+    ordered_non_po = [name for name in JOINT_AUC_METHOD_ORDER if name in seen]
+    leftover = [name for name in non_po if name not in JOINT_AUC_METHOD_ORDER]
+    method_order = po_names + ordered_non_po + leftover
+    separator_after_idx = len(po_names) - 1 if po_names else -1
+
+    n_cols = 1 + len(parsed)
+    colspec = "l" + ("c" * len(parsed))
+    header_cells = " & ".join(header for header, _, _ in parsed)
+    lines = [
+        f"\\begin{{tabular}}{{{colspec}}}",
+        "\\toprule",
+        f"Method & {header_cells} \\\\",
+        "\\midrule",
+    ]
+    for i, name in enumerate(method_order):
+        display_name = f"\\textsc{{{name}}}"
+        cells = [by_name.get(name, "--") for _, by_name, _ in parsed]
+        lines.append(f"{display_name} & " + " & ".join(cells) + " \\\\")
+        if i == separator_after_idx and i < len(method_order) - 1:
+            lines.append(f"\\cmidrule(lr){{1-{n_cols}}}")
+    lines.extend(["\\bottomrule", "\\end{tabular}"])
+    return "\n".join(lines) + "\n"
+
+
+def write_auc_env_columns_table(
+    path: Path,
+    columns: Sequence[Tuple[str, Path]],
+) -> str:
+    """Write a combined Method × environment AUC tabular from per-env files."""
+    formatted = format_auc_env_columns_tabular(
+        [(header, src.read_text()) for header, src in columns]
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(formatted)
+    print(f"Wrote combined AUC table to {path}")
+    return formatted
 
 
 def print_auc_latex_table(

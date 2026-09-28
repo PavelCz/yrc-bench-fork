@@ -177,3 +177,122 @@ def test_format_auc_tabular_does_not_bold_partial_oracle_when_heuristic_wins():
     assert "\\cmidrule(lr){1-2}" in tex
     assert "\\textbf{\\textsc{PartialOracle}}" not in tex
     assert "\\textbf{\\textsc{Heuristic}} & \\textbf{0.787 [0.781, 0.791]} \\\\" in tex
+
+
+def test_format_auc_env_columns_tabular_merges_three_envs():
+    coin = paper_plot.format_auc_tabular(
+        {
+            "oracle-lb-random": _auc_triplet(0.747, 0.731, 0.769),
+            "ts-random": _auc_triplet(0.710, 0.688, 0.736),
+            "ensemble-single": _auc_triplet(0.498, 0.478, 0.521),
+            "max-prob": _auc_triplet(0.622, 0.606, 0.645),
+            "max-logit": _auc_triplet(0.548, 0.498, 0.601),
+            "svdd-image": _auc_triplet(0.536, 0.506, 0.578),
+            "svdd-latent": _auc_triplet(0.523, 0.455, 0.588),
+        },
+        normalize_by_range=False,
+    )
+    maze = paper_plot.format_auc_tabular(
+        {
+            "oracle-lb-random": _auc_triplet(0.742, 0.737, 0.746),
+            "ts-random": _auc_triplet(0.785, 0.780, 0.790),
+            "ensemble-single": _auc_triplet(0.734, 0.725, 0.743),
+            "max-prob": _auc_triplet(0.626, 0.606, 0.637),
+            "max-logit": _auc_triplet(0.678, 0.657, 0.698),
+            "svdd-image": _auc_triplet(0.531, 0.519, 0.544),
+            "svdd-latent": _auc_triplet(0.564, 0.557, 0.574),
+        },
+        normalize_by_range=False,
+    )
+    kandc = paper_plot.format_auc_tabular(
+        {
+            "oracle-lb-random": _auc_triplet(0.759, 0.618, 0.821),
+            "ts-random": _auc_triplet(0.858, 0.732, 0.921),
+            "ensemble-single": _auc_triplet(0.819, 0.700, 0.866),
+            "max-prob": _auc_triplet(0.497, 0.327, 0.541),
+            "max-logit": _auc_triplet(0.221, 0.025, 0.282),
+            "svdd-image": _auc_triplet(0.586, 0.420, 0.652),
+            "svdd-latent": _auc_triplet(0.869, 0.734, 0.947),
+        },
+        normalize_by_range=False,
+    )
+
+    tex = paper_plot.format_auc_env_columns_tabular(
+        [
+            (r"\coin", coin),
+            (r"\maze", maze),
+            (r"\kandc", kandc),
+        ]
+    )
+
+    assert tex == (
+        "\\begin{tabular}{lccc}\n"
+        "\\toprule\n"
+        "Method & \\coin & \\maze & \\kandc \\\\\n"
+        "\\midrule\n"
+        "\\textsc{PartialOracle} & "
+        "\\textbf{0.747 [0.731, 0.769]} & "
+        "0.742 [0.737, 0.746] & "
+        "0.759 [0.618, 0.821] \\\\\n"
+        "\\cmidrule(lr){1-4}\n"
+        "\\textsc{Heuristic} & "
+        "\\textbf{0.710 [0.688, 0.736]} & "
+        "\\textbf{0.785 [0.780, 0.790]} & "
+        "0.858 [0.732, 0.921] \\\\\n"
+        "\\textsc{LatentSVDD} & "
+        "0.523 [0.455, 0.588] & "
+        "0.564 [0.557, 0.574] & "
+        "\\textbf{0.869 [0.734, 0.947]} \\\\\n"
+        "\\textsc{Ensemble} & "
+        "0.498 [0.478, 0.521] & "
+        "0.734 [0.725, 0.743] & "
+        "0.819 [0.700, 0.866] \\\\\n"
+        "\\textsc{MaxProb} & "
+        "0.622 [0.606, 0.645] & "
+        "0.626 [0.606, 0.637] & "
+        "0.497 [0.327, 0.541] \\\\\n"
+        "\\textsc{MaxLogit} & "
+        "0.548 [0.498, 0.601] & "
+        "0.678 [0.657, 0.698] & "
+        "0.221 [0.025, 0.282] \\\\\n"
+        "\\textsc{ImageSVDD} & "
+        "0.536 [0.506, 0.578] & "
+        "0.531 [0.519, 0.544] & "
+        "0.586 [0.420, 0.652] \\\\\n"
+        "\\bottomrule\n"
+        "\\end{tabular}\n"
+    )
+    assert "\\textbf{\\textsc{" not in tex
+
+
+def test_format_auc_env_columns_tabular_fills_missing_methods():
+    coin = (
+        "\\begin{tabular}{ll}\n"
+        "\\toprule\n"
+        "Method & AUC (Median [IQR]) \\\\\n"
+        "\\midrule\n"
+        "\\textsc{PartialOracle} & 0.747 [0.731, 0.769] \\\\\n"
+        "\\cmidrule(lr){1-2}\n"
+        "\\textbf{\\textsc{Heuristic}} & \\textbf{0.710 [0.688, 0.736]} \\\\\n"
+        "\\bottomrule\n"
+        "\\end{tabular}\n"
+    )
+    maze = (
+        "\\begin{tabular}{ll}\n"
+        "\\toprule\n"
+        "Method & AUC (Median [IQR]) \\\\\n"
+        "\\midrule\n"
+        "\\textsc{PartialOracle} & 0.742 [0.737, 0.746] \\\\\n"
+        "\\cmidrule(lr){1-2}\n"
+        "\\textsc{Ensemble} & 0.734 [0.725, 0.743] \\\\\n"
+        "\\bottomrule\n"
+        "\\end{tabular}\n"
+    )
+    tex = paper_plot.format_auc_env_columns_tabular(
+        [(r"\coin", coin), (r"\maze", maze)]
+    )
+    assert "\\begin{tabular}{lcc}" in tex
+    assert "\\cmidrule(lr){1-3}" in tex
+    assert "\\textbf{\\textsc{" not in tex
+    assert ("\\textsc{Heuristic} & \\textbf{0.710 [0.688, 0.736]} & -- \\\\") in tex
+    assert "\\textsc{Ensemble} & -- & 0.734 [0.725, 0.743] \\\\" in tex

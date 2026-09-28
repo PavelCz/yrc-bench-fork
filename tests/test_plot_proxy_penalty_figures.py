@@ -42,7 +42,10 @@ def test_proxy_penalty_script_bakes_in_coinrun_maze_and_kandc():
     assert "forthcoming" not in plot_proxy_penalty_figures.LATEX_SNIPPET
     assert r"\texttt{K\&C}" in plot_proxy_penalty_figures.LATEX_SNIPPET
     assert "proxy-penalty-legend.pdf" in plot_proxy_penalty_figures.LATEX_SNIPPET
-    assert r"\input{tables/auc-kandc-proxy-penalty}" in (
+    assert plot_proxy_penalty_figures.COMBINED_AUC_TEX == "auc-proxy-penalty.tex"
+    assert r"\begin{subtable}" not in plot_proxy_penalty_figures.LATEX_TABLE_SNIPPET
+    assert r"\input{tables/auc-proxy-penalty}" in (
         plot_proxy_penalty_figures.LATEX_TABLE_SNIPPET
     )
+    assert "median [IQR]" in plot_proxy_penalty_figures.LATEX_TABLE_SNIPPET
     assert "forthcoming" not in plot_proxy_penalty_figures.LATEX_TABLE_SNIPPET

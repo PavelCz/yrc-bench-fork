@@ -12,7 +12,12 @@ matplotlib.use("Agg", force=True)
 
 import matplotlib.pyplot as plt
 
-from analyzing.paper_plot import plot_icml_results, save_shared_legend
+from analyzing.paper_plot import (
+    AUC_ENV_COLUMN_HEADERS,
+    plot_icml_results,
+    save_shared_legend,
+    write_auc_env_columns_table,
+)
 
 matplotlib.use("Agg", force=True)
 
@@ -65,6 +70,7 @@ PANELS = (
     },
 )
 
+COMBINED_AUC_TEX = "auc-proxy-fail.tex"
 SHARED_METHOD_FILTER = ["ensemble", "wait"]
 PANEL_FIGSIZE = (8, 5.5)
 PANEL_AXIS_LABEL_SIZE = 28
@@ -119,31 +125,10 @@ LATEX_SNIPPET = r"""
 LATEX_TABLE_SNIPPET = r"""
 \begin{table}[t]
     \centering
-    \caption{Area Under the Curve (AUC) for Average Return across Ask-For-Help Percentage (AFHP) when proxy goals cause failure.
-    IQR shows 25th--75th percentile range among four independent seeds.}
+    \caption{Area under the return--AFHP curve when proxy goals cause failure.
+    Cells are median [IQR] across four seeds.}
     \label{tab:auc-proxy-fail}
-    \begin{subtable}{0.48\linewidth}
-        \centering
-        \caption{\coin\ AUC results.}
-        \label{tab:auc-coinrun-proxy-fail}
-        \input{tables/auc-coinrun-proxy-fail}
-    \end{subtable}
-    \hfill
-    \begin{subtable}{0.48\linewidth}
-        \centering
-        \caption{\maze\ AUC results.}
-        \label{tab:auc-maze-proxy-fail}
-        \input{tables/auc-maze-proxy-fail}
-    \end{subtable}
-
-    \vspace{0.8em}
-
-    \begin{subtable}{0.48\linewidth}
-        \centering
-        \caption{\kandc\ AUC results.}
-        \label{tab:auc-kandc-proxy-fail}
-        \input{tables/auc-kandc-proxy-fail}
-    \end{subtable}
+    \input{tables/auc-proxy-fail}
 \end{table}
 """.strip()
 
@@ -196,7 +181,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Write coinrun/maze/heist proxy-fail AFHP panels without legends, "
-            "a two-line shared legend PDF, and standalone AUC tabular .tex files."
+            "a two-line shared legend PDF, per-env AUC tabulars, and one "
+            "combined Method × environment AUC table."
         )
     )
     parser.add_argument(
@@ -237,6 +223,14 @@ def main() -> int:
 
     for panel in PANELS:
         _plot_panel(eval_dir, out_dir, table_dir, panel)
+
+    write_auc_env_columns_table(
+        table_dir / COMBINED_AUC_TEX,
+        [
+            (header, table_dir / panel["auc_tex"])
+            for header, panel in zip(AUC_ENV_COLUMN_HEADERS, PANELS)
+        ],
+    )
 
     save_shared_legend(str(out_dir / LEGEND_NAME), paper_mode=True)
 
