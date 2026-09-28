@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -443,6 +444,98 @@ def test_run_gather_rollouts_allows_level_seed_file_override():
     )
 
     assert level_seeds_file == Path("/extra/seeds/0.json")
+
+
+def _write_seed_file(path: Path, splits: dict) -> Path:
+    path.write_text(json.dumps({"seeds": splits}))
+    return path
+
+
+def test_gather_rejects_paper_seed_file(tmp_path):
+    scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+    sys.path.insert(0, str(scripts_dir))
+    try:
+        import run_gather_rollouts
+    finally:
+        sys.path.pop(0)
+
+    paper = _write_seed_file(
+        tmp_path / "6.json",
+        {
+            "policy_train": [0],
+            "ood_train": list(range(256)),
+            "validation": [1],
+            "ood_eval": [2],
+        },
+    )
+
+    with pytest.raises(ValueError, match="paper/eval"):
+        run_gather_rollouts.validate_gather_seed_file(paper, 1024)
+
+
+def test_gather_accepts_ood_train_only_seed_file(tmp_path):
+    scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+    sys.path.insert(0, str(scripts_dir))
+    try:
+        import run_gather_rollouts
+    finally:
+        sys.path.pop(0)
+
+    extra = _write_seed_file(
+        tmp_path / "6.json",
+        {
+            "policy_train": [],
+            "ood_train": list(range(1024)),
+            "validation": [],
+            "ood_eval": [],
+        },
+    )
+
+    run_gather_rollouts.validate_gather_seed_file(extra, 1024)
+
+
+def test_gather_rejects_ood_train_file_that_is_too_small(tmp_path):
+    scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+    sys.path.insert(0, str(scripts_dir))
+    try:
+        import run_gather_rollouts
+    finally:
+        sys.path.pop(0)
+
+    extra = _write_seed_file(
+        tmp_path / "6.json",
+        {"ood_train": list(range(256))},
+    )
+
+    with pytest.raises(ValueError, match="256"):
+        run_gather_rollouts.validate_gather_seed_file(extra, 1024)
+
+
+def test_svdd_train_rejects_ood_train_only_seed_file(tmp_path):
+    scripts_dir = Path(__file__).resolve().parents[1] / "scripts"
+    sys.path.insert(0, str(scripts_dir))
+    try:
+        import run_svdd_train
+    finally:
+        sys.path.pop(0)
+
+    extra = _write_seed_file(
+        tmp_path / "6.json",
+        {"ood_train": list(range(1024))},
+    )
+    paper = _write_seed_file(
+        tmp_path / "0.json",
+        {
+            "policy_train": [0],
+            "ood_train": list(range(256)),
+            "validation": list(range(1024)),
+            "ood_eval": list(range(8)),
+        },
+    )
+
+    with pytest.raises(ValueError, match="paper/eval"):
+        run_svdd_train.validate_svdd_train_seed_file(extra)
+    run_svdd_train.validate_svdd_train_seed_file(paper)
 
 
 def test_ood_algorithm_stacks_rollouts_without_full_config_coord_policy():

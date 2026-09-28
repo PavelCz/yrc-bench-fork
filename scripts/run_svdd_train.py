@@ -31,6 +31,23 @@ from common import (
 )
 
 
+def validate_svdd_train_seed_file(level_seeds_file: Path) -> None:
+    """Require the paper/eval seed file, which holds the validation split.
+
+    seeds/neurips_extra_ood_train_1024/ is OOD-train-only and is the gather
+    input, not this file.
+    """
+    from run_gather_rollouts import seed_split_lengths
+
+    lengths = seed_split_lengths(level_seeds_file)
+    if lengths.get("validation", 0) <= 0 or lengths.get("ood_eval", 0) <= 0:
+        raise ValueError(
+            f"{level_seeds_file} is not a paper/eval seed file. SVDD training "
+            "reads the validation split from seeds/icml/<exp_id>.json. "
+            "OOD-train-only files are for gather_rollouts, not for this script."
+        )
+
+
 def _get_wandb_api_key() -> Optional[str]:
     """Look up the wandb API key on the submitter side.
 
@@ -438,6 +455,9 @@ def main():
             rollout_dir = get_rollout_dir(
                 args.env, exp_id, rollouts_base_path, rollouts_prefix
             )
+        # Paper/eval seed file. Its validation split is for the SVDD
+        # validation curve. Training rollouts come from the gather dir, which
+        # must be the OOD-train-only 1024-seed set.
         level_seeds_file = Path(seeds_base_path) / f"{exp_id}.json"
 
         # Get seed for this experiment ID
@@ -477,6 +497,12 @@ def main():
                 f"Warning: exp{exp_id} level seeds file not found: {level_seeds_file}"
             )
             missing = True
+        elif args.svdd_val_levels:
+            try:
+                validate_svdd_train_seed_file(level_seeds_file)
+            except ValueError as exc:
+                print(f"Error: {exc}")
+                return 1
 
         if missing:
             print(f"Skipping exp{exp_id} due to missing files\n")

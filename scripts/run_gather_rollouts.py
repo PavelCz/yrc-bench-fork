@@ -11,6 +11,7 @@ training needs a memmap conversion first:
 See docs/level_seed_splits.md.
 """
 
+import json
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -101,6 +102,49 @@ def get_level_seeds_file(
     if level_seeds_file is not None:
         return level_seeds_file
     return Path(seeds_base_path) / f"{exp_id}.json"
+
+
+def seed_split_lengths(level_seeds_file: Path) -> dict:
+    """Return the length of each list split in a level-seed JSON file."""
+    with level_seeds_file.open() as handle:
+        seeds_data = json.load(handle)
+    seeds = seeds_data.get("seeds", {})
+    return {
+        name: len(values) for name, values in seeds.items() if isinstance(values, list)
+    }
+
+
+def validate_gather_seed_file(
+    level_seeds_file: Path, requested_levels: Optional[int]
+) -> None:
+    """Reject paper/eval seed files and files with too few ood_train seeds.
+
+    SVDD gathers use an OOD-train-only file (neurips_extra_ood_train_1024).
+    The icml paper files also have an ood_train split, but it is 256 seeds
+    and those files are for policy training and AFHP eval.
+    """
+    lengths = seed_split_lengths(level_seeds_file)
+    paper_splits = [
+        name
+        for name in ("policy_train", "validation", "ood_eval")
+        if lengths.get(name, 0) > 0
+    ]
+    if paper_splits:
+        joined = ", ".join(paper_splits)
+        raise ValueError(
+            f"{level_seeds_file} is a paper/eval seed file (non-empty {joined}). "
+            "SVDD rollout gathers must use an OOD-train-only file such as "
+            "seeds/neurips_extra_ood_train_1024/<exp_id>.json."
+        )
+
+    ood_train = lengths.get("ood_train", 0)
+    if ood_train <= 0:
+        raise ValueError(f"{level_seeds_file} has no ood_train seeds.")
+    if requested_levels is not None and requested_levels > ood_train:
+        raise ValueError(
+            f"{level_seeds_file} has {ood_train} ood_train seeds, fewer than "
+            f"the requested {requested_levels}."
+        )
 
 
 def build_sbatch_command(job_name: str, gather_args: dict) -> str:
@@ -227,9 +271,9 @@ def main():
         type=Path,
         default=None,
         help=(
-            "Override the directory containing {exp_id}.json level seed files. "
-            "Defaults to the selected server's neurips_extra_ood_train_1024 "
-            "seed directory."
+            "Override the directory containing {exp_id}.json OOD-train-only "
+            "seed files. Defaults to neurips_extra_ood_train_1024. Do not "
+            "point this at the icml paper/eval seed directory."
         ),
     )
     parser.add_argument(
@@ -409,6 +453,16 @@ def main():
                 f"Warning: exp{exp_id} level seeds file not found: {level_seeds_file}"
             )
             missing = True
+        else:
+            required_levels = [
+                count for count in requested_rollout_levels if count is not None
+            ]
+            requested_levels = max(required_levels) if required_levels else None
+            try:
+                validate_gather_seed_file(level_seeds_file, requested_levels)
+            except ValueError as exc:
+                print(f"Error: {exc}")
+                return 1
 
         if missing:
             print(f"Skipping exp{exp_id} due to missing files\n")
