@@ -1,5 +1,6 @@
 import re
 import shlex
+import sys
 from pathlib import Path
 from typing import List, Optional, Sequence
 
@@ -186,9 +187,12 @@ def find_newest_timestamp_dir(
         return None
 
     if len(timestamp_dirs) > 1:
-        print(f"Warning: Multiple timestamp dirs in {parent_dir}, using newest:")
+        print(
+            f"Warning: Multiple timestamp dirs in {parent_dir}, using newest:",
+            file=sys.stderr,
+        )
         for timestamp_dir in sorted(timestamp_dirs, key=lambda path: path.name):
-            print(f"  - {timestamp_dir.name}")
+            print(f"  - {timestamp_dir.name}", file=sys.stderr)
 
     return sorted(timestamp_dirs, key=lambda path: path.name)[-1]
 
@@ -219,7 +223,8 @@ def find_best_model_checkpoint(ts_dir: Path) -> Optional[Path]:
     if highest_timesteps != EXPECTED_TIMESTEPS:
         print(
             f"Warning: {ts_dir.name} has max timesteps {highest_timesteps}, "
-            f"expected {EXPECTED_TIMESTEPS}"
+            f"expected {EXPECTED_TIMESTEPS}",
+            file=sys.stderr,
         )
 
     return best_model

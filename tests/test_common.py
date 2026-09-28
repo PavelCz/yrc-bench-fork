@@ -63,6 +63,37 @@ def test_resolve_acting_checkpoint_prints_heist400_path(tmp_path, capsys, monkey
     assert capsys.readouterr().out.strip() == str(checkpoint)
 
 
+def test_resolve_acting_checkpoint_keeps_timestamp_warning_off_stdout(
+    tmp_path, capsys, monkeypatch
+):
+    icml_base = tmp_path / "policy" / "icml"
+    run_dir = tmp_path / "policy" / "heist400" / "heist_afh" / "heist400_heist_exp4_50p"
+    older = _make_run(run_dir, seed=4, steps=common.HEIST400_CHECKPOINT_STEPS)
+    newer_dir = run_dir / "2026-09-20__02-50-05__seed_4"
+    newer_dir.mkdir()
+    checkpoint = newer_dir / older.name
+    checkpoint.write_text("ckpt")
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "resolve_acting_checkpoint.py",
+            "--checkpoint-base",
+            str(icml_base),
+            "--env",
+            "heist",
+            "--exp-id",
+            "4",
+            "--heist400",
+        ],
+    )
+    assert resolve_acting_checkpoint.main() == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip() == str(checkpoint)
+    assert "Multiple timestamp dirs" in captured.err
+
+
 def test_resolve_acting_checkpoint_errors_if_final_file_missing(tmp_path, monkeypatch):
     icml_base = tmp_path / "policy" / "icml"
     run_dir = icml_base / "heist_afh" / "icml2_heist_exp4_0p"
