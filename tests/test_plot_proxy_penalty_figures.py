@@ -14,7 +14,7 @@ def test_proxy_penalty_script_bakes_in_coinrun_maze_and_kandc():
     assert panels["maze_proxy_penalty"]["robust_filter"] == "robust"
     assert panels["heist_proxy_penalty"]["placeholder"] is False
     assert panels["heist_proxy_penalty"]["prefix"] == [
-        "tmlr-heist03-expert400-proxy-penalty"
+        "tmlr-heist04-expert400-proxy-penalty"
     ]
     assert panels["coinrun_proxy_penalty"]["placeholder"] is False
     assert panels["maze_proxy_penalty"]["placeholder"] is False

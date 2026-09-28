@@ -11,6 +11,9 @@ def test_unnormalized_script_bakes_in_main_and_proxy_fail_rows():
     proxy_fail = {
         panel["env"]: panel for panel in plot_unnormalized_figures.PROXY_FAIL_PANELS
     }
+    proxy_penalty = {
+        panel["env"]: panel for panel in plot_unnormalized_figures.PROXY_PENALTY_PANELS
+    }
 
     assert main["coinrun"]["prefix"] == [
         "tmlr2-svdd",
@@ -60,10 +63,40 @@ def test_unnormalized_script_bakes_in_main_and_proxy_fail_rows():
         plot_unnormalized_figures.COINRUN_MAZE_YLIM
     )
     assert proxy_fail["heist_proxy_fail"]["ylim"] is None
+    assert proxy_penalty["coinrun_proxy_penalty"]["prefix"] == ["proxy-penalty01"]
+    assert proxy_penalty["maze_proxy_penalty"]["prefix"] == ["proxy-penalty01"]
+    assert proxy_penalty["maze_proxy_penalty"]["robust_filter"] == "robust"
+    assert proxy_penalty["heist_proxy_penalty"]["prefix"] == [
+        "tmlr-heist04-expert400-proxy-penalty"
+    ]
+    assert proxy_penalty["heist_proxy_penalty"]["placeholder"] is False
+    assert proxy_penalty["coinrun_proxy_penalty"]["save_name"] == (
+        "coinrun-proxy-penalty.pdf"
+    )
+    assert proxy_penalty["maze_proxy_penalty"]["save_name"] == (
+        "maze-proxy-penalty.pdf"
+    )
+    assert proxy_penalty["heist_proxy_penalty"]["save_name"] == (
+        "heist-proxy-penalty.pdf"
+    )
+    assert proxy_penalty["coinrun_proxy_penalty"]["ylim"] == (
+        plot_unnormalized_figures.COINRUN_MAZE_YLIM
+    )
+    assert proxy_penalty["maze_proxy_penalty"]["ylim"] == (
+        plot_unnormalized_figures.COINRUN_MAZE_YLIM
+    )
+    assert proxy_penalty["heist_proxy_penalty"]["ylim"] is None
     assert plot_unnormalized_figures.SHARED_METHOD_FILTER == ["ensemble", "wait"]
     assert "heist-main.pdf" in plot_unnormalized_figures.LATEX_SNIPPET
     assert "heist-proxy-fail.pdf" in plot_unnormalized_figures.LATEX_SNIPPET
+    assert "heist-proxy-penalty.pdf" in plot_unnormalized_figures.LATEX_SNIPPET
     assert r"\label{fig:app:kandc-unnormalized}" in (
+        plot_unnormalized_figures.LATEX_SNIPPET
+    )
+    assert r"\label{fig:app:kandc-proxy-penalty-unnormalized}" in (
+        plot_unnormalized_figures.LATEX_SNIPPET
+    )
+    assert r"\label{fig:app:proxy-penalty-unnormalized}" in (
         plot_unnormalized_figures.LATEX_SNIPPET
     )
     assert "forthcoming" not in plot_unnormalized_figures.LATEX_SNIPPET

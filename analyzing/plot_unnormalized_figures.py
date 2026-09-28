@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write unnormalized AFHP panels for the appendix (main + proxy-fail)."""
+"""Write unnormalized AFHP panels for the appendix (main + proxy-fail + penalty)."""
 
 from __future__ import annotations
 
@@ -108,6 +108,36 @@ PROXY_FAIL_PANELS = (
     },
 )
 
+PROXY_PENALTY_PANELS = (
+    {
+        "save_name": "coinrun-proxy-penalty.pdf",
+        "prefix": ["proxy-penalty01"],
+        "env": "coinrun_proxy_penalty",
+        "robust_filter": "all",
+        "show_ylabel": True,
+        "ylim": COINRUN_MAZE_YLIM,
+        "placeholder": False,
+    },
+    {
+        "save_name": "maze-proxy-penalty.pdf",
+        "prefix": ["proxy-penalty01"],
+        "env": "maze_proxy_penalty",
+        "robust_filter": "robust",
+        "show_ylabel": False,
+        "ylim": COINRUN_MAZE_YLIM,
+        "placeholder": False,
+    },
+    {
+        "save_name": "heist-proxy-penalty.pdf",
+        "prefix": ["tmlr-heist04-expert400-proxy-penalty"],
+        "env": "heist_proxy_penalty",
+        "robust_filter": "all",
+        "show_ylabel": False,
+        "ylim": None,
+        "placeholder": False,
+    },
+)
+
 SHARED_METHOD_FILTER = ["ensemble", "wait"]
 PANEL_FIGSIZE = (8, 6)
 PANEL_AXIS_LABEL_SIZE = 28
@@ -158,6 +188,33 @@ LATEX_SNIPPET = r"""
     \texttt{K\&C} uses its own scale. Shaded bands are the
     interquartile range across seeds. The legend applies to all panels.}
     \label{fig:results_initial}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\linewidth]{img/unnormalized-legend.pdf}
+    \vspace{-1.0em}
+    \begin{subfigure}{0.33\linewidth}
+        \includegraphics[width=\linewidth]{img/coinrun-proxy-penalty.pdf}
+        \caption{\texttt{Coinrun}.}
+        \label{fig:app:coinrun-proxy-penalty-unnormalized}
+    \end{subfigure}%
+    \begin{subfigure}{0.33\linewidth}
+        \includegraphics[width=\linewidth]{img/maze-proxy-penalty.pdf}
+        \caption{\texttt{Maze}.}
+        \label{fig:app:maze-proxy-penalty-unnormalized}
+    \end{subfigure}%
+    \begin{subfigure}{0.33\linewidth}
+        \includegraphics[width=\linewidth]{img/heist-proxy-penalty.pdf}
+        \caption{\texttt{K\&C}.}
+        \label{fig:app:kandc-proxy-penalty-unnormalized}
+    \end{subfigure}
+    \caption{\textbf{Unnormalized mean returns when proxy pursuit incurs a
+    penalty.} The episode continues after the proxy. \texttt{Coinrun} and
+    \texttt{Maze} share a $[6, 10]$ y-axis; \texttt{K\&C} uses its own
+    scale. Shaded bands are the interquartile range across seeds. The
+    legend applies to all three panels.}
+    \label{fig:app:proxy-penalty-unnormalized}
 \end{figure}
 """.strip()
 
@@ -210,8 +267,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Write unnormalized coinrun/maze/heist AFHP panels for the "
-            "appendix (recoverable + proxy-fail). Coinrun and Maze share "
-            "a [6, 10] y-axis; K&C autoscales."
+            "appendix (recoverable + proxy-fail + proxy-penalty). Coinrun "
+            "and Maze share a [6, 10] y-axis; K&C autoscales."
         )
     )
     parser.add_argument(
@@ -237,7 +294,7 @@ def main() -> int:
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    for panel in (*MAIN_PANELS, *PROXY_FAIL_PANELS):
+    for panel in (*MAIN_PANELS, *PROXY_FAIL_PANELS, *PROXY_PENALTY_PANELS):
         _plot_panel(eval_dir, out_dir, panel)
 
     save_shared_legend(str(out_dir / LEGEND_NAME), paper_mode=True)

@@ -40,7 +40,10 @@ There is no additive `-5`. Eval `.npz` files from this env already store that
 return, plus `chests_at_proxy` / `proxy_triggered` when present.
 `paper_episode_returns` leaves those recordings unchanged.
 
+Paper K&C penalty figures use the new recordings
+(`tmlr-heist04-expert400-proxy-penalty`). `paper_episode_returns` leaves them
+unchanged because they are not `chests - 5`.
+
 **Penalty (old evals, paper ≠ recording):** recorded penalty subtracted `5`
-(`chests - 5`). Analysis replaces that with `-2` (`chests - 2`) until those
-runs are replaced. Do not treat `raw_returns` in those penalty `.npz` files as
-a paper number.
+(`chests - 5`). Analysis replaces that with `-2` (`chests - 2`) if those
+`.npz` files are plotted. The paper figures no longer use that campaign.

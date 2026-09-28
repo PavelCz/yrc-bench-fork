@@ -55,7 +55,7 @@ PANELS = (
     {
         "save_name": "heist-proxy-penalty-normalized.pdf",
         "auc_tex": "auc-kandc-proxy-penalty.tex",
-        "prefix": ["tmlr-heist03-expert400-proxy-penalty"],
+        "prefix": ["tmlr-heist04-expert400-proxy-penalty"],
         "env": "heist_proxy_penalty",
         "robust_filter": "all",
         "show_ylabel": False,
@@ -110,7 +110,7 @@ LATEX_SNIPPET = r"""
     \caption{Return versus ask-for-help percentage (AFHP) when the episode
     continues after proxy pursuit, scored as in the paper: on Coinrun and Maze,
     success after the proxy is $5$ and failure after the proxy is $0$; on
-    K\&C, return is chests opened minus $2$ after the all-keys trigger.
+    K\&C, chests opened after the all-keys trigger pay $0.5$.
     Normalized so the novice is 0 and the expert
     is 1. Shaded bands are the interquartile range across seeds. The legend
     applies to all three panels.}
