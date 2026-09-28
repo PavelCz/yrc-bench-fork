@@ -53,6 +53,24 @@ def test_auc_across_settings_script_bakes_in_three_envs_and_settings():
     assert r"\label{fig:app:auc-across-settings}" in (
         plot_auc_across_settings.LATEX_SNIPPET
     )
+    assert plot_auc_across_settings.MAIN_SETTINGS == (
+        "recoverable",
+        "termination",
+    )
+    assert plot_auc_across_settings.MAIN_SETTING_LABELS == (
+        "Recoverable",
+        "Termination",
+    )
+    assert plot_auc_across_settings.MAIN_SAVE_NAME == (
+        "auc-recoverable-termination.pdf"
+    )
+    assert "auc-recoverable-termination.pdf" in (
+        plot_auc_across_settings.LATEX_MAIN_SNIPPET
+    )
+    assert r"\label{fig:auc-recoverable-termination}" in (
+        plot_auc_across_settings.LATEX_MAIN_SNIPPET
+    )
     assert plot_auc_across_settings.PANELS[0]["show_ylabel"] is True
     assert plot_auc_across_settings.PANELS[1]["show_ylabel"] is False
     assert plot_auc_across_settings.PANELS[2]["show_ylabel"] is False
+    assert plot_auc_across_settings.FIGSIZE[1] > 6.4
