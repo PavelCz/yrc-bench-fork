@@ -96,6 +96,7 @@ def plot_episode_length_distribution(
     save_path: Optional[str] = None,
     title: Optional[str] = None,
     paper_mode: bool = False,
+    show_ylabel: bool = True,
 ):
     """
     Plot episode length distribution for ID vs OOD levels.
@@ -110,6 +111,7 @@ def plot_episode_length_distribution(
         save_path: Path to save the figure
         title: Custom title for the plot
         paper_mode: If True, use paper-ready styling
+        show_ylabel: If False, omit the y-axis title (tick labels stay).
     """
     results = extract_icml_results(eval_dir, prefix_filter, env_filter)
 
@@ -201,9 +203,11 @@ def plot_episode_length_distribution(
             hatch="",
         )
 
-    # Labels and title
+    # Labels and title. Keep the axes box in the same figure coordinates on
+    # every panel so a horizontal triplet has matching plot-frame height.
     ax.set_xlabel("Episode Length", labelpad=0)
-    ax.set_ylabel("Density")
+    if show_ylabel:
+        ax.set_ylabel("Density")
 
     env_str = env_filter if env_filter else "all"
 
@@ -218,10 +222,11 @@ def plot_episode_length_distribution(
         legend_location="best",
     )
 
-    fig.subplots_adjust(left=0.28, right=0.95, top=0.95, bottom=0.18)
+    fig.subplots_adjust(left=0.22, right=0.97, top=0.96, bottom=0.18)
+    fig.set_size_inches(4.0, 3.0)
 
     if save_path:
-        fig.savefig(save_path, dpi=300)
+        fig.savefig(save_path, dpi=300, bbox_inches=None, pad_inches=0)
         print(f"Saved figure to {save_path}")
     else:
         plt.show()
@@ -310,6 +315,11 @@ def main():
         action="store_true",
         help="Use paper-ready styling (no titles, cleaner appearance)",
     )
+    parser.add_argument(
+        "--hide-ylabel",
+        action="store_true",
+        help="Omit the Density y-axis title (for non-left panels in a row).",
+    )
 
     args = parser.parse_args()
 
@@ -332,6 +342,7 @@ def main():
         save_path=args.save,
         title=args.title,
         paper_mode=args.paper,
+        show_ylabel=not args.hide_ylabel,
     )
 
 
