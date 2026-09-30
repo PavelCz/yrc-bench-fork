@@ -692,6 +692,9 @@ def create_level_afhp_threshold_sampler(
     max_total_evals: int = 200,
     logger=None,
     wandb_run=None,
+    on_evaluation: Optional[
+        Callable[[Optional[float], float, float, Dict[str, Any]], None]
+    ] = None,
     image_svdd_degenerate_strategy: str = IMAGE_SVDD_DEGENERATE_STRATEGY,
     image_svdd_expansion_max_evals: int = DEFAULT_IMAGE_SVDD_EXPANSION_MAX_EVALS,
     image_svdd_expansion_initial_delta_fraction: float = (
@@ -715,6 +718,9 @@ def create_level_afhp_threshold_sampler(
         max_total_evals: Global evaluation budget (includes re-runs)
         logger: Optional logger for tracking evaluations
         wandb_run: Optional wandb run for logging metrics
+        on_evaluation: Optional callback after each completed evaluation. Receives
+            (desired_percentile, AFHP, performance, metadata); raw-threshold fallback
+            evaluations use None for desired_percentile until the run completes.
 
     Returns:
         JointCoverageSampler ready to run
@@ -738,7 +744,9 @@ def create_level_afhp_threshold_sampler(
         percentile = 100.0 - (p * 100.0)
         return policy.train_percentile_level(percentile)
 
-    def _eval_with_threshold(threshold: float) -> Tuple[float, float, Dict[str, Any]]:
+    def _eval_with_threshold(
+        threshold: float, *, desired_percentile: Optional[float] = None
+    ) -> Tuple[float, float, Dict[str, Any]]:
         update_policy_params(policy, threshold)
 
         # Track thresholds for WaitPolicy
@@ -761,6 +769,11 @@ def create_level_afhp_threshold_sampler(
         level_afhp = float(np.mean(level_ood_preds)) * 100.0
         step_afhp = summary[split]["action_1_frac"] * 100.0
         performance = float(summary[split]["env_return_mean"])  # Y-axis
+        meta = {"summary": summary, "threshold": threshold}
+        target_metric = level_afhp / 100.0
+
+        if on_evaluation is not None:
+            on_evaluation(desired_percentile, target_metric, performance, meta)
 
         # Log to console and wandb
         tracker.log_eval(
@@ -771,22 +784,27 @@ def create_level_afhp_threshold_sampler(
         )
 
         # Return level_afhp in [0, 1] for the sampler
-        target_metric = level_afhp / 100.0
-        return target_metric, performance, {"summary": summary, "threshold": threshold}
+        return target_metric, performance, meta
 
     def eval_at_percentile(p: float) -> Tuple[float, float, Dict[str, Any]]:
         thr = percentile_to_threshold(p)
-        target_metric, performance, meta = _eval_with_threshold(thr)
+        target_metric, performance, meta = _eval_with_threshold(
+            thr, desired_percentile=p
+        )
         return target_metric, performance, meta
 
     def eval_at_lower_extreme() -> Tuple[float, float, Dict[str, Any]]:
         thr = float("inf")
-        target_metric, performance, meta = _eval_with_threshold(thr)
+        target_metric, performance, meta = _eval_with_threshold(
+            thr, desired_percentile=0.0
+        )
         return target_metric, performance, meta
 
     def eval_at_upper_extreme() -> Tuple[float, float, Dict[str, Any]]:
         thr = float("-inf")
-        target_metric, performance, meta = _eval_with_threshold(thr)
+        target_metric, performance, meta = _eval_with_threshold(
+            thr, desired_percentile=1.0
+        )
         return target_metric, performance, meta
 
     # Convert coverate fraction to num_bins
@@ -876,6 +894,9 @@ def create_step_afhp_threshold_sampler(
     max_total_evals: int = 200,
     logger=None,
     wandb_run=None,
+    on_evaluation: Optional[
+        Callable[[Optional[float], float, float, Dict[str, Any]], None]
+    ] = None,
 ):
     """
     Create the joint-coverage sampler for threshold evaluation.
@@ -894,6 +915,8 @@ def create_step_afhp_threshold_sampler(
         max_total_evals: Global evaluation budget (includes re-runs)
         logger: Optional logger for tracking evaluations
         wandb_run: Optional wandb run for logging metrics
+        on_evaluation: Optional callback after each completed evaluation. Receives
+            (desired_percentile, AFHP, performance, metadata).
 
     Returns:
         JointCoverageSampler ready to run
@@ -917,7 +940,9 @@ def create_step_afhp_threshold_sampler(
         percentile = 100.0 - (p * 100.0)
         return policy.train_percentile_step(percentile)
 
-    def _eval_with_threshold(threshold: float) -> Tuple[float, float, Dict[str, Any]]:
+    def _eval_with_threshold(
+        threshold: float, *, desired_percentile: Optional[float] = None
+    ) -> Tuple[float, float, Dict[str, Any]]:
         update_policy_params(policy, threshold)
 
         # Track thresholds for WaitPolicy
@@ -940,6 +965,10 @@ def create_step_afhp_threshold_sampler(
         level_afhp = float(np.mean(level_ood_preds)) * 100.0
         step_afhp = summary[split]["action_1_frac"] * 100.0
         performance = float(summary[split]["env_return_mean"])  # Y-axis
+        meta = {"summary": summary, "threshold": threshold}
+
+        if on_evaluation is not None:
+            on_evaluation(desired_percentile, step_afhp, performance, meta)
 
         # Log to console and wandb
         tracker.log_eval(
@@ -949,21 +978,21 @@ def create_step_afhp_threshold_sampler(
             performance=performance,
         )
 
-        return step_afhp, performance, {"summary": summary, "threshold": threshold}
+        return step_afhp, performance, meta
 
     def eval_at_percentile(p: float) -> Tuple[float, float, Dict[str, Any]]:
         thr = percentile_to_threshold(p)
-        step_afhp, performance, meta = _eval_with_threshold(thr)
+        step_afhp, performance, meta = _eval_with_threshold(thr, desired_percentile=p)
         return step_afhp, performance, meta
 
     def eval_at_lower_extreme() -> Tuple[float, float, Dict[str, Any]]:
         thr = float("inf")
-        step_afhp, performance, meta = _eval_with_threshold(thr)
+        step_afhp, performance, meta = _eval_with_threshold(thr, desired_percentile=0.0)
         return step_afhp, performance, meta
 
     def eval_at_upper_extreme() -> Tuple[float, float, Dict[str, Any]]:
         thr = float("-inf")
-        step_afhp, performance, meta = _eval_with_threshold(thr)
+        step_afhp, performance, meta = _eval_with_threshold(thr, desired_percentile=1.0)
         return step_afhp, performance, meta
 
     # Convert coverate fraction to num_bins

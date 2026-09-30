@@ -10,7 +10,11 @@ import YRC.core.environment as env_factory
 import YRC.core.policy as policy_factory
 from YRC.core import Evaluator
 from YRC.core.configs.global_configs import get_global_variable
-from YRC.core.eval_script_utils import init_eval_wandb_run, save_npz_results
+from YRC.core.eval_script_utils import (
+    IntermediateEvaluationResults,
+    init_eval_wandb_run,
+    save_npz_results,
+)
 from YRC.core.level_seeds import load_level_seed_splits
 
 
@@ -285,6 +289,16 @@ def main():
     exp, wandb_logger = create_eval_wandb_logger(config)
 
     split = "test"
+    log_file_path = get_global_variable("log_file")
+    if log_file_path is None:
+        raise ValueError(
+            "Log file path is not set. Could not find path to save results."
+        )
+    log_file_path = Path(log_file_path)
+    results_file_path = log_file_path.with_name(
+        log_file_path.name.replace(".log", f"_{split}.npz")
+    )
+    intermediate_results = IntermediateEvaluationResults(results_file_path)
 
     # Create the joint-coverage sampler via YRC wrapper (adapts to new abcs API)
     max_total_evals = 200
@@ -303,6 +317,7 @@ def main():
             max_total_evals=max_total_evals,
             logger=wandb_logger,
             wandb_run=exp,
+            on_evaluation=intermediate_results.record_evaluation,
         )
     elif threshold_sampler == "level_afhp":
         level_sampler_kwargs = {}
@@ -331,6 +346,7 @@ def main():
             max_total_evals=max_total_evals,
             logger=wandb_logger,
             wandb_run=exp,
+            on_evaluation=intermediate_results.record_evaluation,
             **level_sampler_kwargs,
         )
     else:
@@ -367,16 +383,7 @@ def main():
 
     total_evals = sampling_result.total_evals
 
-    # Save result summary to file.
-    log_file_path = get_global_variable("log_file")
-    if log_file_path is None:
-        raise ValueError(
-            "Log file path is not set. Could not find path to save results."
-        )
-    log_file_path = Path(log_file_path)
-    results_file_path = log_file_path.with_name(
-        log_file_path.name.replace(".log", f"_{split}.npz")
-    )
+    # Replace the last intermediate checkpoint with the canonical sampler result.
     save_npz_results(
         results_file_path,
         afhps=np.array([pt.afhp for pt in sorted_points]),

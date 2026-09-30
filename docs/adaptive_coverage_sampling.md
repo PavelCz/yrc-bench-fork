@@ -106,6 +106,16 @@ Results are saved to an NPZ file containing:
 - Per-point metadata including per-episode predictions
 - Coverage statistics (max normalized gap on the output axis)
 
+`eval_afhp.py` writes an intermediate checkpoint to the same `_test.npz` path
+after each completed evaluation. The checkpoint keeps the standard NPZ keys and
+per-point metadata, and sets `sampling_info[0]["status"]` to `"in_progress"`
+with a `completed_evaluations` count. If evaluation finishes normally, the final
+canonical sampler result overwrites that checkpoint at the same path. A partial
+file contains completed evaluations only; it does not support resuming a sampler.
+During image-SVDD raw-threshold fallback, `desired_percentiles` for direct raw
+threshold evaluations are `NaN` in partial checkpoints because the final mapping
+depends on the upper threshold found by the completed search.
+
 Heist outcome arrays and summaries live in each curve point's
 `meta["summary"]["test"]` entry rather than as duplicate top-level NPZ arrays. They
 do not affect calibration, threshold selection, AFHP, or the return performance
