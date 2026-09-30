@@ -3,6 +3,7 @@
 Script to run evaluation jobs in parallel via SLURM sbatch.
 """
 
+import math
 import re
 import shlex
 import subprocess
@@ -59,6 +60,7 @@ EVAL_DEFAULTS = {
     "video_logging_mode": "folder",
     "video_filter_mode": "any",
     "coverage_fraction": 0.05,
+    "level_threshold_min": None,
     "svdd_prefix": "neurips05",
 }
 
@@ -439,6 +441,8 @@ def build_python_command(eval_args: dict) -> str:
 
     if eval_args.get("calibration_levels") is not None:
         python_args.append(f"-calibration_levels {eval_args['calibration_levels']}")
+    if eval_args.get("level_threshold_min") is not None:
+        python_args.append(f"-level_threshold_min {eval_args['level_threshold_min']}")
 
     # Add wandb project if specified
     if eval_args.get("wandb_project"):
@@ -906,6 +910,15 @@ def main():
         help=f"Coverage fraction for threshold sampling (default: {EVAL_DEFAULTS['coverage_fraction']})",
     )
     parser.add_argument(
+        "--level-threshold-min",
+        type=float,
+        default=EVAL_DEFAULTS["level_threshold_min"],
+        help=(
+            "For max-logit level-AFHP evaluation, extend interior thresholds below "
+            "the calibration minimum to this finite value."
+        ),
+    )
+    parser.add_argument(
         "--calibration-levels",
         type=int,
         default=None,
@@ -994,6 +1007,11 @@ def main():
         args.execution = "apptainer"
     if args.runs_per_gpu <= 0:
         parser.error("--runs-per-gpu must be a positive integer.")
+    if args.level_threshold_min is not None:
+        if not math.isfinite(args.level_threshold_min):
+            parser.error("--level-threshold-min must be finite.")
+        if args.method != "max-logit":
+            parser.error("--level-threshold-min currently requires --method max-logit.")
 
     # Get server-specific paths
     paths = SERVER_PATHS[args.server]
@@ -1239,6 +1257,7 @@ def main():
             "video_logging_mode": args.video_logging_mode,
             "video_filter_mode": args.video_filter_mode,
             "coverage_fraction": args.coverage_fraction,
+            "level_threshold_min": args.level_threshold_min,
             "calibration_levels": args.calibration_levels,
             "wandb_project": args.wandb_project,
             "level_seeds_file": str(level_seeds_file),

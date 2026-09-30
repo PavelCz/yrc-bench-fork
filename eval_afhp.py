@@ -209,6 +209,16 @@ def main():
     # Note: config_utils.load() handles logging configuration based on args.log_level
     config = config_utils.load(args.config, flags=args)
     require_non_plain_maze_eval_env(config.environment.common.env_name)
+    threshold_sampler: str = config.evaluation.threshold_sampler
+    level_threshold_min = getattr(config.evaluation, "level_threshold_min", None)
+    if level_threshold_min is not None:
+        if not np.isfinite(float(level_threshold_min)):
+            raise ValueError("evaluation.level_threshold_min must be finite.")
+        if threshold_sampler != "level_afhp":
+            raise ValueError(
+                "evaluation.level_threshold_min requires threshold_sampler="
+                "'level_afhp'."
+            )
 
     # Record time for profiling purposes
     start_time = time.time()
@@ -242,6 +252,19 @@ def main():
     logging.info("Creating coordination policy.")
     policy_start = time.time()
     policy = policy_factory.make(config, envs["train"])
+    if level_threshold_min is not None:
+        from YRC.policies.threshold import ThresholdPolicy
+
+        if not isinstance(policy, ThresholdPolicy):
+            raise ValueError(
+                "evaluation.level_threshold_min is supported only for "
+                "ThresholdPolicy with the max_logit metric."
+            )
+        if getattr(policy.args, "metric", None) != "max_logit":
+            raise ValueError(
+                "evaluation.level_threshold_min is supported only for the "
+                "max_logit metric."
+            )
     logging.info(f"Coordination policy created in {time.time() - policy_start:.2f}s")
     if config.general.algorithm != "always" and not config.coord_policy.baseline:
         # The following algorithms do not need to load a model, because they do not
@@ -281,7 +304,6 @@ def main():
     )
 
     coverage_fraction = config.evaluation.coverage_fraction
-    threshold_sampler: str = config.evaluation.threshold_sampler
 
     if coverage_fraction < 0.01:
         raise ValueError("Coverage fraction must be at least 0.01")
@@ -347,6 +369,7 @@ def main():
             logger=wandb_logger,
             wandb_run=exp,
             on_evaluation=intermediate_results.record_evaluation,
+            level_threshold_min=level_threshold_min,
             **level_sampler_kwargs,
         )
     else:

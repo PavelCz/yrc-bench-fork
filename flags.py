@@ -415,6 +415,15 @@ def make():
         ),
     )
     parser.add_argument(
+        "-level_threshold_min",
+        "--evaluation.level_threshold_min",
+        type=float,
+        help=(
+            "Optional finite max_logit threshold below the calibration minimum for "
+            "level_afhp evaluation."
+        ),
+    )
+    parser.add_argument(
         "-threshold_sampler",
         "--evaluation.threshold_sampler",
         type=str,

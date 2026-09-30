@@ -21,7 +21,7 @@ scripts/run_eval.py
 | Parameter | Default | Set In | Meaning |
 |---|---|---|---|
 | `coverage_fraction` | 0.05 | `scripts/run_eval.py` | Max normalized neighbor gap allowed on output axis |
-| `max_total_evals` | 200 | `eval_afhp.py` | Hard budget of evaluations |
+| `max_total_evals` | 200 | `eval_afhp.py` | Enforced by the image-SVDD raw-threshold fallback; the regular legacy `BinarySearchSampler` does not enforce it |
 | `num_levels` | 5000 | `scripts/run_eval.py` | Episodes per evaluation |
 | `threshold_sampler` | `"step_afhp"` | Config YAML | Which output axis to cover (`"step_afhp"` or `"level_afhp"`) |
 
@@ -49,9 +49,11 @@ Recursively:
 
 ### Stopping conditions
 
-The algorithm stops when:
-- All `num_bins` bins contain at least one sample, **or**
-- The hard budget of `max_total_evals` is exhausted.
+The regular legacy `BinarySearchSampler` is intended to stop when all
+`num_bins` bins contain at least one sample. It does not currently enforce
+`max_total_evals`, so an unreachable bin can continue driving recursive search.
+The image-SVDD raw-threshold fallback enforces its evaluation budget; its probe
+uses a fixed number of evaluations before the fallback starts.
 
 In practice, with 20 bins, the algorithm typically runs 20–40 evaluations.
 
@@ -164,6 +166,26 @@ For threshold-based methods (`max_prob`, `max_logit`, `ensemble_variance`), the 
 For `TimestepRandomPolicy`, there is no OOD score distribution — the "score" is `torch.rand()`. However, the mapping from per-step help probability to per-episode OOD percentage is nonlinear: with probability `p` per step and episode length `L`, the fraction of episodes with any help request is `1 - (1-p)^L`. To account for this, `eval_afhp.py` runs a calibration step before sampling: it evaluates the weak agent alone (prob=0) on the training environment to measure the mean episode length, then `train_percentile_level` uses the inverse formula `prob = 1 - (percentile/100)^(1/L)`. `train_percentile_step` uses a simple linear mapping instead.
 
 For `LevelBasedRandomPolicy`, the decision is per-episode, so `level_afhp` equals the help probability directly — no calibration is needed.
+
+### Extending the level-AFHP max-logit range
+
+The optional launcher flag `--level-threshold-min X` extends finite thresholds
+below the calibration minimum for max-logit `level_afhp` evaluations. The value
+must be finite and strictly below the minimum episode-maximum calibration score.
+For an interior sampler percentile `p`, the mapped threshold is
+`train_percentile_level(100 - 100*p) - p*(calibration_min - X)`. This moves the
+finite lower end toward `X` as `p` approaches 1 while retaining the original
+finite upper end. The existing `p=0` (`+inf`, never ask) and `p=1` (`-inf`,
+always ask) endpoints stay unchanged. Lower thresholds make more negative
+max-logit scores eligible to request help.
+
+The default is unset, which keeps the existing percentile mapping unchanged.
+The extension rejects policies other than `ThresholdPolicy` with the
+`max_logit` metric. The configured minimum is saved in the evaluation config,
+and each point's metadata records the calibration minimum/maximum and effective
+finite range. Extending the range can expose additional high-AFHP bins when the
+evaluation score distribution extends below calibration; it does not guarantee
+that every gap is fillable or that the sampled curve has adequate coverage.
 
 ## Sampler Variants
 

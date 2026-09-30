@@ -36,6 +36,70 @@ DEFAULT_IMAGE_SVDD_PROBE_PERCENTILES = (0.25, 0.5, 0.75, 0.9)
 DEFAULT_IMAGE_SVDD_HIGH_AFHP_THRESHOLD = 0.99
 DEFAULT_SCORE_TOLERANCE_ABS = 1e-8
 DEFAULT_SCORE_TOLERANCE_REL = 1e-6
+LEVEL_THRESHOLD_EXTENSION_STRATEGY = "linear_lower_tail_extension"
+
+
+def _level_threshold_extension_info(policy, requested_min: Optional[float]):
+    if requested_min is None:
+        return None
+
+    if not isinstance(policy, ThresholdPolicy):
+        raise ValueError(
+            "level_threshold_min is supported only for ThresholdPolicy with the "
+            "max_logit metric."
+        )
+    metric = getattr(getattr(policy, "args", None), "metric", None)
+    if metric != "max_logit":
+        raise ValueError(
+            "level_threshold_min is supported only for the max_logit metric; "
+            f"got {metric!r}."
+        )
+
+    requested_min = float(requested_min)
+    if not np.isfinite(requested_min):
+        raise ValueError("level_threshold_min must be finite.")
+
+    scores = getattr(policy, "_train_episode_max_scores", None)
+    if scores is None:
+        raise ValueError(
+            "level_threshold_min requires calibrated episode maximum scores."
+        )
+    scores = np.asarray(scores, dtype=float)
+    if scores.size == 0 or not np.all(np.isfinite(scores)):
+        raise ValueError(
+            "level_threshold_min requires non-empty, finite calibration scores."
+        )
+
+    calibration_min = float(np.min(scores))
+    calibration_max = float(np.max(scores))
+    if requested_min >= calibration_min:
+        raise ValueError(
+            "level_threshold_min must be strictly below the finite calibration "
+            f"minimum ({calibration_min:.8g}); got {requested_min:.8g}."
+        )
+
+    extension = calibration_min - requested_min
+    info = {
+        "strategy": LEVEL_THRESHOLD_EXTENSION_STRATEGY,
+        "policy_metric": metric,
+        "calibration_min": calibration_min,
+        "calibration_max": calibration_max,
+        "requested_min": requested_min,
+        "effective_min": requested_min,
+        "effective_max": calibration_max,
+        "extension": extension,
+    }
+    logging.info(
+        "Level AFHP threshold extension enabled: metric=%s, calibration_range="
+        "[%.8g, %.8g], effective_finite_range=[%.8g, %.8g], strategy=%s",
+        metric,
+        calibration_min,
+        calibration_max,
+        requested_min,
+        calibration_max,
+        LEVEL_THRESHOLD_EXTENSION_STRATEGY,
+    )
+    return info
 
 
 class EvalStepTracker:
@@ -695,6 +759,7 @@ def create_level_afhp_threshold_sampler(
     on_evaluation: Optional[
         Callable[[Optional[float], float, float, Dict[str, Any]], None]
     ] = None,
+    level_threshold_min: Optional[float] = None,
     image_svdd_degenerate_strategy: str = IMAGE_SVDD_DEGENERATE_STRATEGY,
     image_svdd_expansion_max_evals: int = DEFAULT_IMAGE_SVDD_EXPANSION_MAX_EVALS,
     image_svdd_expansion_initial_delta_fraction: float = (
@@ -721,6 +786,8 @@ def create_level_afhp_threshold_sampler(
         on_evaluation: Optional callback after each completed evaluation. Receives
             (desired_percentile, AFHP, performance, metadata); raw-threshold fallback
             evaluations use None for desired_percentile until the run completes.
+        level_threshold_min: Optional finite max_logit threshold below the calibration
+            minimum. Extends interior level-AFHP percentiles to this lower bound.
 
     Returns:
         JointCoverageSampler ready to run
@@ -735,6 +802,10 @@ def create_level_afhp_threshold_sampler(
     if isinstance(policy, WaitPolicy):
         max_episode_length = getattr(policy, "max_episode_length", 500)
 
+    level_threshold_extension = _level_threshold_extension_info(
+        policy, level_threshold_min
+    )
+
     def percentile_to_threshold(p: float) -> float:
         # p in [0,1]
         if p <= 0.0:
@@ -742,7 +813,10 @@ def create_level_afhp_threshold_sampler(
         if p >= 1.0:
             return float("-inf")
         percentile = 100.0 - (p * 100.0)
-        return policy.train_percentile_level(percentile)
+        threshold = policy.train_percentile_level(percentile)
+        if level_threshold_extension is not None:
+            threshold -= p * level_threshold_extension["extension"]
+        return threshold
 
     def _eval_with_threshold(
         threshold: float, *, desired_percentile: Optional[float] = None
@@ -770,6 +844,8 @@ def create_level_afhp_threshold_sampler(
         step_afhp = summary[split]["action_1_frac"] * 100.0
         performance = float(summary[split]["env_return_mean"])  # Y-axis
         meta = {"summary": summary, "threshold": threshold}
+        if level_threshold_extension is not None:
+            meta["level_threshold_mapping"] = dict(level_threshold_extension)
         target_metric = level_afhp / 100.0
 
         if on_evaluation is not None:

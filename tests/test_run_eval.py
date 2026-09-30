@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -416,6 +418,86 @@ def test_main_stops_before_submit_when_preflight_fails(monkeypatch):
     monkeypatch.setattr(run_eval, "submit_job", fail_submit)
 
     assert run_eval.main() == 1
+
+
+def test_main_forwards_level_threshold_min_from_cli(monkeypatch, tmp_path):
+    checkpoint = tmp_path / "model.pth"
+    checkpoint.write_text("model")
+    seeds_base = tmp_path / "seeds"
+    seeds_base.mkdir()
+    (seeds_base / "0.json").write_text("{}")
+
+    server_paths = run_eval.SERVER_PATHS.copy()
+    server_paths["unit"] = {
+        "checkpoint_base": str(tmp_path / "checkpoints"),
+        "rollouts_base": str(tmp_path / "rollouts"),
+        "seeds_base": str(seeds_base),
+        "svdd_base": str(tmp_path / "svdd"),
+        "log_base": str(tmp_path / "logs"),
+        "evals_base": str(tmp_path / "evals"),
+    }
+    monkeypatch.setattr(run_eval, "SERVER_PATHS", server_paths)
+    monkeypatch.setattr(run_eval, "run_preflight_check", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        run_eval,
+        "get_checkpoints",
+        lambda *args, **kwargs: {
+            "sim": str(checkpoint),
+            "weak": str(checkpoint),
+            "strong": str(checkpoint),
+        },
+    )
+    submitted = []
+    monkeypatch.setattr(
+        run_eval,
+        "submit_job",
+        lambda job_name, eval_args, *args, **kwargs: submitted.append(eval_args),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_eval.py",
+            "--prefix",
+            "prefix",
+            "--exp-ids",
+            "0",
+            "--server",
+            "unit",
+            "--env",
+            "heist_proxy_fail",
+            "--method",
+            "max-logit",
+            "--level-threshold-min",
+            "-30",
+        ],
+    )
+
+    assert run_eval.main() == 0
+    assert len(submitted) == 1
+    assert submitted[0]["level_threshold_min"] == -30.0
+    assert "-level_threshold_min -30.0" in run_eval.build_python_command(submitted[0])
+
+
+def test_main_rejects_level_threshold_min_for_other_methods(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_eval.py",
+            "--prefix",
+            "prefix",
+            "--env",
+            "heist_proxy_fail",
+            "--method",
+            "max-prob",
+            "--level-threshold-min",
+            "-30",
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        run_eval.main()
 
 
 def test_main_packs_valid_exp_ids_into_gpu_chunks(monkeypatch, tmp_path):
