@@ -39,6 +39,7 @@ DEFAULT_IMAGE_SVDD_HIGH_AFHP_THRESHOLD = 0.99
 DEFAULT_SCORE_TOLERANCE_ABS = 1e-8
 DEFAULT_SCORE_TOLERANCE_REL = 1e-6
 LEVEL_THRESHOLD_EXTENSION_STRATEGY = "linear_lower_tail_extension"
+LEVEL_THRESHOLD_UPPER_EXTENSION_STRATEGY = "linear_upper_tail_extension"
 
 
 def _unresolved_bin_indices(left_bin_idx: int, right_bin_idx: int) -> List[int]:
@@ -225,65 +226,126 @@ class LevelAFHPThresholdSampler(BinarySearchSampler):
         return result
 
 
-def _level_threshold_extension_info(policy, requested_min: Optional[float]):
-    if requested_min is None:
-        return None
-
-    if not isinstance(policy, ThresholdPolicy):
-        raise ValueError(
-            "level_threshold_min is supported only for ThresholdPolicy with the "
-            "max_logit metric."
-        )
-    metric = getattr(getattr(policy, "args", None), "metric", None)
-    if metric != "max_logit":
-        raise ValueError(
-            "level_threshold_min is supported only for the max_logit metric; "
-            f"got {metric!r}."
-        )
-
-    requested_min = float(requested_min)
-    if not np.isfinite(requested_min):
-        raise ValueError("level_threshold_min must be finite.")
-
+def _calibration_episode_max_scores(policy, flag_name: str) -> np.ndarray:
     scores = getattr(policy, "_train_episode_max_scores", None)
     if scores is None:
-        raise ValueError(
-            "level_threshold_min requires calibrated episode maximum scores."
-        )
+        raise ValueError(f"{flag_name} requires calibrated episode maximum scores.")
     scores = np.asarray(scores, dtype=float)
     if scores.size == 0 or not np.all(np.isfinite(scores)):
+        raise ValueError(f"{flag_name} requires non-empty, finite calibration scores.")
+    return scores
+
+
+def _is_latent_deep_svdd(policy) -> bool:
+    return (
+        isinstance(policy, OODPolicy)
+        and getattr(policy, "clf_name", None) == "DeepSVDD"
+        and getattr(policy, "feature_type", None) == "hidden"
+    )
+
+
+def _level_threshold_extension_info(
+    policy,
+    requested_min: Optional[float],
+    requested_max: Optional[float] = None,
+):
+    if requested_min is None and requested_max is None:
+        return None
+    if requested_min is not None and requested_max is not None:
         raise ValueError(
-            "level_threshold_min requires non-empty, finite calibration scores."
+            "level_threshold_min and level_threshold_max cannot both be set."
         )
 
+    if requested_min is not None:
+        if not isinstance(policy, ThresholdPolicy):
+            raise ValueError(
+                "level_threshold_min is supported only for ThresholdPolicy with the "
+                "max_logit metric."
+            )
+        metric = getattr(getattr(policy, "args", None), "metric", None)
+        if metric != "max_logit":
+            raise ValueError(
+                "level_threshold_min is supported only for the max_logit metric; "
+                f"got {metric!r}."
+            )
+
+        requested_min = float(requested_min)
+        if not np.isfinite(requested_min):
+            raise ValueError("level_threshold_min must be finite.")
+
+        scores = _calibration_episode_max_scores(policy, "level_threshold_min")
+        calibration_min = float(np.min(scores))
+        calibration_max = float(np.max(scores))
+        if requested_min >= calibration_min:
+            raise ValueError(
+                "level_threshold_min must be strictly below the finite calibration "
+                f"minimum ({calibration_min:.8g}); got {requested_min:.8g}."
+            )
+
+        extension = calibration_min - requested_min
+        info = {
+            "strategy": LEVEL_THRESHOLD_EXTENSION_STRATEGY,
+            "policy_metric": metric,
+            "calibration_min": calibration_min,
+            "calibration_max": calibration_max,
+            "requested_min": requested_min,
+            "effective_min": requested_min,
+            "effective_max": calibration_max,
+            "extension": extension,
+            "upper_extension": 0.0,
+        }
+        logging.info(
+            "Level AFHP threshold extension enabled: metric=%s, calibration_range="
+            "[%.8g, %.8g], effective_finite_range=[%.8g, %.8g], strategy=%s",
+            metric,
+            calibration_min,
+            calibration_max,
+            requested_min,
+            calibration_max,
+            LEVEL_THRESHOLD_EXTENSION_STRATEGY,
+        )
+        return info
+
+    if not _is_latent_deep_svdd(policy):
+        raise ValueError(
+            "level_threshold_max is supported only for latent DeepSVDD "
+            "(OODPolicy, clf_name=DeepSVDD, feature_type=hidden)."
+        )
+
+    requested_max = float(requested_max)
+    if not np.isfinite(requested_max):
+        raise ValueError("level_threshold_max must be finite.")
+
+    scores = _calibration_episode_max_scores(policy, "level_threshold_max")
     calibration_min = float(np.min(scores))
     calibration_max = float(np.max(scores))
-    if requested_min >= calibration_min:
+    if requested_max <= calibration_max:
         raise ValueError(
-            "level_threshold_min must be strictly below the finite calibration "
-            f"minimum ({calibration_min:.8g}); got {requested_min:.8g}."
+            "level_threshold_max must be strictly above the finite calibration "
+            f"maximum ({calibration_max:.8g}); got {requested_max:.8g}."
         )
 
-    extension = calibration_min - requested_min
+    upper_extension = requested_max - calibration_max
     info = {
-        "strategy": LEVEL_THRESHOLD_EXTENSION_STRATEGY,
-        "policy_metric": metric,
+        "strategy": LEVEL_THRESHOLD_UPPER_EXTENSION_STRATEGY,
+        "policy_metric": "svdd_latent",
         "calibration_min": calibration_min,
         "calibration_max": calibration_max,
-        "requested_min": requested_min,
-        "effective_min": requested_min,
-        "effective_max": calibration_max,
-        "extension": extension,
+        "requested_max": requested_max,
+        "effective_min": calibration_min,
+        "effective_max": requested_max,
+        "extension": 0.0,
+        "upper_extension": upper_extension,
     }
     logging.info(
-        "Level AFHP threshold extension enabled: metric=%s, calibration_range="
-        "[%.8g, %.8g], effective_finite_range=[%.8g, %.8g], strategy=%s",
-        metric,
+        "Level AFHP threshold extension enabled: metric=svdd_latent, "
+        "calibration_range=[%.8g, %.8g], effective_finite_range=[%.8g, %.8g], "
+        "strategy=%s",
         calibration_min,
         calibration_max,
-        requested_min,
-        calibration_max,
-        LEVEL_THRESHOLD_EXTENSION_STRATEGY,
+        calibration_min,
+        requested_max,
+        LEVEL_THRESHOLD_UPPER_EXTENSION_STRATEGY,
     )
     return info
 
@@ -946,6 +1008,7 @@ def create_level_afhp_threshold_sampler(
         Callable[[Optional[float], float, float, Dict[str, Any]], None]
     ] = None,
     level_threshold_min: Optional[float] = None,
+    level_threshold_max: Optional[float] = None,
     image_svdd_degenerate_strategy: str = IMAGE_SVDD_DEGENERATE_STRATEGY,
     image_svdd_expansion_max_evals: int = DEFAULT_IMAGE_SVDD_EXPANSION_MAX_EVALS,
     image_svdd_expansion_initial_delta_fraction: float = (
@@ -973,7 +1036,10 @@ def create_level_afhp_threshold_sampler(
             (desired_percentile, AFHP, performance, metadata); raw-threshold fallback
             evaluations use None for desired_percentile until the run completes.
         level_threshold_min: Optional finite max_logit threshold below the calibration
-            minimum. Extends interior level-AFHP percentiles to this lower bound.
+            minimum. Extends interior level-AFHP percentiles toward this lower bound.
+        level_threshold_max: Optional finite latent-SVDD threshold above the
+            calibration maximum. Extends interior level-AFHP percentiles toward
+            this upper bound.
 
     Returns:
         JointCoverageSampler ready to run
@@ -989,7 +1055,7 @@ def create_level_afhp_threshold_sampler(
         max_episode_length = getattr(policy, "max_episode_length", 500)
 
     level_threshold_extension = _level_threshold_extension_info(
-        policy, level_threshold_min
+        policy, level_threshold_min, level_threshold_max
     )
     supports_threshold_diagnostics = isinstance(policy, ThresholdPolicy)
 
@@ -1024,17 +1090,20 @@ def create_level_afhp_threshold_sampler(
         and calibration_scores_array.size > 0
         and np.all(np.isfinite(calibration_scores_array))
     )
-    threshold_mapping_is_standard = bool(
-        getattr(getattr(policy, "train_percentile_level", None), "__func__", None)
-        is ThresholdPolicy.train_percentile_level
+    standard_level_percentile = getattr(
+        getattr(policy, "train_percentile_level", None), "__func__", None
     )
+    threshold_mapping_is_standard = standard_level_percentile in {
+        ThresholdPolicy.train_percentile_level,
+        OODPolicy.train_percentile_level,
+    }
     if calibration_scores_are_finite and threshold_mapping_is_standard:
-        finite_threshold_min = (
-            float(level_threshold_extension["effective_min"])
-            if level_threshold_extension is not None
-            else float(np.min(calibration_scores_array))
-        )
-        finite_threshold_max = float(np.max(calibration_scores_array))
+        if level_threshold_extension is not None:
+            finite_threshold_min = float(level_threshold_extension["effective_min"])
+            finite_threshold_max = float(level_threshold_extension["effective_max"])
+        else:
+            finite_threshold_min = float(np.min(calibration_scores_array))
+            finite_threshold_max = float(np.max(calibration_scores_array))
     else:
         finite_threshold_min = float("nan")
         finite_threshold_max = float("nan")
@@ -1051,7 +1120,11 @@ def create_level_afhp_threshold_sampler(
         percentile = 100.0 - (p * 100.0)
         threshold = policy.train_percentile_level(percentile)
         if level_threshold_extension is not None:
+            # Lower tail: high percentiles (more help) move down toward
+            # requested_min. Upper tail: low percentiles (less help) move up
+            # toward requested_max. Both shifts are monotone in p.
             threshold -= p * level_threshold_extension["extension"]
+            threshold += (1.0 - p) * level_threshold_extension["upper_extension"]
         return threshold
 
     def threshold_for_input(input_value: float) -> float:
@@ -1241,7 +1314,9 @@ def create_level_afhp_threshold_sampler(
             # AFHP uses [0, 100] interval, here we use [0, 1]
             output_range=(0.0, 1.0),
         )
-    elif isinstance(policy, ThresholdPolicy):
+    elif isinstance(policy, ThresholdPolicy) or (
+        isinstance(policy, OODPolicy) and threshold_mapping_is_standard
+    ):
         logging.info(
             "Sampler dispatch: selecting LevelAFHPThresholdSampler "
             "(exact threshold reuse, monotone_mapping=%s)",

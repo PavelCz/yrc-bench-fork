@@ -211,12 +211,26 @@ def main():
     require_non_plain_maze_eval_env(config.environment.common.env_name)
     threshold_sampler: str = config.evaluation.threshold_sampler
     level_threshold_min = getattr(config.evaluation, "level_threshold_min", None)
+    level_threshold_max = getattr(config.evaluation, "level_threshold_max", None)
+    if level_threshold_min is not None and level_threshold_max is not None:
+        raise ValueError(
+            "evaluation.level_threshold_min and evaluation.level_threshold_max "
+            "cannot both be set."
+        )
     if level_threshold_min is not None:
         if not np.isfinite(float(level_threshold_min)):
             raise ValueError("evaluation.level_threshold_min must be finite.")
         if threshold_sampler != "level_afhp":
             raise ValueError(
                 "evaluation.level_threshold_min requires threshold_sampler="
+                "'level_afhp'."
+            )
+    if level_threshold_max is not None:
+        if not np.isfinite(float(level_threshold_max)):
+            raise ValueError("evaluation.level_threshold_max must be finite.")
+        if threshold_sampler != "level_afhp":
+            raise ValueError(
+                "evaluation.level_threshold_max requires threshold_sampler="
                 "'level_afhp'."
             )
 
@@ -265,6 +279,16 @@ def main():
                 "evaluation.level_threshold_min is supported only for the "
                 "max_logit metric."
             )
+    if level_threshold_max is not None:
+        from YRC.policies.ood import OODPolicy
+
+        if (
+            not isinstance(policy, OODPolicy)
+            or getattr(policy, "feature_type", None) != "hidden"
+        ):
+            raise ValueError(
+                "evaluation.level_threshold_max is supported only for latent DeepSVDD."
+            )
     logging.info(f"Coordination policy created in {time.time() - policy_start:.2f}s")
     if config.general.algorithm != "always" and not config.coord_policy.baseline:
         # The following algorithms do not need to load a model, because they do not
@@ -286,6 +310,14 @@ def main():
                 "Coordination policy model loaded in "
                 f"{time.time() - model_load_start:.2f}s"
             )
+
+    if (
+        level_threshold_max is not None
+        and getattr(policy, "clf_name", None) != "DeepSVDD"
+    ):
+        raise ValueError(
+            "evaluation.level_threshold_max is supported only for latent DeepSVDD."
+        )
 
     evaluator = Evaluator(config, config.environment)
 
@@ -370,6 +402,7 @@ def main():
             wandb_run=exp,
             on_evaluation=intermediate_results.record_evaluation,
             level_threshold_min=level_threshold_min,
+            level_threshold_max=level_threshold_max,
             **level_sampler_kwargs,
         )
     else:

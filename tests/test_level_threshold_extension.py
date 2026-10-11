@@ -6,6 +6,8 @@ import pytest
 
 import flags
 from YRC.coverage import coverage_search
+from YRC.coverage.coverage_search import LevelAFHPThresholdSampler
+from YRC.policies.ood import OODPolicy
 from YRC.policies.threshold import ThresholdPolicy
 
 
@@ -42,7 +44,21 @@ def make_threshold_policy(metric="max_logit", calibration_scores=None):
     return policy
 
 
-def make_sampler(policy, evaluator, *, level_threshold_min=None):
+def make_latent_svdd_policy(calibration_scores=None):
+    policy = OODPolicy.__new__(OODPolicy)
+    policy.clf_name = "DeepSVDD"
+    policy.feature_type = "hidden"
+    policy.params = {"threshold": 0.0}
+    if calibration_scores is not None:
+        policy._train_episode_max_scores = np.asarray(calibration_scores, dtype=float)
+    else:
+        policy._train_episode_max_scores = None
+    return policy
+
+
+def make_sampler(
+    policy, evaluator, *, level_threshold_min=None, level_threshold_max=None
+):
     return coverage_search.create_level_afhp_threshold_sampler(
         policy=policy,
         evaluator=evaluator,
@@ -50,6 +66,7 @@ def make_sampler(policy, evaluator, *, level_threshold_min=None):
         split="test",
         coverage_fraction=0.05,
         level_threshold_min=level_threshold_min,
+        level_threshold_max=level_threshold_max,
     )
 
 
@@ -177,6 +194,124 @@ def test_extension_rejects_non_threshold_policies():
         )
 
 
+def test_upper_extension_fills_bins_below_synthetic_18_percent_floor(monkeypatch):
+    monkeypatch.setattr(coverage_search, "update_policy_params", lambda *args: None)
+    calibration_scores = [0.0, 0.5, 1.0]
+    # Every calibration-range threshold asks on the 18 episodes whose scores sit
+    # above the calibration maximum. The other 82 episodes stay below every
+    # calibration threshold, so AFHP cannot fall under 18% until the finite
+    # range is extended upward.
+    episode_scores = np.concatenate([np.full(82, -1.0), np.linspace(1.01, 30.0, 18)])
+    baseline = make_sampler(
+        make_latent_svdd_policy(calibration_scores),
+        FakeEvaluator(episode_scores),
+    )
+    extended = make_sampler(
+        make_latent_svdd_policy(calibration_scores),
+        FakeEvaluator(episode_scores),
+        level_threshold_max=30.0,
+    )
+
+    sample_percentiles = [0.05, 0.25, 0.9]
+    baseline_afhps = [baseline.eval_at_percentile(p)[0] for p in sample_percentiles]
+    extended_afhps = [extended.eval_at_percentile(p)[0] for p in sample_percentiles]
+    extended_bins = {extended.determine_bin(afhp) for afhp in extended_afhps}
+    baseline_bins = {baseline.determine_bin(afhp) for afhp in baseline_afhps}
+
+    assert min(baseline_afhps) == pytest.approx(0.18)
+    assert 0 in extended_bins
+    assert min(baseline_bins) >= 3
+
+    _, _, extended_point = extended.eval_at_percentile(0.25)
+    mapping = extended_point["level_threshold_mapping"]
+    assert extended_point["threshold"] == pytest.approx(22.5)
+    assert mapping["calibration_min"] == 0.0
+    assert mapping["calibration_max"] == 1.0
+    assert mapping["requested_max"] == 30.0
+    assert mapping["effective_min"] == 0.0
+    assert mapping["effective_max"] == 30.0
+    assert mapping["strategy"] == "linear_upper_tail_extension"
+
+    sampled_thresholds = [
+        extended.eval_at_percentile(p)[2]["threshold"] for p in (0.25, 0.5, 0.75)
+    ]
+    assert sampled_thresholds[0] >= sampled_thresholds[1] >= sampled_thresholds[2]
+    _, _, lower = extended.eval_at_lower_extreme()
+    _, _, upper = extended.eval_at_upper_extreme()
+    assert np.isposinf(lower["threshold"])
+    assert np.isneginf(upper["threshold"])
+
+
+def test_upper_extension_binary_sampler_fills_low_afhp_bins(monkeypatch):
+    monkeypatch.setattr(coverage_search, "update_policy_params", lambda *args: None)
+    calibration_scores = np.linspace(0.0, 1.0, 101)
+    episode_scores = np.concatenate(
+        [
+            np.linspace(-1.0, 0.0, 8200),
+            np.linspace(1.0001, 30.0, 1800),
+        ]
+    )
+    evaluator = FakeEvaluator(episode_scores, max_calls=100)
+    sampler = make_sampler(
+        make_latent_svdd_policy(calibration_scores),
+        evaluator,
+        level_threshold_max=30.0,
+    )
+
+    assert isinstance(sampler, LevelAFHPThresholdSampler)
+    result = sampler.run()
+    filled_bins = {sampler.determine_bin(point.afhp) for point in result.points}
+
+    assert 0 in filled_bins
+    assert any(point.afhp < 0.18 for point in result.points)
+    assert len(evaluator.thresholds) < 100
+
+
+def test_latent_svdd_uses_exact_threshold_reuse_sampler(monkeypatch):
+    monkeypatch.setattr(coverage_search, "update_policy_params", lambda *args: None)
+    sampler = make_sampler(
+        make_latent_svdd_policy([0.0, 0.5, 1.0]),
+        FakeEvaluator([0.0, 1.0]),
+    )
+
+    assert isinstance(sampler, LevelAFHPThresholdSampler)
+
+
+@pytest.mark.parametrize(
+    "policy, requested_max, message",
+    [
+        (
+            make_threshold_policy(calibration_scores=[0.0, 1.0]),
+            30.0,
+            "latent DeepSVDD",
+        ),
+        (make_latent_svdd_policy(None), 30.0, "calibrated episode maximum scores"),
+        (
+            make_latent_svdd_policy([0.0, 0.5, 1.0]),
+            1.0,
+            "strictly above",
+        ),
+        (
+            make_latent_svdd_policy([0.0, 0.5, 1.0]),
+            0.5,
+            "strictly above",
+        ),
+        (
+            make_latent_svdd_policy([0.0, 0.5, 1.0]),
+            np.nan,
+            "must be finite",
+        ),
+    ],
+)
+def test_invalid_upper_extension_requests_are_rejected(policy, requested_max, message):
+    with pytest.raises(ValueError, match=message):
+        make_sampler(
+            policy,
+            FakeEvaluator([0.0, 1.0]),
+            level_threshold_max=requested_max,
+        )
+
+
 def test_eval_afhp_flag_parses_negative_threshold_min(monkeypatch):
     monkeypatch.setattr(
         sys,
@@ -187,3 +322,15 @@ def test_eval_afhp_flag_parses_negative_threshold_min(monkeypatch):
     args = flags.make()
 
     assert args.evaluation.level_threshold_min == -30.0
+
+
+def test_eval_afhp_flag_parses_threshold_max(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["eval_afhp.py", "-level_threshold_max", "30"],
+    )
+
+    args = flags.make()
+
+    assert args.evaluation.level_threshold_max == 30.0

@@ -61,6 +61,7 @@ EVAL_DEFAULTS = {
     "video_filter_mode": "any",
     "coverage_fraction": 0.05,
     "level_threshold_min": None,
+    "level_threshold_max": None,
     "svdd_prefix": "neurips05",
 }
 
@@ -443,6 +444,8 @@ def build_python_command(eval_args: dict) -> str:
         python_args.append(f"-calibration_levels {eval_args['calibration_levels']}")
     if eval_args.get("level_threshold_min") is not None:
         python_args.append(f"-level_threshold_min {eval_args['level_threshold_min']}")
+    if eval_args.get("level_threshold_max") is not None:
+        python_args.append(f"-level_threshold_max {eval_args['level_threshold_max']}")
 
     # Add wandb project if specified
     if eval_args.get("wandb_project"):
@@ -919,6 +922,15 @@ def main():
         ),
     )
     parser.add_argument(
+        "--level-threshold-max",
+        type=float,
+        default=EVAL_DEFAULTS["level_threshold_max"],
+        help=(
+            "For latent-SVDD level-AFHP evaluation, extend interior thresholds "
+            "above the calibration maximum to this finite value."
+        ),
+    )
+    parser.add_argument(
         "--calibration-levels",
         type=int,
         default=None,
@@ -1007,11 +1019,22 @@ def main():
         args.execution = "apptainer"
     if args.runs_per_gpu <= 0:
         parser.error("--runs-per-gpu must be a positive integer.")
+    if args.level_threshold_min is not None and args.level_threshold_max is not None:
+        parser.error(
+            "--level-threshold-min and --level-threshold-max cannot both be set."
+        )
     if args.level_threshold_min is not None:
         if not math.isfinite(args.level_threshold_min):
             parser.error("--level-threshold-min must be finite.")
         if args.method != "max-logit":
             parser.error("--level-threshold-min currently requires --method max-logit.")
+    if args.level_threshold_max is not None:
+        if not math.isfinite(args.level_threshold_max):
+            parser.error("--level-threshold-max must be finite.")
+        if args.method != "svdd-latent":
+            parser.error(
+                "--level-threshold-max currently requires --method svdd-latent."
+            )
 
     # Get server-specific paths
     paths = SERVER_PATHS[args.server]
@@ -1258,6 +1281,7 @@ def main():
             "video_filter_mode": args.video_filter_mode,
             "coverage_fraction": args.coverage_fraction,
             "level_threshold_min": args.level_threshold_min,
+            "level_threshold_max": args.level_threshold_max,
             "calibration_levels": args.calibration_levels,
             "wandb_project": args.wandb_project,
             "level_seeds_file": str(level_seeds_file),
