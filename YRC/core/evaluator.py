@@ -87,6 +87,15 @@ def _deep_copy_info(info: Dict) -> Dict:
     return copied
 
 
+def _coerce_score(value: Any) -> float:
+    """Return a scalar score, using NaN when the value is missing or invalid."""
+    try:
+        score = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return float("nan")
+    return score
+
+
 def _episode_randomize_goal(
     info: Dict[str, Any], done: bool, current_value: bool
 ) -> bool:
@@ -295,6 +304,9 @@ class Evaluator:
             # OOD scores per timestep for histogram analysis
             "scores_in_domain": [],  # Scores for deterministic coin levels
             "scores_out_of_domain": [],  # Scores for random coin levels
+            # Maximum emitted decision score for each retained episode. NaN
+            # means scores were unavailable or invalid during that episode.
+            "episode_max_scores": [],
             # Original scores (before rolling average)
             "scores_original_in_domain": [],
             "scores_original_out_of_domain": [],
@@ -317,6 +329,10 @@ class Evaluator:
             "episode_length": [0] * env.num_envs,
             f"action_{self.LOGGED_ACTION}": [0] * env.num_envs,
             "randomize_goal": [0] * env.num_envs,
+            "episode_max_score": [float("-inf")] * env.num_envs,
+            "episode_has_score": [False] * env.num_envs,
+            "episode_missing_score": [False] * env.num_envs,
+            "episode_invalid_score": [False] * env.num_envs,
         }
 
         # For every env, whether the current level has been predicted as ood.
@@ -431,16 +447,41 @@ class Evaluator:
                 # Some OOD detectors, like the random one, don't assign scores.
                 scores_i = scores[i] if scores is not None else None
 
+                # Accumulate the emitted decision score, which is the score
+                # returned by policy.act (including any rolling average). Do
+                # this before handling `done` so the terminal action counts.
+                # In particular, -inf emitted during rolling-buffer warmup is
+                # a real score: a later finite score can still become the max.
+                # A worker that reported exhausted seeds on an earlier step
+                # has no further episode evidence to contribute.
+                if not seeds_exhausted[i]:
+                    if scores_i is None:
+                        episode_log["episode_missing_score"][i] = True
+                        if episode_log["episode_has_score"][i]:
+                            episode_log["episode_invalid_score"][i] = True
+                    else:
+                        episode_log["episode_has_score"][i] = True
+                        if episode_log["episode_missing_score"][i]:
+                            episode_log["episode_invalid_score"][i] = True
+                        score_value = _coerce_score(scores_i)
+                        if np.isnan(score_value):
+                            episode_log["episode_invalid_score"][i] = True
+                        elif not episode_log["episode_invalid_score"][i]:
+                            episode_log["episode_max_score"][i] = max(
+                                episode_log["episode_max_score"][i], score_value
+                            )
+
                 # Collect scores for histogram analysis (only if scores exist)
                 if scores_i is not None and not done[i]:
                     # Check if this level has random or deterministic coin
                     is_random_coin = current_level_ood_gt[i]
 
                     # Collect rolling average scores (or final scores if no rolling average)
+                    score_value = _coerce_score(scores_i)
                     if is_random_coin:
-                        log["scores_out_of_domain"].append(float(scores_i))
+                        log["scores_out_of_domain"].append(score_value)
                     else:
-                        log["scores_in_domain"].append(float(scores_i))
+                        log["scores_in_domain"].append(score_value)
 
                     # Collect original scores (before rolling average) if available
                     if (
@@ -451,7 +492,7 @@ class Evaluator:
                         original_scores = policy.last_scores_original
                         if hasattr(original_scores, "cpu"):
                             original_scores = original_scores.cpu().numpy()
-                        scores_original_i = float(original_scores[i])
+                        scores_original_i = _coerce_score(original_scores[i])
 
                         if is_random_coin:
                             log["scores_original_out_of_domain"].append(
@@ -492,6 +533,18 @@ class Evaluator:
                             episode_log["cumulative_env_reward"][i]
                         )
                         log["episode_length"].append(episode_log["episode_length"][i])
+                        episode_max_score = float("nan")
+                        if (
+                            episode_log["episode_has_score"][i]
+                            and not episode_log["episode_missing_score"][i]
+                            and not episode_log["episode_invalid_score"][i]
+                        ):
+                            # Keep +/-inf here. A downstream diagnostic can
+                            # conservatively treat a final infinite maximum as
+                            # unavailable while retaining warmup -inf values
+                            # that were followed by finite scores.
+                            episode_max_score = episode_log["episode_max_score"][i]
+                        log["episode_max_scores"].append(episode_max_score)
                         log[f"action_{self.LOGGED_ACTION}"].append(
                             episode_log[f"action_{self.LOGGED_ACTION}"][i]
                         )
@@ -602,6 +655,10 @@ class Evaluator:
                     episode_log["cumulative_env_reward"][i] = 0
                     episode_log["episode_length"][i] = 0
                     episode_log[f"action_{self.LOGGED_ACTION}"][i] = 0
+                    episode_log["episode_max_score"][i] = float("-inf")
+                    episode_log["episode_has_score"][i] = False
+                    episode_log["episode_missing_score"][i] = False
+                    episode_log["episode_invalid_score"][i] = False
 
                     # In case we are using a rolling average for the score, we need to
                     # reset the buffer for the next episode.
@@ -665,6 +722,7 @@ class Evaluator:
             "episode_length_min": int(np.min(log["episode_length"])),
             "episode_length_max": int(np.max(log["episode_length"])),
             "episode_lengths": log["episode_length"],  # Raw episode lengths per episode
+            "episode_max_scores": log.get("episode_max_scores", []),
             "return_mean": float(np.mean(log["returns"])),
             "raw_returns": log["returns"],
             "return_std": float(np.std(log["returns"])),

@@ -10,7 +10,11 @@ import YRC.core.environment as env_factory
 import YRC.core.policy as policy_factory
 from YRC.core import Evaluator
 from YRC.core.configs.global_configs import get_global_variable
-from YRC.core.eval_script_utils import init_eval_wandb_run, save_npz_results
+from YRC.core.eval_script_utils import (
+    IntermediateEvaluationResults,
+    init_eval_wandb_run,
+    save_npz_results,
+)
 from YRC.core.level_seeds import load_level_seed_splits
 
 
@@ -205,6 +209,30 @@ def main():
     # Note: config_utils.load() handles logging configuration based on args.log_level
     config = config_utils.load(args.config, flags=args)
     require_non_plain_maze_eval_env(config.environment.common.env_name)
+    threshold_sampler: str = config.evaluation.threshold_sampler
+    level_threshold_min = getattr(config.evaluation, "level_threshold_min", None)
+    level_threshold_max = getattr(config.evaluation, "level_threshold_max", None)
+    if level_threshold_min is not None and level_threshold_max is not None:
+        raise ValueError(
+            "evaluation.level_threshold_min and evaluation.level_threshold_max "
+            "cannot both be set."
+        )
+    if level_threshold_min is not None:
+        if not np.isfinite(float(level_threshold_min)):
+            raise ValueError("evaluation.level_threshold_min must be finite.")
+        if threshold_sampler != "level_afhp":
+            raise ValueError(
+                "evaluation.level_threshold_min requires threshold_sampler="
+                "'level_afhp'."
+            )
+    if level_threshold_max is not None:
+        if not np.isfinite(float(level_threshold_max)):
+            raise ValueError("evaluation.level_threshold_max must be finite.")
+        if threshold_sampler != "level_afhp":
+            raise ValueError(
+                "evaluation.level_threshold_max requires threshold_sampler="
+                "'level_afhp'."
+            )
 
     # Record time for profiling purposes
     start_time = time.time()
@@ -238,6 +266,29 @@ def main():
     logging.info("Creating coordination policy.")
     policy_start = time.time()
     policy = policy_factory.make(config, envs["train"])
+    if level_threshold_min is not None:
+        from YRC.policies.threshold import ThresholdPolicy
+
+        if not isinstance(policy, ThresholdPolicy):
+            raise ValueError(
+                "evaluation.level_threshold_min is supported only for "
+                "ThresholdPolicy with the max_logit metric."
+            )
+        if getattr(policy.args, "metric", None) != "max_logit":
+            raise ValueError(
+                "evaluation.level_threshold_min is supported only for the "
+                "max_logit metric."
+            )
+    if level_threshold_max is not None:
+        from YRC.policies.ood import OODPolicy
+
+        if (
+            not isinstance(policy, OODPolicy)
+            or getattr(policy, "feature_type", None) != "hidden"
+        ):
+            raise ValueError(
+                "evaluation.level_threshold_max is supported only for latent DeepSVDD."
+            )
     logging.info(f"Coordination policy created in {time.time() - policy_start:.2f}s")
     if config.general.algorithm != "always" and not config.coord_policy.baseline:
         # The following algorithms do not need to load a model, because they do not
@@ -260,6 +311,14 @@ def main():
                 f"{time.time() - model_load_start:.2f}s"
             )
 
+    if (
+        level_threshold_max is not None
+        and getattr(policy, "clf_name", None) != "DeepSVDD"
+    ):
+        raise ValueError(
+            "evaluation.level_threshold_max is supported only for latent DeepSVDD."
+        )
+
     evaluator = Evaluator(config, config.environment)
 
     logging.info("Starting percentile calibration.")
@@ -277,7 +336,6 @@ def main():
     )
 
     coverage_fraction = config.evaluation.coverage_fraction
-    threshold_sampler: str = config.evaluation.threshold_sampler
 
     if coverage_fraction < 0.01:
         raise ValueError("Coverage fraction must be at least 0.01")
@@ -285,6 +343,16 @@ def main():
     exp, wandb_logger = create_eval_wandb_logger(config)
 
     split = "test"
+    log_file_path = get_global_variable("log_file")
+    if log_file_path is None:
+        raise ValueError(
+            "Log file path is not set. Could not find path to save results."
+        )
+    log_file_path = Path(log_file_path)
+    results_file_path = log_file_path.with_name(
+        log_file_path.name.replace(".log", f"_{split}.npz")
+    )
+    intermediate_results = IntermediateEvaluationResults(results_file_path)
 
     # Create the joint-coverage sampler via YRC wrapper (adapts to new abcs API)
     max_total_evals = 200
@@ -303,6 +371,7 @@ def main():
             max_total_evals=max_total_evals,
             logger=wandb_logger,
             wandb_run=exp,
+            on_evaluation=intermediate_results.record_evaluation,
         )
     elif threshold_sampler == "level_afhp":
         level_sampler_kwargs = {}
@@ -331,6 +400,9 @@ def main():
             max_total_evals=max_total_evals,
             logger=wandb_logger,
             wandb_run=exp,
+            on_evaluation=intermediate_results.record_evaluation,
+            level_threshold_min=level_threshold_min,
+            level_threshold_max=level_threshold_max,
             **level_sampler_kwargs,
         )
     else:
@@ -367,16 +439,7 @@ def main():
 
     total_evals = sampling_result.total_evals
 
-    # Save result summary to file.
-    log_file_path = get_global_variable("log_file")
-    if log_file_path is None:
-        raise ValueError(
-            "Log file path is not set. Could not find path to save results."
-        )
-    log_file_path = Path(log_file_path)
-    results_file_path = log_file_path.with_name(
-        log_file_path.name.replace(".log", f"_{split}.npz")
-    )
+    # Replace the last intermediate checkpoint with the canonical sampler result.
     save_npz_results(
         results_file_path,
         afhps=np.array([pt.afhp for pt in sorted_points]),

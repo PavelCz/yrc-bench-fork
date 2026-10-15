@@ -21,7 +21,7 @@ scripts/run_eval.py
 | Parameter | Default | Set In | Meaning |
 |---|---|---|---|
 | `coverage_fraction` | 0.05 | `scripts/run_eval.py` | Max normalized neighbor gap allowed on output axis |
-| `max_total_evals` | 200 | `eval_afhp.py` | Hard budget of evaluations |
+| `max_total_evals` | 200 | `eval_afhp.py` | Enforced by the image-SVDD raw-threshold fallback; the regular legacy `BinarySearchSampler` does not enforce it |
 | `num_levels` | 5000 | `scripts/run_eval.py` | Episodes per evaluation |
 | `threshold_sampler` | `"step_afhp"` | Config YAML | Which output axis to cover (`"step_afhp"` or `"level_afhp"`) |
 
@@ -49,9 +49,11 @@ Recursively:
 
 ### Stopping conditions
 
-The algorithm stops when:
-- All `num_bins` bins contain at least one sample, **or**
-- The hard budget of `max_total_evals` is exhausted.
+The regular legacy `BinarySearchSampler` is intended to stop when all
+`num_bins` bins contain at least one sample. It does not currently enforce
+`max_total_evals`, so an unreachable bin can continue driving recursive search.
+The image-SVDD raw-threshold fallback enforces its evaluation budget; its probe
+uses a fixed number of evaluations before the fallback starts.
 
 In practice, with 20 bins, the algorithm typically runs 20–40 evaluations.
 
@@ -71,6 +73,10 @@ Each evaluation runs `num_levels` episodes and computes (in `YRC/core/evaluator.
 - `env_return_mean` — average episodic return (performance axis)
 - `level_seeds` — which level seeds were used
 - `level_ood_pred` — per-episode OOD predictions (used downstream by `eval_strong_on_help.py`)
+- `episode_max_scores` — maximum emitted decision score per retained episode,
+  aligned with `level_seeds` and the other episode arrays. This includes the
+  terminal action's score and any policy smoothing. Episodes with missing or
+  invalid scores are marked unavailable rather than silently omitted.
 
 For `heist_afh`, each threshold point also records the completed episode's raw
 `keys_collected`, `num_keys`, `total_chests`, `chests_opened`, `total_steps`, and
@@ -105,6 +111,16 @@ Results are saved to an NPZ file containing:
 - All sampled curve points (threshold, AFHP, return)
 - Per-point metadata including per-episode predictions
 - Coverage statistics (max normalized gap on the output axis)
+
+`eval_afhp.py` writes an intermediate checkpoint to the same `_test.npz` path
+after each completed evaluation. The checkpoint keeps the standard NPZ keys and
+per-point metadata, and sets `sampling_info[0]["status"]` to `"in_progress"`
+with a `completed_evaluations` count. If evaluation finishes normally, the final
+canonical sampler result overwrites that checkpoint at the same path. A partial
+file contains completed evaluations only; it does not support resuming a sampler.
+During image-SVDD raw-threshold fallback, `desired_percentiles` for direct raw
+threshold evaluations are `NaN` in partial checkpoints because the final mapping
+depends on the upper threshold found by the completed search.
 
 Heist outcome arrays and summaries live in each curve point's
 `meta["summary"]["test"]` entry rather than as duplicate top-level NPZ arrays. They
@@ -155,6 +171,74 @@ For `TimestepRandomPolicy`, there is no OOD score distribution — the "score" i
 
 For `LevelBasedRandomPolicy`, the decision is per-episode, so `level_afhp` equals the help probability directly — no calibration is needed.
 
+### Extending the level-AFHP max-logit range
+
+The optional launcher flag `--level-threshold-min X` extends finite thresholds
+below the calibration minimum for max-logit `level_afhp` evaluations. The value
+must be finite and strictly below the minimum episode-maximum calibration score.
+For an interior sampler percentile `p`, the mapped threshold is
+`train_percentile_level(100 - 100*p) - p*(calibration_min - X)`. This moves the
+finite lower end toward `X` as `p` approaches 1 while retaining the original
+finite upper end. The existing `p=0` (`+inf`, never ask) and `p=1` (`-inf`,
+always ask) endpoints stay unchanged. Lower thresholds make more negative
+max-logit scores eligible to request help.
+
+The default is unset, which keeps the existing percentile mapping unchanged.
+The extension rejects policies other than `ThresholdPolicy` with the
+`max_logit` metric. The configured minimum is saved in the evaluation config,
+and each point's metadata records the calibration minimum/maximum and effective
+finite range. Extending the range can expose additional high-AFHP bins when the
+evaluation score distribution extends below calibration; it does not guarantee
+that every gap is fillable or that the sampled curve has adequate coverage.
+
+### Diagnosing limited threshold ranges
+
+For `ThresholdPolicy` with `level_afhp`, the existing never-ask evaluation also
+provides an early range diagnostic. If `M` is the episode's maximum decision
+score, its empirical first-help prediction at threshold `t` is `M > t`. Before
+the first request, the novice follows the same policy as in the never-ask
+rollout, so these maxima estimate help rates at the finite search boundaries
+without another evaluation. They do not estimate the return after expert help.
+
+The diagnostic reports the finite threshold bounds, episode counts, estimated
+AFHP at both bounds, and approximate 95% Wilson sampling intervals. A range
+limitation is suspected when an entire coverage bin lies outside the combined
+uncertainty band. Empirical bins outside the point-estimate range are also
+reported separately. These concern **finite thresholds**: the infinite
+endpoints may already fill some of those bins. Actual unfilled bins are a
+separate search result.
+
+This is advisory. Fixed evaluation levels, stochastic trajectories, and score
+ties limit what can be inferred from one set of rollouts. Missing or non-finite
+episode maxima make the estimate unavailable; the diagnostic does not silently
+drop those episodes. It neither expands the threshold range automatically nor
+declares an AFHP gap globally impossible.
+
+The estimate is stored as `level_afhp_range_diagnostics` in point metadata and
+the final sampler information, without changing the NPZ array names.
+`requested_bins_beyond_range` lists suspected finite-range limitations;
+`level_afhp_search_diagnostics.unfilled_bin_indices` reports the actual missing
+bins when the search finishes. Search diagnostics also record exact-threshold
+reuse counts and exhausted intervals. Custom percentile mappings have no range
+estimate unless their bounds are known; currently they report
+`unsupported_threshold_mapping`.
+Point metadata contains a snapshot at that evaluation; final `sampling_info`
+contains the cumulative search diagnostics.
+
+The score-based level sampler also reuses the first measured result when a
+request maps to an exactly repeated numeric threshold. Reused requests do not
+count as new evaluations or create duplicate checkpoint points. This is exact
+numeric equality, not a tolerance-based claim that nearby thresholds are
+equivalent in the policy's tensor precision.
+
+An interval is exhausted only when its known monotone threshold mapping is
+constant throughout the interval, or when there is no representable midpoint left to
+search. A midpoint repeating only one endpoint does not establish exhaustion;
+the search must still inspect the part that can contain another setting.
+Distinct thresholds with unchanged measured AFHP continue to be explored.
+Exhausted intervals and unresolved bins are recorded as limitations of the
+current mapping, not proof that no threshold could fill the gap.
+
 ## Sampler Variants
 
 The `threshold_sampler` config option selects the output axis:
@@ -162,7 +246,10 @@ The `threshold_sampler` config option selects the output axis:
 - `"step_afhp"`: Covers the step AFHP axis (% of steps where help is requested).
 - `"level_afhp"`: Covers the level AFHP axis (% of episodes where help is requested).
 
-By default, both use the same `BinarySearchSampler` algorithm; they differ only in which metric defines the output bins.
+Both use binary search for output coverage. The `ThresholdPolicy` level-AFHP
+path additionally detects exact repeated settings and exhausted threshold
+intervals as described above. The step-AFHP, random-policy, and OOD-policy paths
+retain their existing sampler behavior.
 
 There is also a `WaitPolicyAwareSampler` (in `lib/acs/src/acs/wait_policy_sampler.py`) that extends the binary search to detect regions where the output doesn't change despite varying the threshold — it declares these "unfillable" and stops searching there.
 

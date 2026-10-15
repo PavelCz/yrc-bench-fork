@@ -6,11 +6,13 @@ ACS library for the specific use case of threshold evaluation in YRC.
 """
 
 from typing import Tuple, Any, Dict, Optional, Callable, List
+import copy
 
 # Import the joint-coverage sampler from the external ACS library
 from acs import BinarySearchSampler
 from acs.types import CurvePoint, SamplingResult
 from acs.wait_policy_sampler import WaitPolicyAwareSampler
+from YRC.coverage.diagnostics import level_afhp_range_diagnostics
 from YRC.policies.ood import OODPolicy
 from YRC.policies.base import (
     LevelBasedRandomPolicy,
@@ -36,6 +38,316 @@ DEFAULT_IMAGE_SVDD_PROBE_PERCENTILES = (0.25, 0.5, 0.75, 0.9)
 DEFAULT_IMAGE_SVDD_HIGH_AFHP_THRESHOLD = 0.99
 DEFAULT_SCORE_TOLERANCE_ABS = 1e-8
 DEFAULT_SCORE_TOLERANCE_REL = 1e-6
+LEVEL_THRESHOLD_EXTENSION_STRATEGY = "linear_lower_tail_extension"
+LEVEL_THRESHOLD_UPPER_EXTENSION_STRATEGY = "linear_upper_tail_extension"
+
+
+def _unresolved_bin_indices(left_bin_idx: int, right_bin_idx: int) -> List[int]:
+    """Return coverage bins strictly between two sampled output bins."""
+    low = min(left_bin_idx, right_bin_idx)
+    high = max(left_bin_idx, right_bin_idx)
+    return list(range(low + 1, high))
+
+
+class LevelAFHPThresholdSampler(BinarySearchSampler):
+    """Binary search with exact threshold reuse for level-AFHP ThresholdPolicy.
+
+    The input-to-threshold map is monotone for the base ThresholdPolicy
+    percentile mapping. Exact-equal endpoint thresholds therefore prove that
+    the whole interval maps to one effective Python-float setting. A repeated
+    midpoint alone does not prove that: the other half of a mixed interval is
+    still searched. Cache equality is deliberately exact because this wrapper
+    does not assume the score tensor's comparison precision.
+    """
+
+    def __init__(
+        self,
+        *,
+        eval_at_percentile,
+        eval_at_lower_extreme,
+        eval_at_upper_extreme,
+        threshold_for_input: Callable[[float], float],
+        num_bins: int,
+        diagnostics: Dict[str, Any],
+        threshold_mapping_is_monotone: bool,
+    ) -> None:
+        super().__init__(
+            eval_at_percentile=eval_at_percentile,
+            eval_at_lower_extreme=eval_at_lower_extreme,
+            eval_at_upper_extreme=eval_at_upper_extreme,
+            num_bins=num_bins,
+            output_range=(0.0, 1.0),
+        )
+        self.threshold_for_input = threshold_for_input
+        self.diagnostics = diagnostics
+        self.threshold_mapping_is_monotone = threshold_mapping_is_monotone
+        self._points_by_threshold: Dict[float, CurvePoint] = {}
+
+    def evaluate_at_input(self, input_value: float) -> CurvePoint:
+        """Evaluate a new threshold once, reusing its point on exact repeats."""
+        threshold = float(self.threshold_for_input(float(input_value)))
+        self.diagnostics["requested_threshold_count"] += 1
+        key = threshold
+
+        previous_point = self._points_by_threshold.get(key)
+        if previous_point is not None:
+            self.diagnostics["reused_threshold_request_count"] += 1
+            self.diagnostics["reused_threshold_requests"].append(
+                {
+                    "input": float(input_value),
+                    "threshold": threshold,
+                    "reused_order": int(previous_point.order),
+                }
+            )
+            return previous_point
+
+        # The base implementation calls the evaluation callback before it
+        # returns. Update counters first so intermediate checkpoints see the
+        # evaluation that is currently being recorded.
+        self.diagnostics["unique_threshold_count"] += 1
+        try:
+            point = super().evaluate_at_input(input_value)
+        except Exception:
+            self.diagnostics["unique_threshold_count"] -= 1
+            raise
+        self._points_by_threshold[key] = point
+        return point
+
+    def binary_search_fill(
+        self,
+        left_input: float,
+        right_input: float,
+        left_bin_idx: int,
+        right_bin_idx: int,
+    ) -> int:
+        """Fill bins, stopping only on a proven constant map or input limit."""
+        left_input = float(left_input)
+        right_input = float(right_input)
+        left_threshold = float(self.threshold_for_input(left_input))
+        right_threshold = float(self.threshold_for_input(right_input))
+
+        if self.threshold_mapping_is_monotone and left_threshold == right_threshold:
+            self._record_exhausted_interval(
+                left_input,
+                right_input,
+                left_bin_idx,
+                right_bin_idx,
+                reason="constant_threshold_mapping",
+                threshold=left_threshold,
+            )
+            return 0
+
+        middle_input = float((left_input + right_input) / 2.0)
+        if middle_input == left_input or middle_input == right_input:
+            middle_input = float(np.nextafter(left_input, right_input))
+        if not (left_input < middle_input < right_input):
+            self._record_exhausted_interval(
+                left_input,
+                right_input,
+                left_bin_idx,
+                right_bin_idx,
+                reason="input_precision_exhausted",
+                threshold=None,
+            )
+            return 0
+
+        eval_count_before = self.total_evals
+        sample = self.evaluate_at_input(middle_input)
+        bin_idx = self.determine_bin(sample.afhp)
+        if self.bin_samples[bin_idx] is None:
+            self.bin_samples[bin_idx] = sample
+
+        evals = self.total_evals - eval_count_before
+        if self.bins_remaining(left_bin_idx, bin_idx):
+            evals += self.binary_search_fill(
+                left_input, middle_input, left_bin_idx, bin_idx
+            )
+        if self.bins_remaining(bin_idx, right_bin_idx):
+            evals += self.binary_search_fill(
+                middle_input, right_input, bin_idx, right_bin_idx
+            )
+        return evals
+
+    def _record_exhausted_interval(
+        self,
+        left_input: float,
+        right_input: float,
+        left_bin_idx: int,
+        right_bin_idx: int,
+        *,
+        reason: str,
+        threshold: Optional[float],
+    ) -> None:
+        unresolved_bins = [
+            index
+            for index in _unresolved_bin_indices(left_bin_idx, right_bin_idx)
+            if self.bin_samples[index] is None
+        ]
+        self.diagnostics["exhausted_intervals"].append(
+            {
+                "input_interval": [float(left_input), float(right_input)],
+                "reason": reason,
+                "threshold": threshold,
+                "unresolved_bin_indices": unresolved_bins,
+                "scope": "sampled_percentile_input_interval",
+            }
+        )
+
+    def run(self):
+        result = super().run()
+        unfilled_bin_indices = [
+            index for index, point in enumerate(self.bin_samples) if point is None
+        ]
+        self.diagnostics["unfilled_bin_indices"] = unfilled_bin_indices
+        self.diagnostics["unfilled_bins"] = [
+            {
+                "index": index,
+                "afhp_interval": [
+                    float(self.bin_edges[index]),
+                    float(self.bin_edges[index + 1]),
+                ],
+            }
+            for index in unfilled_bin_indices
+        ]
+        self.diagnostics["status"] = (
+            "complete" if not unfilled_bin_indices else "completed_with_unfilled_bins"
+        )
+        self.diagnostics["interpretation"] = (
+            "Unresolved bins report where the sampled percentile input interval "
+            "was exhausted; they do not establish global AFHP unreachability."
+        )
+
+        result_info = dict(result.info or {})
+        result_info["level_afhp_search_diagnostics"] = copy.deepcopy(self.diagnostics)
+        result_info["level_afhp_range_diagnostics"] = copy.deepcopy(
+            self.diagnostics.get("range_diagnostics", {})
+        )
+        result.info = result_info
+        return result
+
+
+def _calibration_episode_max_scores(policy, flag_name: str) -> np.ndarray:
+    scores = getattr(policy, "_train_episode_max_scores", None)
+    if scores is None:
+        raise ValueError(f"{flag_name} requires calibrated episode maximum scores.")
+    scores = np.asarray(scores, dtype=float)
+    if scores.size == 0 or not np.all(np.isfinite(scores)):
+        raise ValueError(f"{flag_name} requires non-empty, finite calibration scores.")
+    return scores
+
+
+def _is_latent_deep_svdd(policy) -> bool:
+    return (
+        isinstance(policy, OODPolicy)
+        and getattr(policy, "clf_name", None) == "DeepSVDD"
+        and getattr(policy, "feature_type", None) == "hidden"
+    )
+
+
+def _level_threshold_extension_info(
+    policy,
+    requested_min: Optional[float],
+    requested_max: Optional[float] = None,
+):
+    if requested_min is None and requested_max is None:
+        return None
+    if requested_min is not None and requested_max is not None:
+        raise ValueError(
+            "level_threshold_min and level_threshold_max cannot both be set."
+        )
+
+    if requested_min is not None:
+        if not isinstance(policy, ThresholdPolicy):
+            raise ValueError(
+                "level_threshold_min is supported only for ThresholdPolicy with the "
+                "max_logit metric."
+            )
+        metric = getattr(getattr(policy, "args", None), "metric", None)
+        if metric != "max_logit":
+            raise ValueError(
+                "level_threshold_min is supported only for the max_logit metric; "
+                f"got {metric!r}."
+            )
+
+        requested_min = float(requested_min)
+        if not np.isfinite(requested_min):
+            raise ValueError("level_threshold_min must be finite.")
+
+        scores = _calibration_episode_max_scores(policy, "level_threshold_min")
+        calibration_min = float(np.min(scores))
+        calibration_max = float(np.max(scores))
+        if requested_min >= calibration_min:
+            raise ValueError(
+                "level_threshold_min must be strictly below the finite calibration "
+                f"minimum ({calibration_min:.8g}); got {requested_min:.8g}."
+            )
+
+        extension = calibration_min - requested_min
+        info = {
+            "strategy": LEVEL_THRESHOLD_EXTENSION_STRATEGY,
+            "policy_metric": metric,
+            "calibration_min": calibration_min,
+            "calibration_max": calibration_max,
+            "requested_min": requested_min,
+            "effective_min": requested_min,
+            "effective_max": calibration_max,
+            "extension": extension,
+            "upper_extension": 0.0,
+        }
+        logging.info(
+            "Level AFHP threshold extension enabled: metric=%s, calibration_range="
+            "[%.8g, %.8g], effective_finite_range=[%.8g, %.8g], strategy=%s",
+            metric,
+            calibration_min,
+            calibration_max,
+            requested_min,
+            calibration_max,
+            LEVEL_THRESHOLD_EXTENSION_STRATEGY,
+        )
+        return info
+
+    if not _is_latent_deep_svdd(policy):
+        raise ValueError(
+            "level_threshold_max is supported only for latent DeepSVDD "
+            "(OODPolicy, clf_name=DeepSVDD, feature_type=hidden)."
+        )
+
+    requested_max = float(requested_max)
+    if not np.isfinite(requested_max):
+        raise ValueError("level_threshold_max must be finite.")
+
+    scores = _calibration_episode_max_scores(policy, "level_threshold_max")
+    calibration_min = float(np.min(scores))
+    calibration_max = float(np.max(scores))
+    if requested_max <= calibration_max:
+        raise ValueError(
+            "level_threshold_max must be strictly above the finite calibration "
+            f"maximum ({calibration_max:.8g}); got {requested_max:.8g}."
+        )
+
+    upper_extension = requested_max - calibration_max
+    info = {
+        "strategy": LEVEL_THRESHOLD_UPPER_EXTENSION_STRATEGY,
+        "policy_metric": "svdd_latent",
+        "calibration_min": calibration_min,
+        "calibration_max": calibration_max,
+        "requested_max": requested_max,
+        "effective_min": calibration_min,
+        "effective_max": requested_max,
+        "extension": 0.0,
+        "upper_extension": upper_extension,
+    }
+    logging.info(
+        "Level AFHP threshold extension enabled: metric=svdd_latent, "
+        "calibration_range=[%.8g, %.8g], effective_finite_range=[%.8g, %.8g], "
+        "strategy=%s",
+        calibration_min,
+        calibration_max,
+        calibration_min,
+        requested_max,
+        LEVEL_THRESHOLD_UPPER_EXTENSION_STRATEGY,
+    )
+    return info
 
 
 class EvalStepTracker:
@@ -692,6 +1004,11 @@ def create_level_afhp_threshold_sampler(
     max_total_evals: int = 200,
     logger=None,
     wandb_run=None,
+    on_evaluation: Optional[
+        Callable[[Optional[float], float, float, Dict[str, Any]], None]
+    ] = None,
+    level_threshold_min: Optional[float] = None,
+    level_threshold_max: Optional[float] = None,
     image_svdd_degenerate_strategy: str = IMAGE_SVDD_DEGENERATE_STRATEGY,
     image_svdd_expansion_max_evals: int = DEFAULT_IMAGE_SVDD_EXPANSION_MAX_EVALS,
     image_svdd_expansion_initial_delta_fraction: float = (
@@ -715,6 +1032,14 @@ def create_level_afhp_threshold_sampler(
         max_total_evals: Global evaluation budget (includes re-runs)
         logger: Optional logger for tracking evaluations
         wandb_run: Optional wandb run for logging metrics
+        on_evaluation: Optional callback after each completed evaluation. Receives
+            (desired_percentile, AFHP, performance, metadata); raw-threshold fallback
+            evaluations use None for desired_percentile until the run completes.
+        level_threshold_min: Optional finite max_logit threshold below the calibration
+            minimum. Extends interior level-AFHP percentiles toward this lower bound.
+        level_threshold_max: Optional finite latent-SVDD threshold above the
+            calibration maximum. Extends interior level-AFHP percentiles toward
+            this upper bound.
 
     Returns:
         JointCoverageSampler ready to run
@@ -729,6 +1054,63 @@ def create_level_afhp_threshold_sampler(
     if isinstance(policy, WaitPolicy):
         max_episode_length = getattr(policy, "max_episode_length", 500)
 
+    level_threshold_extension = _level_threshold_extension_info(
+        policy, level_threshold_min, level_threshold_max
+    )
+    supports_threshold_diagnostics = isinstance(policy, ThresholdPolicy)
+
+    # The no-help evaluation is the first point in the standard binary sampler.
+    # It supplies episode maxima from trajectories before expert intervention;
+    # those samples support the finite-threshold range estimate attached to all
+    # subsequent points.
+    range_diagnostics: Dict[str, Any] = {
+        "status": "pending_no_help_evaluation",
+        "advisory_only": True,
+        "limitation_scope": "finite_threshold_range_only",
+    }
+    range_diagnostics_ready = False
+    search_diagnostics: Dict[str, Any] = {
+        "status": "in_progress",
+        "requested_threshold_count": 0,
+        "unique_threshold_count": 0,
+        "reused_threshold_request_count": 0,
+        "reused_threshold_requests": [],
+        "exhausted_intervals": [],
+        "unfilled_bin_indices": None,
+        "range_diagnostics": range_diagnostics,
+    }
+
+    calibration_scores = getattr(policy, "_train_episode_max_scores", None)
+    try:
+        calibration_scores_array = np.asarray(calibration_scores, dtype=float)
+    except (TypeError, ValueError):
+        calibration_scores_array = np.asarray([], dtype=float)
+    calibration_scores_are_finite = bool(
+        calibration_scores_array.ndim == 1
+        and calibration_scores_array.size > 0
+        and np.all(np.isfinite(calibration_scores_array))
+    )
+    standard_level_percentile = getattr(
+        getattr(policy, "train_percentile_level", None), "__func__", None
+    )
+    threshold_mapping_is_standard = standard_level_percentile in {
+        ThresholdPolicy.train_percentile_level,
+        OODPolicy.train_percentile_level,
+    }
+    if calibration_scores_are_finite and threshold_mapping_is_standard:
+        if level_threshold_extension is not None:
+            finite_threshold_min = float(level_threshold_extension["effective_min"])
+            finite_threshold_max = float(level_threshold_extension["effective_max"])
+        else:
+            finite_threshold_min = float(np.min(calibration_scores_array))
+            finite_threshold_max = float(np.max(calibration_scores_array))
+    else:
+        finite_threshold_min = float("nan")
+        finite_threshold_max = float("nan")
+    threshold_mapping_is_monotone = bool(
+        threshold_mapping_is_standard and calibration_scores_are_finite
+    )
+
     def percentile_to_threshold(p: float) -> float:
         # p in [0,1]
         if p <= 0.0:
@@ -736,9 +1118,73 @@ def create_level_afhp_threshold_sampler(
         if p >= 1.0:
             return float("-inf")
         percentile = 100.0 - (p * 100.0)
-        return policy.train_percentile_level(percentile)
+        threshold = policy.train_percentile_level(percentile)
+        if level_threshold_extension is not None:
+            # Lower tail: high percentiles (more help) move down toward
+            # requested_min. Upper tail: low percentiles (less help) move up
+            # toward requested_max. Both shifts are monotone in p.
+            threshold -= p * level_threshold_extension["extension"]
+            threshold += (1.0 - p) * level_threshold_extension["upper_extension"]
+        return threshold
 
-    def _eval_with_threshold(threshold: float) -> Tuple[float, float, Dict[str, Any]]:
+    def threshold_for_input(input_value: float) -> float:
+        """Mirror BinarySearchSampler's endpoint epsilon and percentile map."""
+        if abs(input_value - 0.0) < 1e-9:
+            return float("inf")
+        if abs(input_value - 1.0) < 1e-9:
+            return float("-inf")
+        return float(percentile_to_threshold(input_value))
+
+    def _attach_range_diagnostics(summary_for_split, threshold: float) -> None:
+        nonlocal range_diagnostics_ready
+        if (
+            not supports_threshold_diagnostics
+            or range_diagnostics_ready
+            or not np.isposinf(threshold)
+        ):
+            return
+
+        episode_max_scores = summary_for_split.get("episode_max_scores")
+        range_diagnostics.clear()
+        if not threshold_mapping_is_standard:
+            range_diagnostics.update(
+                {
+                    "status": "unsupported_threshold_mapping",
+                    "advisory_only": True,
+                    "limitation_scope": "finite_threshold_range_only",
+                }
+            )
+        else:
+            range_diagnostics.update(
+                level_afhp_range_diagnostics(
+                    episode_max_scores=episode_max_scores,
+                    finite_min=finite_threshold_min,
+                    finite_max=finite_threshold_max,
+                    num_bins=num_bins,
+                )
+            )
+        range_diagnostics_ready = True
+
+        if range_diagnostics.get("range_limited_suspected", False):
+            reachable = range_diagnostics.get("reachable_afhp_interval") or {}
+            uncertainty = range_diagnostics.get("uncertainty_afhp_interval") or {}
+            logging.warning(
+                "Finite level-AFHP threshold range may miss requested coverage bins: "
+                "threshold_range=[%.8g, %.8g], estimated_AFHP=[%.1f%%, %.1f%%], "
+                "approximate_95%%_uncertainty=[%.1f%%, %.1f%%], bins=%s. "
+                "This is advisory; coverage search will continue.",
+                finite_threshold_min,
+                finite_threshold_max,
+                100.0 * float(reachable.get("min", float("nan"))),
+                100.0 * float(reachable.get("max", float("nan"))),
+                100.0 * float(uncertainty.get("min", float("nan"))),
+                100.0 * float(uncertainty.get("max", float("nan"))),
+                range_diagnostics.get("requested_bins_beyond_range", []),
+            )
+
+    def _eval_with_threshold(
+        threshold: float, *, desired_percentile: Optional[float] = None
+    ) -> Tuple[float, float, Dict[str, Any]]:
         update_policy_params(policy, threshold)
 
         # Track thresholds for WaitPolicy
@@ -757,10 +1203,22 @@ def create_level_afhp_threshold_sampler(
         summary = evaluator.eval(
             policy, envs, [split], logger=logger, threshold=threshold, close_envs=True
         )
-        level_ood_preds = summary[split]["level_ood_pred"]
+        split_summary = summary[split]
+        _attach_range_diagnostics(split_summary, float(threshold))
+        level_ood_preds = split_summary["level_ood_pred"]
         level_afhp = float(np.mean(level_ood_preds)) * 100.0
-        step_afhp = summary[split]["action_1_frac"] * 100.0
-        performance = float(summary[split]["env_return_mean"])  # Y-axis
+        step_afhp = split_summary["action_1_frac"] * 100.0
+        performance = float(split_summary["env_return_mean"])  # Y-axis
+        meta = {"summary": summary, "threshold": threshold}
+        if level_threshold_extension is not None:
+            meta["level_threshold_mapping"] = dict(level_threshold_extension)
+        if supports_threshold_diagnostics:
+            meta["level_afhp_range_diagnostics"] = copy.deepcopy(range_diagnostics)
+            meta["level_afhp_search_diagnostics"] = copy.deepcopy(search_diagnostics)
+        target_metric = level_afhp / 100.0
+
+        if on_evaluation is not None:
+            on_evaluation(desired_percentile, target_metric, performance, meta)
 
         # Log to console and wandb
         tracker.log_eval(
@@ -771,22 +1229,27 @@ def create_level_afhp_threshold_sampler(
         )
 
         # Return level_afhp in [0, 1] for the sampler
-        target_metric = level_afhp / 100.0
-        return target_metric, performance, {"summary": summary, "threshold": threshold}
+        return target_metric, performance, meta
 
     def eval_at_percentile(p: float) -> Tuple[float, float, Dict[str, Any]]:
         thr = percentile_to_threshold(p)
-        target_metric, performance, meta = _eval_with_threshold(thr)
+        target_metric, performance, meta = _eval_with_threshold(
+            thr, desired_percentile=p
+        )
         return target_metric, performance, meta
 
     def eval_at_lower_extreme() -> Tuple[float, float, Dict[str, Any]]:
         thr = float("inf")
-        target_metric, performance, meta = _eval_with_threshold(thr)
+        target_metric, performance, meta = _eval_with_threshold(
+            thr, desired_percentile=0.0
+        )
         return target_metric, performance, meta
 
     def eval_at_upper_extreme() -> Tuple[float, float, Dict[str, Any]]:
         thr = float("-inf")
-        target_metric, performance, meta = _eval_with_threshold(thr)
+        target_metric, performance, meta = _eval_with_threshold(
+            thr, desired_percentile=1.0
+        )
         return target_metric, performance, meta
 
     # Convert coverate fraction to num_bins
@@ -851,6 +1314,23 @@ def create_level_afhp_threshold_sampler(
             # AFHP uses [0, 100] interval, here we use [0, 1]
             output_range=(0.0, 1.0),
         )
+    elif isinstance(policy, ThresholdPolicy) or (
+        isinstance(policy, OODPolicy) and threshold_mapping_is_standard
+    ):
+        logging.info(
+            "Sampler dispatch: selecting LevelAFHPThresholdSampler "
+            "(exact threshold reuse, monotone_mapping=%s)",
+            threshold_mapping_is_monotone,
+        )
+        return LevelAFHPThresholdSampler(
+            eval_at_percentile=eval_at_percentile,
+            eval_at_lower_extreme=eval_at_lower_extreme,
+            eval_at_upper_extreme=eval_at_upper_extreme,
+            threshold_for_input=threshold_for_input,
+            num_bins=num_bins,
+            diagnostics=search_diagnostics,
+            threshold_mapping_is_monotone=threshold_mapping_is_monotone,
+        )
     else:
         logging.info(
             "Sampler dispatch: selecting BinarySearchSampler "
@@ -876,6 +1356,9 @@ def create_step_afhp_threshold_sampler(
     max_total_evals: int = 200,
     logger=None,
     wandb_run=None,
+    on_evaluation: Optional[
+        Callable[[Optional[float], float, float, Dict[str, Any]], None]
+    ] = None,
 ):
     """
     Create the joint-coverage sampler for threshold evaluation.
@@ -894,6 +1377,8 @@ def create_step_afhp_threshold_sampler(
         max_total_evals: Global evaluation budget (includes re-runs)
         logger: Optional logger for tracking evaluations
         wandb_run: Optional wandb run for logging metrics
+        on_evaluation: Optional callback after each completed evaluation. Receives
+            (desired_percentile, AFHP, performance, metadata).
 
     Returns:
         JointCoverageSampler ready to run
@@ -917,7 +1402,9 @@ def create_step_afhp_threshold_sampler(
         percentile = 100.0 - (p * 100.0)
         return policy.train_percentile_step(percentile)
 
-    def _eval_with_threshold(threshold: float) -> Tuple[float, float, Dict[str, Any]]:
+    def _eval_with_threshold(
+        threshold: float, *, desired_percentile: Optional[float] = None
+    ) -> Tuple[float, float, Dict[str, Any]]:
         update_policy_params(policy, threshold)
 
         # Track thresholds for WaitPolicy
@@ -940,6 +1427,10 @@ def create_step_afhp_threshold_sampler(
         level_afhp = float(np.mean(level_ood_preds)) * 100.0
         step_afhp = summary[split]["action_1_frac"] * 100.0
         performance = float(summary[split]["env_return_mean"])  # Y-axis
+        meta = {"summary": summary, "threshold": threshold}
+
+        if on_evaluation is not None:
+            on_evaluation(desired_percentile, step_afhp, performance, meta)
 
         # Log to console and wandb
         tracker.log_eval(
@@ -949,21 +1440,21 @@ def create_step_afhp_threshold_sampler(
             performance=performance,
         )
 
-        return step_afhp, performance, {"summary": summary, "threshold": threshold}
+        return step_afhp, performance, meta
 
     def eval_at_percentile(p: float) -> Tuple[float, float, Dict[str, Any]]:
         thr = percentile_to_threshold(p)
-        step_afhp, performance, meta = _eval_with_threshold(thr)
+        step_afhp, performance, meta = _eval_with_threshold(thr, desired_percentile=p)
         return step_afhp, performance, meta
 
     def eval_at_lower_extreme() -> Tuple[float, float, Dict[str, Any]]:
         thr = float("inf")
-        step_afhp, performance, meta = _eval_with_threshold(thr)
+        step_afhp, performance, meta = _eval_with_threshold(thr, desired_percentile=0.0)
         return step_afhp, performance, meta
 
     def eval_at_upper_extreme() -> Tuple[float, float, Dict[str, Any]]:
         thr = float("-inf")
-        step_afhp, performance, meta = _eval_with_threshold(thr)
+        step_afhp, performance, meta = _eval_with_threshold(thr, desired_percentile=1.0)
         return step_afhp, performance, meta
 
     # Convert coverate fraction to num_bins
