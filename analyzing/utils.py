@@ -15,11 +15,6 @@ import json
 import re
 from datetime import datetime
 
-import matplotlib
-
-matplotlib.use("TkAgg")
-
-
 # Add YRC to path for imports
 # sys.path.append(os.path.join(os.path.dirname(__file__), "."))
 

@@ -19,6 +19,7 @@ def test_unnormalized_script_bakes_in_main_and_proxy_fail_rows():
         "tmlr2-svdd",
         "tmlr3-svdd",
         "tmlr4-svdd",
+        "tmlr5-svdd",
         "imcl04",
         "icml04",
         "tmlr-oracle-lb",

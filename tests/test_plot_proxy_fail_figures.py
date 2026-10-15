@@ -45,4 +45,4 @@ def test_proxy_fail_script_bakes_in_coinrun_maze_and_kandc():
     assert r"\input{tables/auc-proxy-fail}" in (
         plot_proxy_fail_figures.LATEX_TABLE_SNIPPET
     )
-    assert "median [IQR]" in plot_proxy_fail_figures.LATEX_TABLE_SNIPPET
+    assert "across eight seeds" in plot_proxy_fail_figures.LATEX_TABLE_SNIPPET

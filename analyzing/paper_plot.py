@@ -23,24 +23,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
 
-# Width at which titles get wrapped onto multiple lines. ~80 characters fits
-# the default 8" figure width at the default title font size.
-TITLE_WRAP_WIDTH = 80
-
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns  # type: ignore
 from matplotlib.lines import Line2D
 from scipy import interpolate, integrate
-
-# Methods whose curves should be rendered in the same blue used for the
-# Expert reference line. Keyed by canonical base method (no robust suffix).
-SPECIAL_METHOD_COLORS = {
-    "oracle-lb-random": "blue",
-}
-EXPERT_REFERENCE_COLOR = "blue"
-NOVICE_REFERENCE_COLOR = "red"
 
 from analyzing.utils import extract_x_and_y_values
 from analyzing.paper_proxy_rewards import paper_episode_returns
@@ -51,7 +38,19 @@ from analyzing.plotting_common import (
     style_plot_for_publication,
 )
 
-matplotlib.use("TkAgg")
+# Width at which titles get wrapped onto multiple lines. ~80 characters fits
+# the default 8" figure width at the default title font size.
+TITLE_WRAP_WIDTH = 80
+
+# Methods whose curves should be rendered in the same blue used for the
+# Expert reference line. Keyed by canonical base method (no robust suffix).
+SPECIAL_METHOD_COLORS = {
+    "oracle-lb-random": "blue",
+}
+EXPERT_REFERENCE_COLOR = "blue"
+NOVICE_REFERENCE_COLOR = "red"
+
+PAPER_EXP_IDS = tuple(range(8))
 
 SUPPORTED_ENVS = [
     "coinrun",
@@ -264,7 +263,7 @@ def _build_legend_entries(ax):
             ordered.append(reference_entries[key])
 
     handles = [h for h, _ in ordered]
-    labels = [l for _, l in ordered]
+    labels = [label for _, label in ordered]
     return handles, labels, separator_indices
 
 
@@ -1199,7 +1198,9 @@ def format_auc_tabular(
 def _render_auc_tabular(prepared: dict) -> str:
     show_iqr = prepared["show_iqr"]
     has_accuracy = prepared["has_accuracy"]
-    auc_header = "AUC (Median [IQR])" if show_iqr else "Median AUC"
+    auc_header = (
+        "AUC (median curve [band edges])" if show_iqr else "AUC of median curve"
+    )
     acc_header = "Accuracy (Median [IQR])" if show_iqr else "Median Accuracy"
     tab_spec = "lll" if has_accuracy else "ll"
     lines = [
@@ -1515,6 +1516,7 @@ def plot_icml_results(
     print_auc: bool = True,
     auc_table_path: Optional[str] = None,
     ylim: Optional[Tuple[float, float]] = None,
+    exp_ids: Optional[Sequence[int]] = None,
 ) -> Optional[str]:
     """
     Plot ICML results with aggregation across experiments.
@@ -1546,8 +1548,19 @@ def plot_icml_results(
         auc_table_path: If set, write a standalone booktabs tabular here.
         ylim: Optional (ymin, ymax) override. When set, it replaces the
             `--paper-app` [6, 10] window.
+        exp_ids: If set, include only these experiment IDs.
     """
     results = extract_icml_results(eval_dir, prefix_filter, env_filter)
+
+    if exp_ids is not None:
+        selected_ids = set(exp_ids)
+        results = {
+            method: {
+                exp_id: path for exp_id, path in runs.items() if exp_id in selected_ids
+            }
+            for method, runs in results.items()
+        }
+        results = {method: runs for method, runs in results.items() if runs}
 
     if not results:
         print("No results found matching the filters.")

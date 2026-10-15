@@ -12,7 +12,7 @@ matplotlib.use("Agg", force=True)
 
 import matplotlib.pyplot as plt
 
-from analyzing.paper_plot import plot_icml_results, save_shared_legend
+from analyzing.paper_plot import PAPER_EXP_IDS, plot_icml_results, save_shared_legend
 
 matplotlib.use("Agg", force=True)
 
@@ -33,6 +33,7 @@ MAIN_PANELS = (
             "tmlr2-svdd",
             "tmlr3-svdd",
             "tmlr4-svdd",
+            "tmlr5-svdd",
             "imcl04",
             "icml04",
             "tmlr-oracle-lb",
@@ -259,6 +260,7 @@ def _plot_panel(eval_dir: Path, out_dir: Path, panel: dict) -> None:
         axis_label_size=PANEL_AXIS_LABEL_SIZE,
         tick_label_size=PANEL_TICK_LABEL_SIZE,
         ylim=panel["ylim"],
+        exp_ids=PAPER_EXP_IDS,
     )
     plt.close("all")
 

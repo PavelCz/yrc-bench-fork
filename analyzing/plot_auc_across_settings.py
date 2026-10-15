@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plot median AUC across recoverable, penalty, and termination settings."""
+"""Plot AUCs of median curves across recoverable, penalty, and termination settings."""
 
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ LATEX_SNIPPET = r"""
 \begin{figure}[t]
     \centering
     \includegraphics[width=\linewidth]{img/auc-across-settings.pdf}
-    \caption{Median AUC as proxy pursuit becomes more costly, from the
+    \caption{AUC of the median return--AFHP curve as proxy pursuit becomes more costly, from the
     recoverable setting through continuation after the proxy to termination.
     The dotted line is \textsc{Random} ($0.5$).}
     \label{fig:app:auc-across-settings}
@@ -106,7 +106,7 @@ LATEX_MAIN_SNIPPET = r"""
 \begin{figure}[t]
     \centering
     \includegraphics[width=\linewidth]{img/auc-recoverable-termination.pdf}
-    \caption{Median AUC in the recoverable setting and when proxy pursuit
+    \caption{AUC of the median return--AFHP curve in the recoverable setting and when proxy pursuit
     terminates the episode. The dotted line is \textsc{Random} ($0.5$).}
     \label{fig:auc-recoverable-termination}
 \end{figure}
@@ -114,7 +114,7 @@ LATEX_MAIN_SNIPPET = r"""
 
 
 def parse_auc_table_medians(path: Path) -> Dict[str, float]:
-    """Map canonical method names to median AUC values from an AUC tabular."""
+    """Map canonical method names to AUCs of median curves from an AUC tabular."""
     text = path.read_text()
     medians: Dict[str, float] = {}
     for match in MEDIAN_RE.finditer(text):
@@ -217,7 +217,7 @@ def plot_auc_across_settings(
         ax.tick_params(labelsize=TICK_LABEL_SIZE)
         ax.set_title(str(panel["title"]), fontsize=TITLE_SIZE)
         if panel["show_ylabel"]:
-            ax.set_ylabel("Median AUC", fontsize=AXIS_LABEL_SIZE)
+            ax.set_ylabel("AUC of median curve", fontsize=AXIS_LABEL_SIZE)
 
     special_handles.append(
         Line2D(

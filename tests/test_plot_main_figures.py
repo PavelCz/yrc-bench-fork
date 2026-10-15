@@ -11,6 +11,7 @@ def test_main_figure_script_bakes_in_the_three_paper_campaigns():
         "tmlr2-svdd",
         "tmlr3-svdd",
         "tmlr4-svdd",
+        "tmlr5-svdd",
         "imcl04",
         "icml04",
         "tmlr-oracle-lb",
@@ -45,4 +46,4 @@ def test_main_figure_script_bakes_in_the_three_paper_campaigns():
     assert r"\begin{subtable}" not in plot_main_figures.LATEX_TABLE_SNIPPET
     assert r"\input{tables/auc-results}" in plot_main_figures.LATEX_TABLE_SNIPPET
     assert r"\label{tab:auc_results}" in plot_main_figures.LATEX_TABLE_SNIPPET
-    assert "median [IQR]" in plot_main_figures.LATEX_TABLE_SNIPPET
+    assert "across eight seeds" in plot_main_figures.LATEX_TABLE_SNIPPET

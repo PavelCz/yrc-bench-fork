@@ -141,7 +141,7 @@ def test_format_auc_tabular_matches_paper_coinrun_table():
     assert tex == (
         "\\begin{tabular}{ll}\n"
         "\\toprule\n"
-        "Method & AUC (Median [IQR]) \\\\\n"
+        "Method & AUC (median curve [band edges]) \\\\\n"
         "\\midrule\n"
         "\\textbf{\\textsc{PartialOracle}} & "
         "\\textbf{0.739 [0.722, 0.761]} \\\\\n"

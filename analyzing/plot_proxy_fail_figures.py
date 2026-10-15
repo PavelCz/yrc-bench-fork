@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 
 from analyzing.paper_plot import (
     AUC_ENV_COLUMN_HEADERS,
+    PAPER_EXP_IDS,
     plot_icml_results,
     save_shared_legend,
     write_auc_env_columns_table,
@@ -80,7 +81,7 @@ LEGEND_NAME = "proxy-fail-legend.pdf"
 PLACEHOLDER_AUC_TABULAR = """\
 \\begin{tabular}{ll}
 \\toprule
-Method & AUC (Median [IQR]) \\\\
+Method & AUC (median curve [band edges]) \\\\
 \\midrule
 \\textsc{PartialOracle} & -- \\\\
 \\cmidrule(lr){1-2}
@@ -125,8 +126,7 @@ LATEX_SNIPPET = r"""
 LATEX_TABLE_SNIPPET = r"""
 \begin{table}[t]
     \centering
-    \caption{Area under the return--AFHP curve when proxy goals cause failure.
-    Cells are median [IQR] across four seeds.}
+    \caption{Area under the normalized return--AFHP curves in Figure~\ref{fig:results-proxy-fail}, where proxy pursuit causes failure. Each cell gives the AUC of the plotted median curve [AUC of the lower quartile curve, AUC of the upper quartile curve] across eight seeds.}
     \label{tab:auc-proxy-fail}
     \input{tables/auc-proxy-fail}
 \end{table}
@@ -173,6 +173,7 @@ def _plot_panel(eval_dir: Path, out_dir: Path, table_dir: Path, panel: dict) -> 
         tick_label_size=PANEL_TICK_LABEL_SIZE,
         print_auc=False,
         auc_table_path=str(table_path),
+        exp_ids=PAPER_EXP_IDS,
     )
     plt.close("all")
 

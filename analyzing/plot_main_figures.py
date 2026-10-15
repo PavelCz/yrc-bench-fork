@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 
 from analyzing.paper_plot import (
     AUC_ENV_COLUMN_HEADERS,
+    PAPER_EXP_IDS,
     plot_icml_results,
     save_shared_legend,
     write_auc_env_columns_table,
@@ -35,6 +36,7 @@ PANELS = (
             "tmlr2-svdd",
             "tmlr3-svdd",
             "tmlr4-svdd",
+            "tmlr5-svdd",
             "imcl04",
             "icml04",
             "tmlr-oracle-lb",
@@ -104,7 +106,7 @@ LATEX_SNIPPET = r"""
 LATEX_TABLE_SNIPPET = r"""
 \begin{table}[t]
     \centering
-    \caption{Area under the return--AFHP curve. Cells are median [IQR] across four seeds.}
+    \caption{Area under the normalized return--AFHP curves in Figure~\ref{fig:results-main}. Each cell gives the AUC of the plotted median curve [AUC of the lower quartile curve, AUC of the upper quartile curve] across eight seeds.}
     \label{tab:auc_results}
     \input{tables/auc-results}
 \end{table}
@@ -132,6 +134,7 @@ def _plot_panel(eval_dir: Path, out_dir: Path, table_dir: Path, panel: dict) -> 
         tick_label_size=PANEL_TICK_LABEL_SIZE,
         print_auc=False,
         auc_table_path=str(table_dir / panel["auc_tex"]),
+        exp_ids=PAPER_EXP_IDS,
     )
     plt.close("all")
 

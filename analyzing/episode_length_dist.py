@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -97,6 +97,7 @@ def plot_episode_length_distribution(
     title: Optional[str] = None,
     paper_mode: bool = False,
     show_ylabel: bool = True,
+    exp_ids: Optional[Sequence[int]] = None,
 ):
     """
     Plot episode length distribution for ID vs OOD levels.
@@ -112,8 +113,19 @@ def plot_episode_length_distribution(
         title: Custom title for the plot
         paper_mode: If True, use paper-ready styling
         show_ylabel: If False, omit the y-axis title (tick labels stay).
+        exp_ids: If set, include only these experiment IDs.
     """
     results = extract_icml_results(eval_dir, prefix_filter, env_filter)
+
+    if exp_ids is not None:
+        selected_ids = set(exp_ids)
+        results = {
+            method_name: {
+                exp_id: path for exp_id, path in runs.items() if exp_id in selected_ids
+            }
+            for method_name, runs in results.items()
+        }
+        results = {method_name: runs for method_name, runs in results.items() if runs}
 
     if not results:
         print("No results found matching the filters.")
@@ -222,7 +234,9 @@ def plot_episode_length_distribution(
         legend_location="best",
     )
 
-    fig.subplots_adjust(left=0.22, right=0.97, top=0.96, bottom=0.18)
+    # Reserve room for the density label and Coinrun's five-digit tick labels.
+    # Use the same margin for all panels to preserve their aligned axes boxes.
+    fig.subplots_adjust(left=0.29, right=0.97, top=0.96, bottom=0.18)
     fig.set_size_inches(4.0, 3.0)
 
     if save_path:
