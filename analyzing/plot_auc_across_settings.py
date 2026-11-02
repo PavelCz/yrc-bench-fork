@@ -180,15 +180,13 @@ def plot_auc_across_settings(
         for method_idx, method in enumerate(SHARED_LEGEND_METHODS):
             handle = _method_line_handle(method, method_idx, n_methods, paper_mode=True)
             ys = _method_ys(method, setting_medians, settings=settings)
-            ax.plot(
-                xs,
-                ys,
-                color=handle.get_color(),
-                linestyle=handle.get_linestyle(),
-                linewidth=2,
-                marker="o",
-                markersize=9,
-            )
+            line = Line2D(xs, ys)
+            # Copy the full custom dash pattern; get_linestyle() reduces custom
+            # styles (including PartialOracle's dots) to the generic "--".
+            line.update_from(handle)
+            line.set_marker("o")
+            line.set_markersize(9)
+            ax.add_line(line)
             if ax is axes[0]:
                 label = format_plot_label(method, paper_mode=True)
                 if split_robust_method(method)[0] == "oracle-lb-random":
