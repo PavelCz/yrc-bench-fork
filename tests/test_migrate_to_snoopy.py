@@ -23,6 +23,9 @@ def test_ssh_reuses_one_connection_per_host() -> None:
     assert "ControlMaster=auto" in command
     assert "ControlPath=/tmp/migrate-to-snoopy-%r@%h:%p" in command
     assert "ControlMaster=auto" in migrate.rsync_rsh()
+    forwarded = migrate.ssh_argv("snoopy", "bash -s", forward_agent=True)
+    assert "ForwardAgent=yes" in forwarded
+    assert "ForwardAgent=yes" not in command
 
 
 def test_list_does_not_contact_a_server(capsys) -> None:

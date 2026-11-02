@@ -619,9 +619,12 @@ def eval_transfers(
     return transfers
 
 
-def ssh_argv(host: str, command: str) -> list[str]:
+def ssh_argv(host: str, command: str, *, forward_agent: bool = False) -> list[str]:
     """Return an ssh command that reuses one connection per host."""
-    return ["ssh", *_SSH_OPTIONS, host, command]
+    options = list(_SSH_OPTIONS)
+    if forward_agent:
+        options.extend(["-o", "ForwardAgent=yes"])
+    return ["ssh", *options, host, command]
 
 
 def rsync_rsh() -> str:
@@ -912,7 +915,7 @@ def _copy_via_dest(
             f"{shlex.quote(dest)}"
         )
     result = run_ssh(
-        ssh_argv(dest_host, "bash -s"),
+        ssh_argv(dest_host, "bash -s", forward_agent=True),
         input="\n".join(script_lines) + "\n",
         text=True,
         check=False,
@@ -995,8 +998,9 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default="local",
         help=(
             "local: stage one transfer at a time in local temporary storage "
-            "(default). dest: snoopy pulls from the source host directly, which "
-            "requires that host name to resolve on snoopy."
+            "(default). dest: snoopy pulls from the source host directly and "
+            "forwards the local SSH agent. The source host name must resolve "
+            "on snoopy; the local alias rnn does not."
         ),
     )
     return parser.parse_args(argv)

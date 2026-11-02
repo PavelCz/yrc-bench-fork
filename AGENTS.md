@@ -196,6 +196,7 @@ The project uses hierarchical YAML configs in `configs/`:
 ## Documentation
 
 Reference docs live in `docs/`:
+- [snoopy_migration.md](docs/snoopy_migration.md) — paper artifacts now live on snoopy under `/scr/pavel/data/goal-misgen`. Launchers still default to RNN; pass `--server snoopy` and follow the path exceptions there.
 - [gpu_sharding.md](docs/gpu_sharding.md) — fractional-GPU (`shard`) training on RNN: cluster topology, measured VRAM/CPU/RAM footprint, and recommended `--gpu-shards`/`--cpus-per-task`/`--mem` settings.
 - [rnn_smoke_tests.md](docs/rnn_smoke_tests.md) — end-to-end smoke-test workflow on the `rnn` server (SSH + `scripts/run_eval.py`, log paths, tailing/cancelling).
 - [container_workflow.md](docs/container_workflow.md) — Docker→Apptainer workflow used on CARC.
